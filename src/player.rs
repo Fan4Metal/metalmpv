@@ -1,0 +1,473 @@
+//! The player: an mpv core configured for playback in the app's window, the
+//! state the interface shows (kept up to date from observed properties) and
+//! the commands of the interface. No OpenGL here: the picture is
+//! `video.rs`'s.
+//!
+//! Every command is asynchronous (see `mpv/mod.rs`): the UI thread never
+//! waits for the core, and the core works through the commands in the order
+//! they were given, so a volume set before `loadfile` applies to that file.
+
+use std::path::Path;
+
+use crate::mpv::{EndReason, Event, Mpv, Value, sys};
+
+/// Options of the core, set before it starts. The picture goes through the
+/// render API (`vo=libmpv`); mpv's own interface, key bindings, scripts and
+/// configuration files are off, the app has its own.
+pub fn options<'a>(hwdec: bool) -> Vec<(&'a str, &'a str)> {
+    vec![
+        ("vo", "libmpv"),
+        ("hwdec", hwdec_option(hwdec)),
+        // The last frame stays on screen at the end; the playlist
+        // moves on when `eof-reached` turns true.
+        ("keep-open", "yes"),
+        ("idle", "yes"),
+        // Rendering on the UI thread must not wait for a frame's display
+        // time (render.h, MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME).
+        ("video-timing-offset", "0"),
+        // Audio files without a cover-art video stream: they open faster
+        // and do not reconfigure the renderer.
+        ("audio-display", "no"),
+        ("input-default-bindings", "no"),
+        ("input-vo-keyboard", "no"),
+        ("osc", "no"),
+        ("osd-level", "0"),
+        ("config", "no"),
+        ("terminal", "no"),
+        ("load-scripts", "no"),
+        ("ytdl", "no"),
+        ("load-stats-overlay", "no"),
+        ("load-osd-console", "no"),
+        ("load-auto-profiles", "no"),
+        ("load-select", "no"),
+        ("load-console", "no"),
+        ("load-commands", "no"),
+        ("load-positioning", "no"),
+        ("audio-client-name", crate::APP_NAME),
+        ("volume-max", "100"),
+        ("msg-level", "all=warn"),
+    ]
+}
+
+/// The `hwdec` option for the setting; `METAL_PLAYER_HWDEC` overrides it
+/// for measurements ("nvdec", "d3d11va-copy", "no", …).
+fn hwdec_option(on: bool) -> &'static str {
+    use std::sync::OnceLock;
+    static FORCED: OnceLock<Option<&'static str>> = OnceLock::new();
+    let forced = FORCED.get_or_init(|| {
+        std::env::var("METAL_PLAYER_HWDEC")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .map(|v| &*Box::leak(v.into_boxed_str()))
+    });
+    forced.unwrap_or(if on { "auto-safe" } else { "no" })
+}
+
+/// Start an mpv core with [`options`]. Slow enough (loading the DLL, the
+/// core's threads, audio) to be run on a thread of its own while the window
+/// is being made.
+pub fn boot(hwdec: bool) -> Result<Mpv, String> {
+    let api = sys::api().map_err(str::to_owned)?;
+    let mut options = options(hwdec);
+    // METAL_PLAYER_MPV="name=value;name=value": more options, for
+    // measurements and diagnostics; later ones win.
+    let extra = std::env::var("METAL_PLAYER_MPV").unwrap_or_default();
+    let extra: Vec<(String, String)> = extra
+        .split(';')
+        .filter_map(|o| o.split_once('='))
+        .map(|(n, v)| (n.trim().to_owned(), v.trim().to_owned()))
+        .collect();
+    options.extend(extra.iter().map(|(n, v)| (n.as_str(), v.as_str())));
+    let mpv = Mpv::new(api, &options)?;
+    Ok(mpv)
+}
+
+/// Observed properties, by their number in [`Event::Property`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u64)]
+enum Prop {
+    Pause = 1,
+    TimePos,
+    Duration,
+    Volume,
+    Mute,
+    MediaTitle,
+    Path,
+    EofReached,
+    Seeking,
+    PausedForCache,
+    IdleActive,
+    Width,
+    Height,
+    Hwdec,
+}
+
+const PROPS: [(Prop, &str, sys::mpv_format); 14] = [
+    (Prop::Pause, "pause", sys::MPV_FORMAT_FLAG),
+    (Prop::TimePos, "time-pos", sys::MPV_FORMAT_DOUBLE),
+    (Prop::Duration, "duration", sys::MPV_FORMAT_DOUBLE),
+    (Prop::Volume, "volume", sys::MPV_FORMAT_DOUBLE),
+    (Prop::Mute, "mute", sys::MPV_FORMAT_FLAG),
+    (Prop::MediaTitle, "media-title", sys::MPV_FORMAT_STRING),
+    (Prop::Path, "path", sys::MPV_FORMAT_STRING),
+    (Prop::EofReached, "eof-reached", sys::MPV_FORMAT_FLAG),
+    (Prop::Seeking, "seeking", sys::MPV_FORMAT_FLAG),
+    (
+        Prop::PausedForCache,
+        "paused-for-cache",
+        sys::MPV_FORMAT_FLAG,
+    ),
+    (Prop::IdleActive, "idle-active", sys::MPV_FORMAT_FLAG),
+    (Prop::Width, "dwidth", sys::MPV_FORMAT_INT64),
+    (Prop::Height, "dheight", sys::MPV_FORMAT_INT64),
+    (Prop::Hwdec, "hwdec-current", sys::MPV_FORMAT_STRING),
+];
+
+/// What the interface shows of the playback.
+#[derive(Clone, Debug, PartialEq)]
+pub struct State {
+    pub paused: bool,
+    /// Position in seconds, `None` without a file.
+    pub time: Option<f64>,
+    pub duration: Option<f64>,
+    /// 0 to 100.
+    pub volume: f64,
+    pub mute: bool,
+    pub title: Option<String>,
+    pub path: Option<String>,
+    /// Stopped at the end of the file (`keep-open`).
+    pub eof: bool,
+    pub seeking: bool,
+    pub buffering: bool,
+    /// No file is loaded.
+    pub idle: bool,
+    /// The picture's display width and height; `None` for audio.
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    /// The hardware decoder in use ("d3d11va-copy"), `None` for software.
+    pub hwdec: Option<String>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            paused: false,
+            time: None,
+            duration: None,
+            volume: 100.0,
+            mute: false,
+            title: None,
+            path: None,
+            eof: false,
+            seeking: false,
+            buffering: false,
+            idle: true,
+            width: None,
+            height: None,
+            hwdec: None,
+        }
+    }
+}
+
+impl State {
+    /// The position as a share of the duration, 0 to 1.
+    pub fn fraction(&self) -> Option<f64> {
+        match (self.time, self.duration) {
+            (Some(t), Some(d)) if d > 0.0 => Some((t / d).clamp(0.0, 1.0)),
+            _ => None,
+        }
+    }
+
+    fn apply(&mut self, prop: Prop, value: &Value) {
+        match prop {
+            Prop::Pause => self.paused = value.flag(),
+            Prop::TimePos => self.time = value.double(),
+            Prop::Duration => self.duration = value.double().filter(|d| *d > 0.0),
+            Prop::Volume => self.volume = value.double().unwrap_or(self.volume),
+            Prop::Mute => self.mute = value.flag(),
+            Prop::MediaTitle => self.title = value.string().map(str::to_owned),
+            Prop::Path => self.path = value.string().map(str::to_owned),
+            Prop::EofReached => self.eof = value.flag(),
+            Prop::Seeking => self.seeking = value.flag(),
+            Prop::PausedForCache => self.buffering = value.flag(),
+            Prop::IdleActive => self.idle = value.flag(),
+            Prop::Width => self.width = value.int().filter(|w| *w > 0),
+            Prop::Height => self.height = value.int().filter(|h| *h > 0),
+            Prop::Hwdec => {
+                self.hwdec = value
+                    .string()
+                    .filter(|s| !s.is_empty() && *s != "no")
+                    .map(str::to_owned)
+            }
+        }
+    }
+
+    /// The picture's display size, if there is a picture to show.
+    pub fn video(&self) -> Option<(i64, i64)> {
+        if self.idle {
+            None
+        } else {
+            Some((self.width?, self.height?))
+        }
+    }
+}
+
+/// What happened since the previous [`Player::poll`], for the app.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Happened {
+    FileLoaded,
+    /// The end of the file was reached (the last frame stays on screen).
+    Eof,
+    /// The file could not be played.
+    Failed(String),
+    /// A seek finished: the position is the new one.
+    Restarted,
+    Shutdown,
+}
+
+/// How a seek lands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Seek {
+    /// On the nearest keyframe: instant, the default of the arrow keys.
+    Keyframe,
+    /// On the exact frame: decodes from the keyframe before it.
+    Exact,
+}
+
+impl Seek {
+    fn flag(self) -> &'static str {
+        match self {
+            Seek::Keyframe => "keyframes",
+            Seek::Exact => "exact",
+        }
+    }
+}
+
+pub struct Player {
+    mpv: Mpv,
+    pub state: State,
+}
+
+impl Player {
+    /// Take a started core: observe what the interface shows and wake the
+    /// UI when events wait. `volume` and `mute` come from the settings.
+    pub fn new(mut mpv: Mpv, ctx: &egui::Context, volume: f64, mute: bool) -> Self {
+        let wake = ctx.clone();
+        mpv.set_wakeup(move || wake.request_repaint());
+        // METAL_PLAYER_TRACE=2: mpv's verbose messages too.
+        if std::env::var("METAL_PLAYER_TRACE").is_ok_and(|v| v == "2") {
+            mpv.request_log_messages("v");
+        } else if log::log_enabled!(log::Level::Info) {
+            mpv.request_log_messages("info");
+        } else {
+            mpv.request_log_messages("warn");
+        }
+        for (prop, name, format) in PROPS {
+            mpv.observe(prop as u64, name, format);
+        }
+        let player = Self {
+            mpv,
+            state: State {
+                volume,
+                mute,
+                ..State::default()
+            },
+        };
+        player
+            .mpv
+            .set("volume", &Value::Double(volume.clamp(0.0, 100.0)));
+        player.mpv.set("mute", &Value::Flag(mute));
+        player
+    }
+
+    pub fn mpv(&self) -> &Mpv {
+        &self.mpv
+    }
+
+    /// Take the waiting events: update [`Player::state`] and return what
+    /// the app acts on. Call it every frame (and while minimised).
+    pub fn poll(&mut self) -> Vec<Happened> {
+        let mut out = Vec::new();
+        while let Some(event) = self.mpv.next_event() {
+            match event {
+                Event::Property { id, value } => {
+                    if let Some((prop, _, _)) = PROPS.iter().find(|(p, _, _)| *p as u64 == id) {
+                        let was_eof = self.state.eof;
+                        self.state.apply(*prop, &value);
+                        if *prop == Prop::EofReached && self.state.eof && !was_eof {
+                            out.push(Happened::Eof);
+                        }
+                    }
+                }
+                Event::FileLoaded => out.push(Happened::FileLoaded),
+                Event::PlaybackRestart => out.push(Happened::Restarted),
+                Event::EndFile {
+                    reason: EndReason::Error,
+                    error,
+                } => {
+                    out.push(Happened::Failed(
+                        error.unwrap_or_else(|| "unknown error".into()),
+                    ));
+                }
+                Event::EndFile { .. } => {}
+                Event::Log {
+                    prefix,
+                    level,
+                    text,
+                } => match level.as_str() {
+                    "fatal" | "error" => log::error!("mpv [{prefix}] {text}"),
+                    "warn" => log::warn!("mpv [{prefix}] {text}"),
+                    _ => log::info!("mpv [{prefix}] {text}"),
+                },
+                Event::QueueOverflow => {
+                    log::warn!("mpv event queue overflowed; asking for the properties again");
+                    for (prop, name, format) in PROPS {
+                        self.mpv.get(prop as u64, name, format);
+                    }
+                }
+                Event::CommandReply { error: Some(e), .. } => log::warn!("mpv command failed: {e}"),
+                Event::Shutdown => out.push(Happened::Shutdown),
+                _ => {}
+            }
+        }
+        out
+    }
+
+    /// Play `path` from the start, replacing the current file.
+    pub fn load(&mut self, path: &Path) {
+        self.mpv.set("pause", &Value::Flag(false));
+        self.mpv
+            .command(0, &["loadfile", &path.to_string_lossy(), "replace"]);
+        self.state.paused = false;
+        self.state.eof = false;
+    }
+
+    /// Pause or go on; at the end of the file, play it again from the start.
+    pub fn toggle_pause(&mut self) {
+        if self.state.idle {
+            return;
+        }
+        if self.state.eof {
+            self.seek_to(0.0, Seek::Keyframe);
+            self.set_pause(false);
+            return;
+        }
+        self.set_pause(!self.state.paused);
+    }
+
+    pub fn set_pause(&mut self, pause: bool) {
+        self.mpv.set("pause", &Value::Flag(pause));
+        // Shown at once; the property change confirms it.
+        self.state.paused = pause;
+    }
+
+    /// Unload the file: the picture goes black.
+    pub fn stop(&mut self) {
+        self.mpv.command(0, &["stop"]);
+    }
+
+    /// Move by `seconds` (negative: back).
+    pub fn seek_by(&mut self, seconds: f64, how: Seek) {
+        if self.state.idle {
+            return;
+        }
+        let flags = format!("relative+{}", how.flag());
+        self.mpv
+            .command(0, &["seek", &format!("{seconds:.3}"), &flags]);
+    }
+
+    /// Move to `seconds` from the start.
+    pub fn seek_to(&mut self, seconds: f64, how: Seek) {
+        if self.state.idle {
+            return;
+        }
+        let flags = format!("absolute+{}", how.flag());
+        self.mpv
+            .command(0, &["seek", &format!("{:.3}", seconds.max(0.0)), &flags]);
+        self.state.time = Some(seconds.max(0.0));
+    }
+
+    /// One frame on (`forward`) or back; pauses.
+    pub fn frame_step(&mut self, forward: bool) {
+        if self.state.idle {
+            return;
+        }
+        self.mpv.command(
+            0,
+            &[if forward {
+                "frame-step"
+            } else {
+                "frame-back-step"
+            }],
+        );
+        self.state.paused = true;
+    }
+
+    /// Volume, 0 to 100; unmutes.
+    pub fn set_volume(&mut self, volume: f64) {
+        let volume = volume.clamp(0.0, 100.0);
+        self.mpv.set("volume", &Value::Double(volume));
+        self.state.volume = volume;
+        if self.state.mute {
+            self.set_mute(false);
+        }
+    }
+
+    pub fn set_mute(&mut self, mute: bool) {
+        self.mpv.set("mute", &Value::Flag(mute));
+        self.state.mute = mute;
+    }
+
+    /// Hardware decoding on (`auto-safe`) or off; mpv applies it to the
+    /// playing file at once.
+    pub fn set_hwdec(&mut self, on: bool) {
+        self.mpv.set("hwdec", &Value::Str(hwdec_option(on).into()));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_follows_properties() {
+        let mut s = State::default();
+        s.apply(Prop::TimePos, &Value::Double(30.0));
+        s.apply(Prop::Duration, &Value::Double(120.0));
+        assert_eq!(s.fraction(), Some(0.25));
+        s.apply(Prop::Duration, &Value::None);
+        assert_eq!(s.fraction(), None);
+        s.apply(Prop::IdleActive, &Value::Flag(false));
+        s.apply(Prop::Width, &Value::Int(1920));
+        assert_eq!(s.video(), None);
+        s.apply(Prop::Height, &Value::Int(1080));
+        assert_eq!(s.video(), Some((1920, 1080)));
+        s.apply(Prop::Width, &Value::None);
+        assert_eq!(s.video(), None);
+        s.apply(Prop::Hwdec, &Value::Str("no".into()));
+        assert_eq!(s.hwdec, None);
+        s.apply(Prop::Hwdec, &Value::Str("d3d11va-copy".into()));
+        assert_eq!(s.hwdec.as_deref(), Some("d3d11va-copy"));
+    }
+
+    #[test]
+    fn options_are_well_formed() {
+        for (name, value) in options(true) {
+            assert!(!name.is_empty() && !name.starts_with('-'), "{name}");
+            assert!(!value.is_empty(), "{name}");
+        }
+        if std::env::var_os("METAL_PLAYER_HWDEC").is_none() {
+            assert!(options(false).contains(&("hwdec", "no")));
+        }
+    }
+
+    #[test]
+    fn boot_without_the_dll_fails_cleanly() {
+        // Test builds run from target\debug\deps; the DLL may be found in
+        // vendor\libmpv, in which case the core starts.
+        match boot(false) {
+            Ok(_) => {}
+            Err(e) => assert!(e.contains(sys::DLL_NAME), "{e}"),
+        }
+    }
+}

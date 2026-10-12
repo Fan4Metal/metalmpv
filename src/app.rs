@@ -1,0 +1,863 @@
+//! The window: the eframe `App` that puts the player, the picture and the
+//! interface together.
+//!
+//! The layout: the title row, the picture, the control
+//! bar under it, the playlist on the right when shown. In fullscreen only
+//! the picture is left; the control bar comes over it while the mouse moves.
+//!
+//! Every action of keys, buttons and menus is an `input::Cmd`, gathered
+//! during the frame and run at its end (`App::run`), outside the closures of
+//! egui: mpv may call its wakeup callback from inside a libmpv call, and
+//! that callback takes egui's lock (`request_repaint`).
+
+use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+
+use egui::{Align2, Color32, CursorIcon, FontId, Rect, Sense, TextureHandle};
+
+use crate::format::Osd;
+use crate::frameless;
+use crate::input::{self, Cmd};
+use crate::mpv::Mpv;
+use crate::player::{Happened, Player, Seek, State};
+use crate::playlist::{self, Playlist};
+use crate::settings::Settings;
+use crate::ui::about::AboutDialog;
+use crate::ui::osd::OsdLine;
+use crate::ui::settings::SettingsDialog;
+use crate::ui::{self, style};
+use crate::update::Updates;
+use crate::video::Video;
+use crate::win;
+
+/// How long the mouse may rest in fullscreen before the control bar and
+/// the pointer hide.
+const HIDE_AFTER: Duration = Duration::from_millis(500);
+/// Files handed over by other starts this close together make one
+/// playlist (Explorer starts one process per selected file).
+const SAME_BATCH: Duration = Duration::from_millis(1500);
+/// How long the window stays cloaked at most while it is being maximized.
+const UNCLOAK_TIMEOUT: Duration = Duration::from_secs(1);
+
+pub struct App {
+    settings: Settings,
+    player: Option<Player>,
+    video: Option<Video>,
+    /// Why there is no player or no picture (libmpv missing, …).
+    engine_error: Option<String>,
+    /// Why the last file could not be played.
+    file_error: Option<String>,
+    playlist: Playlist,
+    about: AboutDialog,
+    settings_dialog: SettingsDialog,
+    updates: Updates,
+    osd: OsdLine,
+    hwnd: Option<isize>,
+    icon: Option<TextureHandle>,
+    /// The seek bar is being dragged: the position under the pointer.
+    seek_drag: Option<f64>,
+    /// When the last file came from another start.
+    last_received: Option<Instant>,
+    /// The window title shown, to change it only when it changes.
+    shown_title: String,
+    /// The window is cloaked until its first maximized frame.
+    cloak: Option<(Instant, u64)>,
+    /// Commands from `logic` (other starts, the player), run in `ui`.
+    pending: Vec<Cmd>,
+    /// The first video frame has been logged (`METAL_PLAYER_TRACE`).
+    first_frame_logged: bool,
+    /// In fullscreen as of the last frame (for `save`, which has no egui
+    /// context).
+    fullscreen: bool,
+}
+
+impl App {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        boot: JoinHandle<Result<Mpv, String>>,
+        files: Vec<PathBuf>,
+    ) -> Self {
+        log::debug!("window created at {:.0} ms", crate::since_start());
+        let ctx = &cc.egui_ctx;
+        let settings = cc.storage.map(Settings::load).unwrap_or_default();
+        // Before any text is made.
+        crate::i18n::set_lang(settings.language.resolve());
+        style::apply(ctx);
+        ctx.options_mut(|o| {
+            o.zoom_with_keyboard = false;
+            o.input_options.max_double_click_delay = win::double_click_time();
+        });
+
+        let hwnd = win::hwnd(cc);
+        let mut cloak = None;
+        if let Some(hwnd) = hwnd {
+            win::round_corners(hwnd);
+            crate::instance::listen(ctx, hwnd);
+            if crate::MAXIMIZE_WHEN_SHOWN.swap(false, Ordering::Relaxed) {
+                win::cloak(hwnd, true);
+                win::show_maximized(hwnd, settings.window_normal, crate::DEFAULT_SIZE);
+                cloak = Some((Instant::now() + UNCLOAK_TIMEOUT, ctx.cumulative_frame_nr()));
+            }
+        }
+
+        // The core was started on its own thread meanwhile; the render
+        // context must exist before a file is loaded.
+        let mut engine_error = None;
+        let (player, video) = match boot.join() {
+            Ok(Ok(mpv)) => {
+                let mut player = Player::new(mpv, ctx, settings.volume, settings.mute);
+                if !settings.hwdec {
+                    player.set_hwdec(false);
+                }
+                log::debug!("player made at {:.0} ms", crate::since_start());
+                let video = match cc.gl.as_ref() {
+                    Some(gl) => {
+                        Video::new(gl, player.mpv(), ctx).map_err(|e| format!("video output: {e}"))
+                    }
+                    None => Err("no OpenGL context".into()),
+                };
+                let video = video.map_err(|e| engine_error = Some(e)).ok();
+                (Some(player), video)
+            }
+            Ok(Err(e)) => {
+                engine_error = Some(e);
+                (None, None)
+            }
+            Err(_) => {
+                engine_error = Some("the mpv thread failed".into());
+                (None, None)
+            }
+        };
+        if let Some(e) = &engine_error {
+            log::error!("{e}");
+        }
+        log::debug!("player ready at {:.0} ms", crate::since_start());
+
+        let mut updates = Updates::new(settings.check_updates, settings.last_update_check);
+        updates.start_if_due(ctx);
+        let mut about = AboutDialog::default();
+        about.lang = settings.language;
+        let mut app = Self {
+            settings,
+            player,
+            video,
+            engine_error,
+            file_error: None,
+            playlist: Playlist::default(),
+            about,
+            settings_dialog: SettingsDialog::default(),
+            updates,
+            osd: OsdLine::default(),
+            hwnd,
+            icon: None,
+            seek_drag: None,
+            last_received: None,
+            shown_title: String::new(),
+            cloak,
+            pending: Vec::new(),
+            first_frame_logged: false,
+            fullscreen: false,
+        };
+        app.open(files);
+        app
+    }
+
+    fn state(&self) -> State {
+        self.player
+            .as_ref()
+            .map(|p| p.state.clone())
+            .unwrap_or_default()
+    }
+
+    /// Replace the playlist with `paths` and play the first. One file
+    /// brings the media files of its folder along when the setting says so.
+    fn open(&mut self, paths: Vec<PathBuf>) {
+        let Some(target) = paths.first().cloned() else {
+            return;
+        };
+        let list = if paths.len() == 1 && self.settings.fill_playlist && target.is_file() {
+            playlist::folder_of(&target)
+        } else {
+            paths
+        };
+        self.playlist.replace(list);
+        let index = self
+            .playlist
+            .items()
+            .iter()
+            .position(|p| *p == target)
+            .unwrap_or(0);
+        self.play(index);
+    }
+
+    /// Append `paths` to the playlist; play the first of them if nothing
+    /// is playing.
+    fn add(&mut self, paths: Vec<PathBuf>) {
+        let first = self.playlist.add(paths);
+        if let Some(first) = first
+            && self.state().idle
+        {
+            self.play(first);
+        }
+    }
+
+    /// Play playlist entry `index`.
+    fn play(&mut self, index: usize) {
+        let Some(path) = self.playlist.set_current(index).map(Path::to_path_buf) else {
+            return;
+        };
+        self.playlist.selected = Some(index);
+        self.file_error = None;
+        log::debug!(
+            "loading {} at {:.0} ms",
+            path.display(),
+            crate::since_start()
+        );
+        if let Some(player) = &mut self.player {
+            player.load(&path);
+        }
+    }
+
+    /// Ask for media files to play (`add`: append them to the playlist).
+    fn pick_files(&mut self, frame: &eframe::Frame, add: bool) {
+        let mut dialog = rfd::FileDialog::new()
+            .set_parent(frame)
+            .set_title(if add {
+                tr!("Add to the playlist", "Добавить в список")
+            } else {
+                tr!("Open", "Открыть")
+            })
+            .add_filter(tr!("Media files", "Медиафайлы"), playlist::MEDIA_EXTENSIONS)
+            .add_filter(tr!("All files", "Все файлы"), &["*"]);
+        if let Some(dir) = self.playlist.current_path().and_then(Path::parent) {
+            dialog = dialog.set_directory(dir);
+        }
+        let Some(files) = dialog.pick_files() else {
+            return;
+        };
+        if add {
+            self.add(files);
+        } else {
+            self.open(files);
+        }
+    }
+
+    /// Seek by `delta` seconds and say so on the OSD.
+    fn seek_by(&mut self, delta: f64, how: Seek) {
+        let Some(player) = &mut self.player else {
+            return;
+        };
+        if player.state.idle {
+            return;
+        }
+        player.seek_by(delta, how);
+        let s = &player.state;
+        let target = s.time.unwrap_or(0.0) + delta;
+        let time = s.duration.map_or(target, |d| target.min(d)).max(0.0);
+        self.osd.show(Osd::Seek {
+            delta,
+            exact: how == Seek::Exact,
+            time,
+            duration: s.duration,
+        });
+    }
+
+    fn seek_to(&mut self, seconds: f64, how: Seek) {
+        let Some(player) = &mut self.player else {
+            return;
+        };
+        if player.state.idle {
+            return;
+        }
+        player.seek_to(seconds, how);
+        self.osd.show(Osd::Jump {
+            time: seconds,
+            duration: player.state.duration,
+        });
+    }
+
+    fn set_fullscreen(&mut self, ctx: &egui::Context, frame: &eframe::Frame, on: bool) {
+        if on != frameless::is_fullscreen(ctx) {
+            frameless::set_fullscreen(ctx, frame, on);
+        }
+    }
+
+    /// Run a command of a key, a button or a menu.
+    fn run(&mut self, ctx: &egui::Context, frame: &eframe::Frame, cmd: Cmd) {
+        let state = self.state();
+        match cmd {
+            Cmd::TogglePause => {
+                if state.idle {
+                    // After Stop or a failed file: play the current entry again.
+                    if let Some(i) = self
+                        .playlist
+                        .current()
+                        .or((!self.playlist.is_empty()).then_some(0))
+                    {
+                        self.play(i);
+                    } else {
+                        self.pick_files(frame, false);
+                    }
+                } else if let Some(player) = &mut self.player {
+                    player.toggle_pause();
+                    self.osd.show(Osd::Pause(player.state.paused));
+                }
+            }
+            Cmd::Stop => {
+                if let Some(player) = &mut self.player {
+                    player.stop();
+                }
+            }
+            Cmd::SeekShort(d) => self.seek_by(d * self.settings.seek_short, Seek::Keyframe),
+            Cmd::SeekLong(d) => self.seek_by(d * self.settings.seek_long, Seek::Keyframe),
+            Cmd::SeekExact(d) => self.seek_by(d, Seek::Exact),
+            Cmd::SeekTo { seconds, exact } => {
+                self.seek_to(seconds, if exact { Seek::Exact } else { Seek::Keyframe });
+            }
+            Cmd::Frame { forward } => {
+                if let Some(player) = &mut self.player
+                    && !player.state.idle
+                {
+                    player.frame_step(forward);
+                    self.osd.show(Osd::Frame { forward });
+                }
+            }
+            Cmd::Start => self.seek_to(0.0, Seek::Keyframe),
+            Cmd::End => {
+                if let Some(d) = state.duration {
+                    self.seek_to(d, Seek::Keyframe);
+                }
+            }
+            Cmd::Volume(d) => self.run(ctx, frame, Cmd::SetVolume(state.volume + d)),
+            Cmd::SetVolume(v) => {
+                if let Some(player) = &mut self.player {
+                    player.set_volume(v);
+                    self.osd.show(Osd::Volume(player.state.volume));
+                }
+            }
+            Cmd::ToggleMute => {
+                if let Some(player) = &mut self.player {
+                    player.set_mute(!player.state.mute);
+                    self.osd.show(Osd::Mute(player.state.mute));
+                }
+            }
+            Cmd::ToggleFullscreen => {
+                self.set_fullscreen(ctx, frame, !frameless::is_fullscreen(ctx))
+            }
+            Cmd::LeaveFullscreen => self.set_fullscreen(ctx, frame, false),
+            Cmd::Next => {
+                if let Some(i) = self.playlist.next() {
+                    self.play(i);
+                }
+            }
+            Cmd::Prev => {
+                if let Some(i) = self.playlist.prev() {
+                    self.play(i);
+                }
+            }
+            Cmd::Open => self.pick_files(frame, false),
+            Cmd::TogglePlaylist => self.settings.playlist_visible = !self.settings.playlist_visible,
+            Cmd::About => self.about.toggle(),
+            Cmd::Settings => self.settings_dialog.toggle(),
+            Cmd::Delete => {
+                if self.settings.playlist_visible
+                    && let Some(i) = self.playlist.selected
+                {
+                    self.playlist.remove(i);
+                }
+            }
+            Cmd::PlayIndex(i) => self.play(i),
+            Cmd::PlaylistAdd => self.pick_files(frame, true),
+            Cmd::PlaylistRemove(i) => self.playlist.remove(i),
+            Cmd::PlaylistSort => self.playlist.sort(),
+            Cmd::PlaylistClear => self.playlist.clear(),
+            Cmd::Minimize => ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)),
+            Cmd::ToggleMaximize => {
+                if !frameless::is_fullscreen(ctx) {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(
+                        !frameless::is_maximized(ctx),
+                    ));
+                }
+            }
+            Cmd::Close => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+        }
+    }
+
+    /// Take what the player and other starts have to say; also called
+    /// while the window is minimised, so a playlist goes on.
+    fn take_events(&mut self) {
+        let received = crate::instance::take();
+        if let Some(&(_, last)) = received.last() {
+            let batch = self
+                .last_received
+                .is_some_and(|t| received[0].1.duration_since(t) < SAME_BATCH);
+            let paths: Vec<PathBuf> = received.into_iter().map(|(p, _)| p).collect();
+            if batch {
+                self.add(paths);
+            } else {
+                self.open(paths);
+            }
+            self.last_received = Some(last);
+        }
+        let events = match &mut self.player {
+            Some(player) => player.poll(),
+            None => return,
+        };
+        for event in events {
+            match event {
+                Happened::FileLoaded => {
+                    log::debug!("file loaded at {:.0} ms", crate::since_start());
+                    self.file_error = None;
+                }
+                Happened::Eof => {
+                    if let Some(i) = self.playlist.next() {
+                        self.play(i);
+                    }
+                }
+                Happened::Failed(e) => {
+                    let name = self.playlist.current_path().and_then(Path::file_name);
+                    let name = name
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    log::warn!("cannot play {name}: {e}");
+                    self.osd.show(Osd::Text(tr!(
+                        format!("Cannot play {name}: {e}"),
+                        format!("Не удалось воспроизвести {name}: {e}")
+                    )));
+                    self.file_error = Some(e);
+                    // A broken file in a list is skipped.
+                    if let Some(i) = self.playlist.next() {
+                        self.play(i);
+                    }
+                }
+                Happened::Restarted => {}
+                Happened::Shutdown => {
+                    self.engine_error = Some("mpv has shut down".into());
+                }
+            }
+        }
+    }
+
+    /// Show the window once it is maximized (see `win::show_maximized`).
+    fn uncloak(&mut self, ctx: &egui::Context) {
+        let Some((until, frame)) = self.cloak else {
+            return;
+        };
+        let ready = ctx.cumulative_frame_nr() > frame && frameless::is_maximized(ctx);
+        if ready || Instant::now() >= until {
+            if let Some(hwnd) = self.hwnd {
+                win::cloak(hwnd, false);
+            }
+            self.cloak = None;
+        } else {
+            ctx.request_repaint();
+        }
+    }
+
+    /// The name of what is playing, for the title row and the window.
+    fn title(&self, state: &State) -> String {
+        if state.idle && self.playlist.current_path().is_none() {
+            return crate::APP_NAME.to_owned();
+        }
+        self.playlist
+            .current_path()
+            .and_then(Path::file_name)
+            .map(|n| n.to_string_lossy().into_owned())
+            .or_else(|| state.title.clone())
+            .unwrap_or_else(|| crate::APP_NAME.to_owned())
+    }
+
+    /// The picture, or what stands in for it; the mouse on it.
+    fn video_area(
+        &mut self,
+        ui: &mut egui::Ui,
+        frame: &mut eframe::Frame,
+        state: &State,
+        cmds: &mut Vec<Cmd>,
+    ) {
+        let rect = ui.max_rect();
+        ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
+        let response = ui.interact(rect, ui.id().with("video"), Sense::CLICK);
+        let visible = state.video().is_some() && self.video.is_some();
+        if !state.idle
+            && let Some(video) = &mut self.video
+        {
+            video.show(ui, frame, rect, visible);
+        }
+        if visible {
+            if !self.first_frame_logged {
+                self.first_frame_logged = true;
+                log::debug!("video size known at {:.0} ms", crate::since_start());
+            }
+        } else {
+            self.placeholder(ui, rect, state);
+        }
+        if ui::double_clicked(&response) {
+            cmds.push(Cmd::ToggleFullscreen);
+        }
+        if response.hovered() {
+            let notches: f32 = ui.input(|i| {
+                i.events
+                    .iter()
+                    .filter_map(|e| match e {
+                        egui::Event::MouseWheel { delta, .. } => Some(delta.y.signum()),
+                        _ => None,
+                    })
+                    .sum()
+            });
+            if notches != 0.0 {
+                cmds.push(Cmd::Volume(notches as f64 * input::VOLUME_STEP));
+            }
+        }
+        response.context_menu(|ui| context_menu(ui, state, self.settings.playlist_visible, cmds));
+        if ui.input(|i| !i.raw.hovered_files.is_empty()) {
+            ui.painter()
+                .rect_filled(rect.shrink(12.0), 8.0, Color32::from_black_alpha(160));
+            ui.painter().rect_stroke(
+                rect.shrink(12.0),
+                8.0,
+                egui::Stroke::new(2.0, style::ACCENT),
+                egui::StrokeKind::Inside,
+            );
+            ui.painter().text(
+                rect.center(),
+                Align2::CENTER_CENTER,
+                tr!("Drop to play", "Отпустите, чтобы воспроизвести"),
+                FontId::proportional(20.0),
+                style::TEXT_BRIGHT,
+            );
+        }
+        self.osd.paint(ui.ctx(), rect, state);
+    }
+
+    /// The black area without a picture: the logo and a hint, the title of
+    /// an audio file, or why nothing plays.
+    fn placeholder(&mut self, ui: &egui::Ui, rect: Rect, state: &State) {
+        let icon = ui::app_icon(ui.ctx(), 96.0, &mut self.icon);
+        let painter = ui.painter_at(rect);
+        let centre = rect.center();
+        let size = (rect.height() * 0.22).clamp(32.0, 96.0);
+        let icon_rect =
+            Rect::from_center_size(centre - egui::vec2(0.0, size * 0.4), egui::vec2(size, size));
+        let tint = if state.idle {
+            Color32::from_white_alpha(70)
+        } else {
+            Color32::WHITE
+        };
+        painter.image(
+            icon.id(),
+            icon_rect,
+            Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            tint,
+        );
+        let below = icon_rect.center_bottom() + egui::vec2(0.0, 14.0);
+        let (text, color) = if let Some(e) = &self.engine_error {
+            (
+                tr!(
+                    format!(
+                        "The player cannot work: {e}.\nlibmpv-2.dll must be next to metal_player.exe."
+                    ),
+                    format!(
+                        "Воспроизведение невозможно: {e}.\nРядом с metal_player.exe нужна libmpv-2.dll."
+                    )
+                ),
+                style::ERROR,
+            )
+        } else if let Some(e) = self.file_error.as_ref().filter(|_| state.idle) {
+            (
+                tr!(
+                    format!("Cannot play the file: {e}"),
+                    format!("Не удалось воспроизвести файл: {e}")
+                ),
+                style::ERROR,
+            )
+        } else if state.idle {
+            (
+                tr!(
+                    "Drop a file here, or open one with Ctrl+O",
+                    "Перетащите файл сюда или откройте его через Ctrl+O"
+                )
+                .to_owned(),
+                style::TEXT_WEAK,
+            )
+        } else {
+            // An audio file: its title.
+            (state.title.clone().unwrap_or_default(), style::TEXT)
+        };
+        painter.text(
+            below,
+            Align2::CENTER_TOP,
+            text,
+            FontId::proportional(14.0),
+            color,
+        );
+    }
+
+    /// The control bar over the picture in fullscreen, while the mouse
+    /// moves or rests near the bottom; the pointer hides with it.
+    fn fullscreen_controls(&mut self, ctx: &egui::Context, state: &State, cmds: &mut Vec<Cmd>) {
+        let screen = ctx.content_rect();
+        let rest =
+            Duration::from_secs_f32(ctx.input(|i| i.pointer.time_since_last_movement()).max(0.0));
+        let near_bottom = ctx
+            .pointer_hover_pos()
+            .is_some_and(|p| p.y > screen.bottom() - 90.0);
+        let show = rest < HIDE_AFTER || near_bottom || self.seek_drag.is_some();
+        if !show {
+            ctx.set_cursor_icon(CursorIcon::None);
+            return;
+        }
+        if rest < HIDE_AFTER {
+            ctx.request_repaint_after(HIDE_AFTER - rest);
+        }
+        let bar = ui::controls::Bar {
+            state,
+            playlist_visible: false,
+            fullscreen: true,
+            has_prev: self.playlist.prev().is_some(),
+            has_next: self.playlist.next().is_some(),
+            drag: &mut self.seek_drag,
+        };
+        egui::Area::new(egui::Id::new("fullscreen_controls"))
+            .order(egui::Order::Foreground)
+            .anchor(Align2::LEFT_BOTTOM, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                egui::Frame::NONE
+                    .fill(Color32::from_rgba_unmultiplied(0x17, 0x19, 0x1d, 225))
+                    .inner_margin(egui::Margin {
+                        left: 0,
+                        right: 0,
+                        top: 6,
+                        bottom: 4,
+                    })
+                    .show(ui, |ui| {
+                        ui.set_width(screen.width());
+                        cmds.extend(ui::controls::bar(ui, bar));
+                    });
+            });
+    }
+
+    fn update_window_title(&mut self, ctx: &egui::Context, title: &str) {
+        let wanted = if title == crate::APP_NAME {
+            title.to_owned()
+        } else {
+            format!("{title} - {}", crate::APP_NAME)
+        };
+        if self.shown_title != wanted {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(wanted.clone()));
+            self.shown_title = wanted;
+        }
+    }
+}
+
+/// The menu of a right click on the picture.
+fn context_menu(ui: &mut egui::Ui, state: &State, playlist_visible: bool, cmds: &mut Vec<Cmd>) {
+    let mut item = |ui: &mut egui::Ui, text: String, shortcut: &str, cmd: Cmd| {
+        let button = egui::Button::new(text).shortcut_text(shortcut);
+        if ui.add(button).clicked() {
+            cmds.push(cmd);
+            ui.close();
+        }
+    };
+    item(ui, tr!("Open…", "Открыть…").into(), "Ctrl+O", Cmd::Open);
+    ui.separator();
+    let pause = if state.paused || state.idle {
+        tr!("Play", "Воспроизвести")
+    } else {
+        tr!("Pause", "Пауза")
+    };
+    item(ui, pause.into(), tr!("Space", "Пробел"), Cmd::TogglePause);
+    item(ui, tr!("Stop", "Стоп").into(), "S", Cmd::Stop);
+    item(
+        ui,
+        tr!("Previous file", "Предыдущий файл").into(),
+        "PgUp",
+        Cmd::Prev,
+    );
+    item(
+        ui,
+        tr!("Next file", "Следующий файл").into(),
+        "PgDn",
+        Cmd::Next,
+    );
+    ui.separator();
+    item(
+        ui,
+        tr!("Fullscreen", "Полный экран").into(),
+        "Enter",
+        Cmd::ToggleFullscreen,
+    );
+    let list = if playlist_visible {
+        tr!("Hide the playlist", "Скрыть список")
+    } else {
+        tr!("Show the playlist", "Показать список")
+    };
+    item(ui, list.into(), "L", Cmd::TogglePlaylist);
+    let mute = if state.mute {
+        tr!("Sound on", "Включить звук")
+    } else {
+        tr!("Mute", "Без звука")
+    };
+    item(ui, mute.into(), "M", Cmd::ToggleMute);
+    ui.separator();
+    item(
+        ui,
+        tr!("Settings…", "Настройки…").into(),
+        "F5",
+        Cmd::Settings,
+    );
+    item(ui, tr!("About", "О программе").into(), "F1", Cmd::About);
+}
+
+impl eframe::App for App {
+    /// Every frame, and alone while the window is minimised: the player's
+    /// events keep a playlist going.
+    fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.updates.poll();
+        self.take_events();
+    }
+
+    fn ui(&mut self, root_ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        let ctx = root_ui.ctx().clone();
+        self.uncloak(&ctx);
+        let fullscreen = frameless::is_fullscreen(&ctx);
+        self.fullscreen = fullscreen;
+        let maximized = frameless::is_maximized(&ctx);
+        let state = self.state();
+        let mut cmds = std::mem::take(&mut self.pending);
+
+        let dropped: Vec<PathBuf> = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|f| f.path().to_path_buf())
+                .collect()
+        });
+        if !dropped.is_empty() {
+            self.open(dropped);
+        }
+
+        // The keys are the player's: no widget keeps the focus to take
+        // Space or Enter as a click. A modal takes the keys while open.
+        if !self.about.open && !self.settings_dialog.open && !egui::Popup::is_any_open(&ctx) {
+            if let Some(id) = ctx.memory(|m| m.focused()) {
+                ctx.memory_mut(|m| m.surrender_focus(id));
+            }
+            cmds.extend(input::keys(&ctx));
+        }
+
+        if !fullscreen && !maximized {
+            frameless::resize_edges(root_ui);
+        }
+        let title = self.title(&state);
+        if !fullscreen {
+            let icon = ui::app_icon(&ctx, 16.0, &mut self.icon);
+            let newer = self.updates.newer().map(str::to_owned);
+            egui::Panel::top("title")
+                .exact_size(style::TITLE_HEIGHT)
+                .frame(egui::Frame::NONE.fill(style::TITLE_BG))
+                .show_separator_line(false)
+                .show(root_ui, |ui| {
+                    if let Some(cmd) =
+                        ui::title::row(ui, &title, maximized, &icon, newer.as_deref())
+                    {
+                        cmds.push(cmd);
+                    }
+                });
+            let bar = ui::controls::Bar {
+                state: &state,
+                playlist_visible: self.settings.playlist_visible,
+                fullscreen: false,
+                has_prev: self.playlist.prev().is_some(),
+                has_next: self.playlist.next().is_some(),
+                drag: &mut self.seek_drag,
+            };
+            egui::Panel::bottom("controls")
+                .frame(
+                    egui::Frame::NONE
+                        .fill(style::BAR_BG)
+                        .stroke(egui::Stroke::new(1.0, style::LINE))
+                        .inner_margin(egui::Margin {
+                            left: 0,
+                            right: 0,
+                            top: 4,
+                            bottom: 2,
+                        }),
+                )
+                .show_separator_line(false)
+                .show(root_ui, |ui| cmds.extend(ui::controls::bar(ui, bar)));
+            if self.settings.playlist_visible {
+                egui::Panel::right("playlist")
+                    .resizable(true)
+                    .default_size(260.0)
+                    .size_range(160.0..=600.0)
+                    .frame(egui::Frame::NONE.fill(style::PANEL_BG).inner_margin(6))
+                    .show(root_ui, |ui| {
+                        cmds.extend(ui::playlist::panel(ui, &mut self.playlist))
+                    });
+            }
+        }
+        egui::CentralPanel::no_frame()
+            .show(root_ui, |ui| self.video_area(ui, frame, &state, &mut cmds));
+        if fullscreen {
+            self.fullscreen_controls(&ctx, &state, &mut cmds);
+        }
+
+        // About and the settings edit the same language: About's copy is
+        // the one saved.
+        self.settings.language = self.about.lang;
+        let changed = self.settings_dialog.show(
+            &ctx,
+            &mut self.settings,
+            &mut self.updates,
+            state.hwdec.as_deref(),
+        );
+        self.about.lang = self.settings.language;
+        if changed.hwdec
+            && let Some(player) = &mut self.player
+        {
+            player.set_hwdec(self.settings.hwdec);
+        }
+        self.about.show(&ctx, &mut self.updates);
+
+        for cmd in cmds {
+            self.run(&ctx, frame, cmd);
+        }
+        self.update_window_title(&ctx, &title);
+    }
+
+    /// Called by eframe every `auto_save_interval` and on exit.
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        self.settings.language = self.about.lang;
+        self.settings.check_updates = self.updates.enabled;
+        self.settings.last_update_check = self.updates.last_check;
+        if let Some(player) = &self.player {
+            self.settings.volume = player.state.volume;
+            self.settings.mute = player.state.mute;
+        }
+        // The restored rectangle of a maximized window (eframe saves the
+        // maximized size); not in fullscreen, where it is the screen.
+        if let Some(hwnd) = self.hwnd.filter(|_| !self.fullscreen)
+            && let Some(r) = win::normal_rect(hwnd)
+        {
+            self.settings.window_normal = Some(r);
+        }
+        self.settings.save(storage);
+    }
+
+    /// The render context goes first, while the OpenGL context lives, then
+    /// the core.
+    fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
+        if let Some(video) = &mut self.video {
+            video.free(gl);
+        }
+        self.video = None;
+        self.player = None;
+    }
+
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        [0.0, 0.0, 0.0, 1.0]
+    }
+}
