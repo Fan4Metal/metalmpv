@@ -1,5 +1,5 @@
 //! The control bar under the picture: the seek bar across the whole
-//! width, below it the time on the left, the buttons
+//! width (with marks at the chapters' starts), below it the time on the left, the buttons
 //! in the middle with Play in their centre, the volume on the right.
 
 use egui::{Align2, Color32, FontId, Rect, Response, Sense, Ui, pos2, vec2};
@@ -15,6 +15,8 @@ pub struct Bar<'a> {
     pub fullscreen: bool,
     pub has_prev: bool,
     pub has_next: bool,
+    /// Marks at the chapters' starts on the seek bar.
+    pub chapter_marks: bool,
     /// The seek bar is being dragged: the position under the pointer.
     pub drag: &'a mut Option<f64>,
 }
@@ -27,7 +29,13 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
     crate::frameless::drag_area(ui, free, ui.id().with("bar_drag"), Sense::hover());
     let width = ui.available_width();
     let (seek_rect, _) = ui.allocate_exact_size(vec2(width, style::SEEK_HEIGHT), Sense::hover());
-    if let Some(cmd) = seek_bar(ui, seek_rect.shrink2(vec2(10.0, 0.0)), bar.state, bar.drag) {
+    if let Some(cmd) = seek_bar(
+        ui,
+        seek_rect.shrink2(vec2(10.0, 0.0)),
+        bar.state,
+        bar.chapter_marks,
+        bar.drag,
+    ) {
         out.push(cmd);
     }
     let (row, _) = ui.allocate_exact_size(vec2(width, style::BUTTONS_HEIGHT), Sense::hover());
@@ -279,9 +287,16 @@ fn play_button(ui: &mut Ui, rect: Rect, state: &State) -> Response {
 }
 
 /// The seek bar: a click or a drag moves there (on a keyframe; the exact
-/// frame when the button is let go). The position under the pointer is
-/// shown while hovering.
-fn seek_bar(ui: &mut Ui, rect: Rect, state: &State, drag: &mut Option<f64>) -> Option<Cmd> {
+/// frame when the button is let go). The position under the pointer and
+/// its chapter are shown while hovering; `marks` cuts the bar at the
+/// chapters' starts.
+fn seek_bar(
+    ui: &mut Ui,
+    rect: Rect,
+    state: &State,
+    marks: bool,
+    drag: &mut Option<f64>,
+) -> Option<Cmd> {
     let duration = state.duration.filter(|_| !state.idle);
     let sense = if duration.is_some() {
         Sense::click_and_drag()
@@ -337,11 +352,32 @@ fn seek_bar(ui: &mut Ui, rect: Rect, state: &State, drag: &mut Option<f64>) -> O
         );
         painter.rect_filled(done, 3.0, style::ACCENT);
     }
+    // The chapters' starts as gaps in the bar (not the first, at the
+    // start, nor one at the very end).
+    if marks && let Some(d) = duration {
+        for c in state
+            .chapters
+            .iter()
+            .filter(|c| c.time > 0.5 && c.time < d - 0.5)
+        {
+            let x = track.left() + track.width() * (c.time / d) as f32;
+            let gap = Rect::from_center_size(pos2(x, track.center().y), vec2(2.0, track.height()));
+            painter.rect_filled(gap, 0.0, style::BAR_BG);
+        }
+    }
     if duration.is_some() && (response.hovered() || drag.is_some()) {
         let x = track.left() + track.width() * fraction;
         painter.circle_filled(pos2(x, track.center().y), 6.0, style::TEXT_BRIGHT);
         if let (Some(d), Some(f)) = (duration, pointer_fraction) {
-            response.on_hover_text_at_pointer(crate::format::time(Some(f * d), d >= 3600.0));
+            let mut text = crate::format::time(Some(f * d), d >= 3600.0);
+            if let Some(i) = crate::chapters::current(&state.chapters, f * d) {
+                text = format!("{text} · {}", state.chapters[i].name(i + 1));
+            }
+            // At once, without the tooltip delay: it follows the pointer
+            // along the bar, as a time readout.
+            egui::Tooltip::for_widget(&response)
+                .at_pointer()
+                .show(|ui| ui.add(egui::Label::new(text).extend()));
         }
     }
     cmd

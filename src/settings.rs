@@ -22,6 +22,7 @@ const SEEK_LONG: &str = "seek_long";
 const HWDEC: &str = "hwdec";
 const FILL_PLAYLIST: &str = "fill_playlist_from_folder";
 const PLAYLIST_VISIBLE: &str = "playlist_visible";
+const CHAPTER_MARKS: &str = "chapter_marks";
 const WINDOW_NORMAL: &str = "window_normal";
 
 /// The longest seek step the settings accept, in seconds.
@@ -106,6 +107,8 @@ pub struct Settings {
     /// Opening one file lists the media files of its folder.
     pub fill_playlist: bool,
     pub playlist_visible: bool,
+    /// Marks at the chapters' starts on the seek bar.
+    pub chapter_marks: bool,
     /// The window's restored rectangle in pixels (left, top, right,
     /// bottom) while it is maximized: eframe saves the maximized size.
     pub window_normal: Option<[i32; 4]>,
@@ -124,6 +127,7 @@ impl Default for Settings {
             hwdec: true,
             fill_playlist: false,
             playlist_visible: false,
+            chapter_marks: true,
             window_normal: None,
         }
     }
@@ -160,6 +164,7 @@ impl Settings {
             hwdec: flag(HWDEC, d.hwdec),
             fill_playlist: flag(FILL_PLAYLIST, d.fill_playlist),
             playlist_visible: flag(PLAYLIST_VISIBLE, d.playlist_visible),
+            chapter_marks: flag(CHAPTER_MARKS, d.chapter_marks),
             window_normal: get(WINDOW_NORMAL).and_then(|v| {
                 let n: Vec<i32> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
                 <[i32; 4]>::try_from(n)
@@ -180,6 +185,7 @@ impl Settings {
         storage.set_string(HWDEC, self.hwdec.to_string());
         storage.set_string(FILL_PLAYLIST, self.fill_playlist.to_string());
         storage.set_string(PLAYLIST_VISIBLE, self.playlist_visible.to_string());
+        storage.set_string(CHAPTER_MARKS, self.chapter_marks.to_string());
         match self.window_normal {
             Some(r) => storage.set_string(
                 WINDOW_NORMAL,
@@ -225,6 +231,7 @@ mod tests {
             hwdec: false,
             fill_playlist: true,
             playlist_visible: true,
+            chapter_marks: false,
             window_normal: Some([10, 20, 1010, 720]),
         };
         let mut storage = MemStorage::default();

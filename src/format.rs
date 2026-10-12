@@ -106,6 +106,12 @@ pub enum Osd {
         audio: bool,
         now: Option<String>,
     },
+    /// A move to the start of chapter `number` (from 1), named by its title
+    /// if it has one.
+    Chapter {
+        number: usize,
+        title: Option<String>,
+    },
     /// Free text: a file name, an error.
     Text(String),
 }
@@ -182,6 +188,13 @@ impl Osd {
                 (false, None, false) => "[ Subtitles off ]".into(),
                 (false, None, true) => "[ Субтитры выключены ]".into(),
             },
+            Osd::Chapter { number, title } => {
+                let chapter = if ru { "Глава" } else { "Chapter" };
+                match title {
+                    Some(t) => format!("[ {chapter} {number}: {t} ]"),
+                    None => format!("[ {chapter} {number} ]"),
+                }
+            }
             Osd::Text(t) => t.clone(),
         }
     }
@@ -262,5 +275,14 @@ mod tests {
             .text_in(Lang::En),
             "[ Subtitles off ]"
         );
+        let chapter = |title: Option<&str>| Osd::Chapter {
+            number: 3,
+            title: title.map(str::to_owned),
+        };
+        assert_eq!(
+            chapter(Some("The Quickening")).text_in(Lang::Ru),
+            "[ Глава 3: The Quickening ]"
+        );
+        assert_eq!(chapter(None).text_in(Lang::En), "[ Chapter 3 ]");
     }
 }

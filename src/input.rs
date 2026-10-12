@@ -55,6 +55,10 @@ pub enum Cmd {
     SelectSub(Option<i64>),
     /// Subtitles from a file of their own.
     LoadSubtitles,
+    /// Go to the start of chapter `n` (from 0).
+    Chapter(usize),
+    /// Show or hide the chapter marks on the seek bar.
+    ToggleChapterMarks,
     Minimize,
     ToggleMaximize,
     Close,

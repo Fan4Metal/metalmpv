@@ -1,16 +1,26 @@
 //! The playlist panel on the right: a row of icon buttons (add, remove,
 //! sort, clear; their names in the tooltips) and the list; a click selects
-//! an entry, a double click plays it.
+//! an entry, a double click plays it. Under it, when the playing file has
+//! chapters, a section of them that folds: a click goes to a chapter.
 
-use egui::{Color32, Painter, Pos2, Rect, Response, Sense, Ui, vec2};
+use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Response, Sense, Ui, pos2, vec2};
 
 use super::{icons, style};
+use crate::chapters::{self, Chapter};
 use crate::input::Cmd;
 use crate::playlist::Playlist;
 
 const ROW: f32 = 22.0;
+/// The height of the chapters' header.
+const HEADER: f32 = 26.0;
 
-pub fn panel(ui: &mut Ui, playlist: &mut Playlist) -> Vec<Cmd> {
+/// The panel; `chapters` and `time` are the playing file's.
+pub fn panel(
+    ui: &mut Ui,
+    playlist: &mut Playlist,
+    chapters: &[Chapter],
+    time: Option<f64>,
+) -> Vec<Cmd> {
     let mut out = Vec::new();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
@@ -50,6 +60,34 @@ pub fn panel(ui: &mut Ui, playlist: &mut Playlist) -> Vec<Cmd> {
         }
     });
     ui.add_space(2.0);
+    // The chapters take up to half of the height, the files the rest.
+    let open_id = ui.id().with("chapters_open");
+    let open = ui.data_mut(|d| *d.get_persisted_mut_or(open_id, true));
+    let chapters_height = if chapters.is_empty() {
+        0.0
+    } else if open {
+        HEADER + (chapters.len() as f32 * ROW + 4.0).min(ui.available_height() * 0.5)
+    } else {
+        HEADER
+    };
+    let files = vec2(
+        ui.available_width(),
+        ui.available_height() - chapters_height,
+    );
+    ui.allocate_ui(files, |ui| files_list(ui, playlist, &mut out));
+    if !chapters.is_empty() {
+        if chapters_header(ui, chapters.len(), open).clicked() {
+            ui.data_mut(|d| d.insert_persisted(open_id, !open));
+        }
+        if open {
+            chapters_list(ui, chapters, time, &mut out);
+        }
+    }
+    out
+}
+
+/// The files, filling `ui`.
+fn files_list(ui: &mut Ui, playlist: &mut Playlist, out: &mut Vec<Cmd>) {
     let frame = egui::Frame::new()
         .fill(style::LIST_BG)
         .corner_radius(3.0)
@@ -68,6 +106,7 @@ pub fn panel(ui: &mut Ui, playlist: &mut Playlist) -> Vec<Cmd> {
         }
         let total = playlist.len();
         egui::ScrollArea::vertical()
+            .id_salt("files")
             .auto_shrink([false, false])
             .show_rows(ui, ROW, total, |ui, range| {
                 for i in range {
@@ -121,7 +160,122 @@ pub fn panel(ui: &mut Ui, playlist: &mut Playlist) -> Vec<Cmd> {
                 }
             });
     });
-    out
+}
+
+/// The header of the chapters: an arrow (down while open), "Chapters",
+/// their number; a click folds or unfolds them.
+fn chapters_header(ui: &mut Ui, count: usize, open: bool) -> Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), HEADER), Sense::CLICK);
+    if response.hovered() {
+        ui.painter()
+            .rect_filled(rect.shrink2(vec2(0.0, 2.0)), 3.0, style::HOVER);
+    }
+    let painter = ui.painter();
+    let o = pos2(rect.left() + 12.0, rect.center().y);
+    let s = 3.5;
+    let arrow = if open {
+        vec![
+            o + vec2(-s, -s * 0.6),
+            o + vec2(s, -s * 0.6),
+            o + vec2(0.0, s * 0.7),
+        ]
+    } else {
+        vec![
+            o + vec2(-s * 0.6, -s),
+            o + vec2(s * 0.7, 0.0),
+            o + vec2(-s * 0.6, s),
+        ]
+    };
+    painter.add(egui::Shape::convex_polygon(
+        arrow,
+        style::TEXT_WEAK,
+        egui::Stroke::NONE,
+    ));
+    painter.text(
+        pos2(rect.left() + 24.0, rect.center().y),
+        Align2::LEFT_CENTER,
+        tr!("Chapters", "Главы"),
+        FontId::proportional(13.0),
+        style::TEXT,
+    );
+    painter.text(
+        pos2(rect.right() - 6.0, rect.center().y),
+        Align2::RIGHT_CENTER,
+        count.to_string(),
+        FontId::proportional(12.0),
+        style::TEXT_WEAK,
+    );
+    response.on_hover_text(if open {
+        tr!("Hide the chapters", "Свернуть главы")
+    } else {
+        tr!("Show the chapters", "Развернуть главы")
+    })
+}
+
+/// The chapters, filling `ui`: the number, the name, the start on the
+/// right; the playing one in the playing entry's colour.
+fn chapters_list(ui: &mut Ui, chapters: &[Chapter], time: Option<f64>, out: &mut Vec<Cmd>) {
+    let current = time.and_then(|t| chapters::current(chapters, t));
+    let long = chapters.last().is_some_and(|c| c.time >= 3600.0);
+    let frame = egui::Frame::new()
+        .fill(style::LIST_BG)
+        .corner_radius(3.0)
+        .inner_margin(egui::Margin::same(2));
+    frame.show(ui, |ui| {
+        ui.set_min_size(ui.available_size());
+        egui::ScrollArea::vertical()
+            .id_salt("chapters")
+            .auto_shrink([false, false])
+            .show_rows(ui, ROW, chapters.len(), |ui, range| {
+                for i in range {
+                    let chapter = &chapters[i];
+                    let (rect, response) =
+                        ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
+                    if response.hovered() {
+                        ui.painter().rect_filled(rect, 2.0, style::HOVER);
+                    }
+                    let color = if current == Some(i) {
+                        style::CURRENT
+                    } else {
+                        style::TEXT
+                    };
+                    let painter = ui.painter_at(rect.shrink2(vec2(4.0, 0.0)));
+                    let font = FontId::proportional(13.0);
+                    let n = painter.text(
+                        rect.left_center() + vec2(6.0, 0.0),
+                        Align2::LEFT_CENTER,
+                        format!("{}.", i + 1),
+                        font.clone(),
+                        style::TEXT_WEAK,
+                    );
+                    let start = painter.text(
+                        rect.right_center() - vec2(6.0, 0.0),
+                        Align2::RIGHT_CENTER,
+                        crate::format::time(Some(chapter.time), long),
+                        FontId::monospace(11.5),
+                        style::TEXT_WEAK,
+                    );
+                    let name = chapter.name(i + 1);
+                    let text_left = n.right() + 6.0;
+                    let galley = ui.fonts_mut(|f| {
+                        let mut job =
+                            egui::text::LayoutJob::simple_singleline(name.clone(), font, color);
+                        job.wrap = egui::text::TextWrapping::truncate_at_width(
+                            start.left() - 8.0 - text_left,
+                        );
+                        f.layout_job(job)
+                    });
+                    painter.galley(
+                        pos2(text_left, rect.center().y - galley.size().y / 2.0),
+                        galley,
+                        color,
+                    );
+                    if response.on_hover_text(name).clicked() {
+                        out.push(Cmd::Chapter(i));
+                    }
+                }
+            });
+    });
 }
 
 /// A small button with no frame and an icon painted by `paint(painter,

@@ -386,6 +386,23 @@ impl App {
             Cmd::SeekTo { seconds, exact } => {
                 self.seek_to(seconds, if exact { Seek::Exact } else { Seek::Keyframe });
             }
+            Cmd::Chapter(i) => {
+                // Exact, as mpv's own chapter seeks: a keyframe seek would
+                // land before the start, in the chapter before.
+                if let Some(chapter) = state.chapters.get(i)
+                    && let Some(player) = &mut self.player
+                    && !player.state.idle
+                {
+                    player.seek_to(chapter.time, Seek::Exact);
+                    self.osd.show(Osd::Chapter {
+                        number: i + 1,
+                        title: chapter.title.clone(),
+                    });
+                }
+            }
+            Cmd::ToggleChapterMarks => {
+                self.settings.chapter_marks = !self.settings.chapter_marks;
+            }
             Cmd::Frame { forward } => {
                 if let Some(player) = &mut self.player
                     && !player.state.idle
@@ -607,7 +624,9 @@ impl App {
                 cmds.push(Cmd::Volume(notches as f64 * input::VOLUME_STEP));
             }
         }
-        response.context_menu(|ui| context_menu(ui, state, self.settings.playlist_visible, cmds));
+        let (playlist_visible, chapter_marks) =
+            (self.settings.playlist_visible, self.settings.chapter_marks);
+        response.context_menu(|ui| context_menu(ui, state, playlist_visible, chapter_marks, cmds));
         if ui.input(|i| !i.raw.hovered_files.is_empty()) {
             ui.painter()
                 .rect_filled(rect.shrink(12.0), 8.0, Color32::from_black_alpha(160));
@@ -757,6 +776,7 @@ impl App {
             fullscreen: true,
             has_prev: self.playlist.prev().is_some(),
             has_next: self.playlist.next().is_some(),
+            chapter_marks: self.settings.chapter_marks,
             drag: &mut self.seek_drag,
         };
         egui::Area::new(egui::Id::new("fullscreen_controls"))
@@ -798,7 +818,13 @@ fn start_icon_size(rect: Rect) -> f32 {
 }
 
 /// The menu of a right click on the picture.
-fn context_menu(ui: &mut egui::Ui, state: &State, playlist_visible: bool, cmds: &mut Vec<Cmd>) {
+fn context_menu(
+    ui: &mut egui::Ui,
+    state: &State,
+    playlist_visible: bool,
+    chapter_marks: bool,
+    cmds: &mut Vec<Cmd>,
+) {
     let mut item = |ui: &mut egui::Ui, text: String, shortcut: &str, cmd: Cmd| {
         let button = egui::Button::new(text).shortcut_text(shortcut);
         if ui.add(button).clicked() {
@@ -850,6 +876,7 @@ fn context_menu(ui: &mut egui::Ui, state: &State, playlist_visible: bool, cmds: 
     // Gathered apart: `item` holds `cmds` until its last use.
     let mut track_cmds = Vec::new();
     crate::ui::tracks::menus(ui, &state.tracks, &mut track_cmds);
+    chapters_menu(ui, state, chapter_marks, &mut track_cmds);
     ui.separator();
     item(
         ui,
@@ -859,6 +886,48 @@ fn context_menu(ui: &mut egui::Ui, state: &State, playlist_visible: bool, cmds: 
     );
     item(ui, tr!("About", "О программе").into(), "F1", Cmd::About);
     cmds.extend(track_cmds);
+}
+
+/// The chapters' submenu: the marks on the seek bar, then the chapters,
+/// the playing one marked; a click goes to one.
+fn chapters_menu(ui: &mut egui::Ui, state: &State, marks: bool, out: &mut Vec<Cmd>) {
+    ui.menu_button(tr!("Chapters", "Главы"), |ui| {
+        let mut on = marks;
+        if ui
+            .checkbox(
+                &mut on,
+                tr!("Marks on the seek bar", "Метки на полосе перемотки"),
+            )
+            .clicked()
+        {
+            out.push(Cmd::ToggleChapterMarks);
+        }
+        ui.separator();
+        if state.idle || state.chapters.is_empty() {
+            ui.weak(tr!("No chapters in the file", "В файле нет глав"));
+            return;
+        }
+        let current = state
+            .time
+            .and_then(|t| crate::chapters::current(&state.chapters, t));
+        let long = state.duration.is_some_and(|d| d >= 3600.0);
+        egui::ScrollArea::vertical()
+            .max_height(420.0)
+            .show(ui, |ui| {
+                for (i, c) in state.chapters.iter().enumerate() {
+                    let text = format!(
+                        "{}. {}  ({})",
+                        i + 1,
+                        c.name(i + 1),
+                        crate::format::time(Some(c.time), long)
+                    );
+                    if ui.radio(current == Some(i), text).clicked() {
+                        out.push(Cmd::Chapter(i));
+                        ui.close();
+                    }
+                }
+            });
+    });
 }
 
 impl eframe::App for App {
@@ -929,6 +998,7 @@ impl eframe::App for App {
                 fullscreen: false,
                 has_prev: self.playlist.prev().is_some(),
                 has_next: self.playlist.next().is_some(),
+                chapter_marks: self.settings.chapter_marks,
                 drag: &mut self.seek_drag,
             };
             egui::Panel::bottom("controls")
@@ -952,7 +1022,12 @@ impl eframe::App for App {
                     .size_range(160.0..=600.0)
                     .frame(egui::Frame::NONE.fill(style::PANEL_BG).inner_margin(6))
                     .show(root_ui, |ui| {
-                        cmds.extend(ui::playlist::panel(ui, &mut self.playlist))
+                        cmds.extend(ui::playlist::panel(
+                            ui,
+                            &mut self.playlist,
+                            &state.chapters,
+                            state.time,
+                        ))
                     });
             }
         }

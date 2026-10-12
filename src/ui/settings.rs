@@ -60,8 +60,8 @@ impl Page {
                 "Язык интерфейса и составление списка воспроизведения."
             ),
             Page::Playback => tr!(
-                "How far the arrow keys move playback.",
-                "На сколько перематывают клавиши со стрелками."
+                "How far the arrow keys move playback; the chapter marks.",
+                "На сколько перематывают клавиши со стрелками; метки глав."
             ),
             Page::Video => tr!("How video is decoded.", "Как декодируется видео."),
             Page::Updates => tr!(
@@ -516,6 +516,18 @@ fn playback(ui: &mut Ui, settings: &mut Settings) {
             );
         },
     );
+    section(ui, tr!("Chapters", "Главы"), |ui| {
+        row(
+            ui,
+            tr!("Marks on the seek bar", "Метки на полосе перемотки"),
+            Some(tr!(
+                "Cuts in the bar where the chapters start; also in the context menu. The chapters themselves are listed under the playlist.",
+                "Разрывы на полосе в начале глав; переключаются и в контекстном меню. Сами главы перечислены под списком воспроизведения."
+            )),
+            50.0,
+            |ui| switch(ui, &mut settings.chapter_marks),
+        );
+    });
 }
 
 /// The video page; whether hardware decoding was switched.
@@ -789,6 +801,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates) -> bool {
     settings.seek_long = d.seek_long;
     settings.hwdec = d.hwdec;
     settings.fill_playlist = d.fill_playlist;
+    settings.chapter_marks = d.chapter_marks;
     updates.enabled = d.check_updates;
     hwdec
 }

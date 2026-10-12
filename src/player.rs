@@ -9,6 +9,7 @@
 
 use std::path::Path;
 
+use crate::chapters::{self, Chapter};
 use crate::mpv::{EndReason, Event, Mpv, Value, sys};
 use crate::tracks::{self, Kind, Track};
 
@@ -102,9 +103,10 @@ enum Prop {
     Height,
     Hwdec,
     TrackList,
+    ChapterList,
 }
 
-const PROPS: [(Prop, &str, sys::mpv_format); 15] = [
+const PROPS: [(Prop, &str, sys::mpv_format); 16] = [
     (Prop::Pause, "pause", sys::MPV_FORMAT_FLAG),
     (Prop::TimePos, "time-pos", sys::MPV_FORMAT_DOUBLE),
     (Prop::Duration, "duration", sys::MPV_FORMAT_DOUBLE),
@@ -124,6 +126,7 @@ const PROPS: [(Prop, &str, sys::mpv_format); 15] = [
     (Prop::Height, "dheight", sys::MPV_FORMAT_INT64),
     (Prop::Hwdec, "hwdec-current", sys::MPV_FORMAT_STRING),
     (Prop::TrackList, "track-list", sys::MPV_FORMAT_NODE),
+    (Prop::ChapterList, "chapter-list", sys::MPV_FORMAT_NODE),
 ];
 
 /// What the interface shows of the playback.
@@ -151,6 +154,8 @@ pub struct State {
     pub hwdec: Option<String>,
     /// The file's video, audio and subtitle tracks.
     pub tracks: Vec<Track>,
+    /// The file's chapters, by start.
+    pub chapters: Vec<Chapter>,
 }
 
 impl Default for State {
@@ -171,6 +176,7 @@ impl Default for State {
             height: None,
             hwdec: None,
             tracks: Vec::new(),
+            chapters: Vec::new(),
         }
     }
 }
@@ -206,6 +212,7 @@ impl State {
                     .map(str::to_owned)
             }
             Prop::TrackList => self.tracks = tracks::from_value(value),
+            Prop::ChapterList => self.chapters = chapters::from_value(value),
         }
     }
 
@@ -543,5 +550,47 @@ mod tests {
             );
         }
         assert!(found.iter().any(|t| t.kind == Kind::Video));
+    }
+
+    /// Reads the chapters of a real file without a window:
+    /// `cargo test chapter_list -- --ignored --nocapture` with a file that
+    /// has chapters in METAL_PLAYER_SAMPLE.
+    #[test]
+    #[ignore = "needs vendor/libmpv and a sample video with chapters"]
+    fn chapter_list_of_a_real_file() {
+        let Ok(sample) = std::env::var("METAL_PLAYER_SAMPLE") else {
+            panic!("METAL_PLAYER_SAMPLE is not set");
+        };
+        let api = sys::api().unwrap();
+        let mpv = Mpv::new(
+            api,
+            &[
+                ("vo", "null"),
+                ("ao", "null"),
+                ("idle", "yes"),
+                ("terminal", "no"),
+            ],
+        )
+        .unwrap();
+        mpv.observe(1, "chapter-list", sys::MPV_FORMAT_NODE);
+        mpv.command(0, &["loadfile", &sample]);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut found = Vec::new();
+        while found.is_empty() && std::time::Instant::now() < deadline {
+            while let Some(event) = mpv.next_event() {
+                if let Event::Property { id: 1, value } = event {
+                    found = chapters::from_value(&value);
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        for (i, c) in found.iter().enumerate() {
+            eprintln!(
+                "{} {}",
+                crate::format::time(Some(c.time), true),
+                c.name_in(crate::i18n::Lang::Ru, i + 1)
+            );
+        }
+        assert!(!found.is_empty());
     }
 }
