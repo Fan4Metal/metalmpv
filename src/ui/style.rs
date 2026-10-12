@@ -49,8 +49,15 @@ pub const BUTTONS_HEIGHT: f32 = 46.0;
 /// Height of the seek bar's row.
 pub const SEEK_HEIGHT: f32 = 16.0;
 
-/// The dark theme with this palette, for every widget of egui.
-pub fn apply(ctx: &egui::Context) {
+/// The font family of the OSD line: the font chosen for it, backed up by
+/// the interface's (`set_fonts`).
+pub fn osd_family() -> egui::FontFamily {
+    egui::FontFamily::Name("osd".into())
+}
+
+/// The interface's fonts, and `osd` (a font chosen for the OSD line) in
+/// front of them for [`osd_family`].
+pub fn set_fonts(ctx: &egui::Context, osd: Option<egui::FontData>) {
     // The proportional font has no arrows (← → ↑ ↓ in the key names); the
     // monospace one, loaded anyway, has them: it backs the proportional
     // one up, as in qview.
@@ -64,7 +71,23 @@ pub fn apply(ctx: &egui::Context) {
     {
         proportional.push(mono);
     }
+    let mut osd_list = fonts
+        .families
+        .get(&egui::FontFamily::Proportional)
+        .cloned()
+        .unwrap_or_default();
+    if let Some(data) = osd {
+        fonts
+            .font_data
+            .insert("osd".into(), std::sync::Arc::new(data));
+        osd_list.insert(0, "osd".into());
+    }
+    fonts.families.insert(osd_family(), osd_list);
     ctx.set_fonts(fonts);
+}
+
+/// The dark theme with this palette, for every widget of egui.
+pub fn apply(ctx: &egui::Context) {
     ctx.set_theme(egui::Theme::Dark);
     ctx.style_mut_of(egui::Theme::Dark, |s| {
         let v = &mut s.visuals;

@@ -438,6 +438,15 @@ impl Player {
         self.mpv.set("hwdec", &Value::Str(hwdec_option(on).into()));
     }
 
+    /// The font family of text subtitles (empty: mpv's, `sans-serif`) and
+    /// the size of all subtitles in percent. ASS subtitles keep their
+    /// own fonts.
+    pub fn set_sub_style(&mut self, font: &str, scale: f64) {
+        let font = if font.is_empty() { "sans-serif" } else { font };
+        self.mpv.set("sub-font", &Value::Str(font.into()));
+        self.mpv.set("sub-scale", &Value::Double(scale / 100.0));
+    }
+
     /// Play audio track `id`, or show subtitle track `id` (`None`: none).
     /// Shown selected at once; `track-list` confirms it.
     pub fn select_track(&mut self, kind: Kind, id: Option<i64>) {

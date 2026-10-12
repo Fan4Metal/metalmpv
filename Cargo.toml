@@ -28,6 +28,10 @@ env_logger = "0.11"
 # The same winit as eframe's, for `WindowExtWindows::set_undecorated_shadow`
 # (the frameless window in fullscreen, see frameless.rs).
 winit = { version = "0.30", default-features = false, features = ["rwh_06"] }
+# The system's font families, for the subtitle and OSD fonts (fonts.rs).
+fontdb = { version = "0.23.0", default-features = false, features = ["fs", "memmap"] }
+# Already used by egui, which reads fonts with it: a chosen font is checked with it first.
+skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
 
 [target.'cfg(windows)'.dependencies]
 # Keep the feature list minimal; add a feature only for an API that is used.

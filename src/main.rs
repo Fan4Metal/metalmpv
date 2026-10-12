@@ -10,6 +10,7 @@ mod i18n;
 
 mod app;
 mod chapters;
+mod fonts;
 mod format;
 mod frameless;
 mod icon;

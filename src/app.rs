@@ -89,9 +89,16 @@ impl App {
     ) -> Self {
         log::debug!("window created at {:.0} ms", crate::since_start());
         let ctx = &cc.egui_ctx;
-        let settings = cc.storage.map(Settings::load).unwrap_or_default();
+        let mut settings = cc.storage.map(Settings::load).unwrap_or_default();
         // Before any text is made.
         crate::i18n::set_lang(settings.language.resolve());
+        let osd = osd_font(&settings);
+        if osd.is_none() {
+            // Not chosen, or its file is gone: the interface's font.
+            settings.osd_font.clear();
+            settings.osd_font_file = None;
+        }
+        style::set_fonts(ctx, osd);
         style::apply(ctx);
         ctx.options_mut(|o| {
             o.zoom_with_keyboard = false;
@@ -118,6 +125,9 @@ impl App {
                 let mut player = Player::new(mpv, ctx, settings.volume, settings.mute);
                 if !settings.hwdec {
                     player.set_hwdec(false);
+                }
+                if !settings.sub_font.is_empty() || settings.sub_scale != 100.0 {
+                    player.set_sub_style(&settings.sub_font, settings.sub_scale);
                 }
                 log::debug!("player made at {:.0} ms", crate::since_start());
                 let video = match cc.gl.as_ref() {
@@ -660,7 +670,8 @@ impl App {
         } else {
             rect
         };
-        self.osd.paint(ui.ctx(), osd_rect, state);
+        let scale = (self.settings.osd_scale / 100.0) as f32;
+        self.osd.paint(ui.ctx(), osd_rect, state, scale);
     }
 
     /// The black area without a picture: the start screen, the title of an
@@ -857,6 +868,13 @@ impl App {
 /// window (both embedded at 100–200 %).
 fn start_icon_size(rect: Rect) -> f32 {
     if rect.height() >= 340.0 { 112.0 } else { 64.0 }
+}
+
+/// The font chosen for the OSD line, read from its file; `None` for the
+/// interface's font or a file that cannot be used.
+fn osd_font(settings: &Settings) -> Option<egui::FontData> {
+    let (file, index) = settings.osd_font_file.as_ref()?;
+    crate::fonts::read(file, *index)
 }
 
 /// The strip with the file's name across the top in fullscreen. It takes no
@@ -1119,6 +1137,20 @@ impl eframe::App for App {
             && let Some(player) = &mut self.player
         {
             player.set_hwdec(self.settings.hwdec);
+        }
+        if changed.subs
+            && let Some(player) = &mut self.player
+        {
+            player.set_sub_style(&self.settings.sub_font, self.settings.sub_scale);
+        }
+        if changed.osd_font {
+            let data = osd_font(&self.settings);
+            if data.is_none() {
+                // Unreadable: back to the interface's font.
+                self.settings.osd_font.clear();
+                self.settings.osd_font_file = None;
+            }
+            style::set_fonts(&ctx, data);
         }
         self.about.show(&ctx);
 

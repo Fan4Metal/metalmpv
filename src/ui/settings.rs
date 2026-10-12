@@ -11,8 +11,9 @@ use egui::{
 };
 
 use super::style;
+use crate::fonts::Family;
 use crate::i18n::LangChoice;
-use crate::settings::{MAX_STEP, MAX_TRANSPARENCY, Settings};
+use crate::settings::{MAX_STEP, MAX_TRANSPARENCY, OSD_SCALE_RANGE, SUB_SCALE_RANGE, Settings};
 use crate::update::{Status, Updates, release_url, version_of};
 
 /// The size of the window's content in points.
@@ -29,15 +30,17 @@ pub enum Page {
     General,
     Playback,
     Video,
+    Text,
     Updates,
     Keys,
 }
 
 impl Page {
-    const ALL: [Page; 5] = [
+    const ALL: [Page; 6] = [
         Page::General,
         Page::Playback,
         Page::Video,
+        Page::Text,
         Page::Updates,
         Page::Keys,
     ];
@@ -47,6 +50,7 @@ impl Page {
             Page::General => tr!("General", "Общие"),
             Page::Playback => tr!("Playback", "Воспроизведение"),
             Page::Video => tr!("Video", "Видео"),
+            Page::Text => tr!("Subtitles and OSD", "Субтитры и OSD"),
             Page::Updates => tr!("Updates", "Обновления"),
             Page::Keys => tr!("Keys", "Клавиши"),
         }
@@ -66,6 +70,10 @@ impl Page {
             Page::Video => tr!(
                 "How video is decoded; the panels in fullscreen.",
                 "Как декодируется видео; панели в полноэкранном режиме."
+            ),
+            Page::Text => tr!(
+                "The font and the size of subtitles and of the on-screen messages.",
+                "Шрифт и размер субтитров и экранных сообщений."
             ),
             Page::Updates => tr!(
                 "Asking GitHub whether a newer version is out.",
@@ -92,6 +100,9 @@ pub struct SettingsDialog {
 #[derive(Default)]
 pub struct Changed {
     pub hwdec: bool,
+    /// The subtitles' font or size.
+    pub subs: bool,
+    pub osd_font: bool,
 }
 
 impl SettingsDialog {
@@ -173,7 +184,7 @@ impl SettingsDialog {
                     ))
                     .clicked()
                 {
-                    changed.hwdec |= reset(settings, updates);
+                    reset(settings, updates, &mut changed);
                 }
                 close |= child(ui, close_rect)
                     .add_sized(
@@ -219,6 +230,7 @@ impl SettingsDialog {
                                 Page::Updates => updates_page(ui, updates),
                                 Page::Playback => playback(ui, settings),
                                 Page::Video => changed.hwdec |= video(ui, settings, hwdec_current),
+                                Page::Text => text(ui, settings, &mut changed),
                                 Page::Keys => keys(ui),
                             });
                     });
@@ -602,6 +614,133 @@ fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>) -> b
     changed
 }
 
+/// The fonts and sizes of the subtitles and of the OSD line.
+fn text(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
+    section(ui, tr!("Subtitles", "Субтитры"), |ui| {
+        let chosen = row(
+            ui,
+            tr!("Font", "Шрифт"),
+            Some(tr!(
+                "For text subtitles (SRT and the like); ASS subtitles keep their own fonts.",
+                "Для текстовых субтитров (SRT и подобных); у субтитров ASS свои шрифты."
+            )),
+            230.0,
+            |ui| font_choice(ui, "sub_font", &settings.sub_font),
+        );
+        if let Some(family) = chosen {
+            settings.sub_font = family.map(|f| f.name.clone()).unwrap_or_default();
+            changed.subs = true;
+        }
+        divider(ui);
+        changed.subs |= row(
+            ui,
+            tr!("Size", "Размер"),
+            Some(tr!(
+                "Of all subtitles, ASS included.",
+                "Всех субтитров, включая ASS."
+            )),
+            230.0,
+            |ui| percent(ui, &mut settings.sub_scale, SUB_SCALE_RANGE),
+        )
+        .changed();
+    });
+    section(
+        ui,
+        tr!("On-screen messages", "Экранные сообщения"),
+        |ui| {
+            let chosen = row(
+                ui,
+                tr!("Font", "Шрифт"),
+                Some(tr!(
+                    "The yellow line in the top left corner after a seek, a volume change and the like.",
+                    "Жёлтая строка в левом верхнем углу после перемотки, смены громкости и т. п."
+                )),
+                230.0,
+                |ui| font_choice(ui, "osd_font", &settings.osd_font),
+            );
+            if let Some(family) = chosen {
+                settings.osd_font = family.map(|f| f.name.clone()).unwrap_or_default();
+                settings.osd_font_file = family.map(|f| (f.file.clone(), f.index));
+                changed.osd_font = true;
+            }
+            divider(ui);
+            row(
+                ui,
+                tr!("Size", "Размер"),
+                Some(tr!(
+                    "It also follows the height of the picture.",
+                    "Также зависит от высоты изображения."
+                )),
+                230.0,
+                |ui| percent(ui, &mut settings.osd_scale, OSD_SCALE_RANGE),
+            );
+        },
+    );
+}
+
+/// A size in percent.
+fn percent(ui: &mut Ui, value: &mut f64, range: std::ops::RangeInclusive<f64>) -> Response {
+    ui.spacing_mut().slider_width = 160.0;
+    ui.add(
+        egui::Slider::new(value, range)
+            .step_by(5.0)
+            .fixed_decimals(0)
+            .suffix(" %"),
+    )
+}
+
+/// A font family out of the system's, with a filter over the list; `current`
+/// is the chosen one's name, empty for the default. What was picked this
+/// frame: `Some(None)` is the default.
+fn font_choice(ui: &mut Ui, id: &str, current: &str) -> Option<Option<&'static Family>> {
+    let default = tr!("Default", "По умолчанию");
+    let shown = if current.is_empty() { default } else { current };
+    let filter_id = ui.id().with((id, "filter"));
+    let mut picked = None;
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(shown)
+        .width(220.0)
+        .height(320.0)
+        .show_ui(ui, |ui| {
+            let mut filter: String = ui.data(|d| d.get_temp(filter_id)).unwrap_or_default();
+            let edit = ui.add(
+                egui::TextEdit::singleline(&mut filter)
+                    .hint_text(tr!("Search", "Поиск"))
+                    .desired_width(f32::INFINITY),
+            );
+            if !edit.has_focus() && filter.is_empty() {
+                edit.request_focus();
+            }
+            ui.data_mut(|d| d.insert_temp(filter_id, filter.clone()));
+            if filter.is_empty() && ui.selectable_label(current.is_empty(), default).clicked() {
+                picked = Some(None);
+            }
+            let Some(families) = crate::fonts::families(ui.ctx()) else {
+                ui.horizontal(|ui| {
+                    ui.add(egui::Spinner::new());
+                    ui.weak(tr!("Listing the fonts…", "Список шрифтов…"));
+                });
+                return;
+            };
+            let filter = filter.to_lowercase();
+            for family in families
+                .iter()
+                .filter(|f| filter.is_empty() || f.name.to_lowercase().contains(&filter))
+            {
+                if ui
+                    .selectable_label(family.name == current, &family.name)
+                    .clicked()
+                {
+                    picked = Some(Some(family));
+                }
+            }
+        });
+    if picked.is_some() {
+        ui.data_mut(|d| d.remove::<String>(filter_id));
+    }
+    picked
+}
+
 /// The update check.
 fn updates_page(ui: &mut Ui, updates: &mut Updates) {
     section(
@@ -829,11 +968,13 @@ fn step(ui: &mut Ui, value: &mut f64) {
     );
 }
 
-/// Put the settings of this window back to their defaults; whether
-/// hardware decoding changed.
-fn reset(settings: &mut Settings, updates: &mut Updates) -> bool {
+/// Put the settings of this window back to their defaults; what of it
+/// has to be applied goes into `changed`.
+fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) {
     let d = Settings::default();
-    let hwdec = settings.hwdec != d.hwdec;
+    changed.hwdec |= settings.hwdec != d.hwdec;
+    changed.subs |= settings.sub_font != d.sub_font || settings.sub_scale != d.sub_scale;
+    changed.osd_font |= settings.osd_font != d.osd_font;
     if settings.language != d.language {
         crate::i18n::set_lang(d.language.resolve());
     }
@@ -845,6 +986,10 @@ fn reset(settings: &mut Settings, updates: &mut Updates) -> bool {
     settings.chapter_marks = d.chapter_marks;
     settings.fullscreen_transparency = d.fullscreen_transparency;
     settings.fullscreen_title = d.fullscreen_title;
+    settings.sub_font = d.sub_font;
+    settings.sub_scale = d.sub_scale;
+    settings.osd_font = d.osd_font;
+    settings.osd_font_file = d.osd_font_file;
+    settings.osd_scale = d.osd_scale;
     updates.enabled = d.check_updates;
-    hwdec
 }

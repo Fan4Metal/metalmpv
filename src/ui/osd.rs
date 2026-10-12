@@ -24,10 +24,11 @@ impl OsdLine {
         self.line = Some((osd, Instant::now()));
     }
 
-    /// Paint the line over `video`. A seek's line shows where playback
+    /// Paint the line over `video`, `scale` times its usual size (which
+    /// follows the picture's height). A seek's line shows where playback
     /// actually landed (a keyframe seek lands near, not on, the target)
     /// once mpv has finished the seek.
-    pub fn paint(&mut self, ctx: &egui::Context, video: Rect, state: &State) {
+    pub fn paint(&mut self, ctx: &egui::Context, video: Rect, state: &State, scale: f32) {
         let Some((osd, since)) = &mut self.line else {
             return;
         };
@@ -52,7 +53,7 @@ impl OsdLine {
         } else {
             1.0
         };
-        let size = (video.height() / 26.0).clamp(15.0, 30.0);
+        let size = (video.height() / 26.0).clamp(15.0, 30.0) * scale;
         let painter = ctx.layer_painter(egui::LayerId::new(
             egui::Order::Foreground,
             egui::Id::new("osd"),
@@ -60,7 +61,7 @@ impl OsdLine {
         let painter = painter.with_clip_rect(video);
         let pos = video.left_top() + vec2(size * 0.6, size * 0.45);
         let text = osd.text();
-        let font = FontId::proportional(size);
+        let font = FontId::new(size, style::osd_family());
         let shadow = egui::Color32::from_black_alpha((200.0 * alpha) as u8);
         for d in [
             vec2(1.5, 1.5),

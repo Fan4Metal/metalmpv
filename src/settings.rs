@@ -27,6 +27,11 @@ const CHAPTER_MARKS: &str = "chapter_marks";
 const TIME_DISPLAY: &str = "time_display";
 const FULLSCREEN_TRANSPARENCY: &str = "fullscreen_transparency";
 const FULLSCREEN_TITLE: &str = "fullscreen_title";
+const SUB_FONT: &str = "sub_font";
+const SUB_SCALE: &str = "sub_scale";
+const OSD_FONT: &str = "osd_font";
+const OSD_FONT_FILE: &str = "osd_font_file";
+const OSD_SCALE: &str = "osd_scale";
 const WINDOW_NORMAL: &str = "window_normal";
 
 /// The longest seek step the settings accept, in seconds.
@@ -34,6 +39,10 @@ pub const MAX_STEP: f64 = 3600.0;
 /// The most transparent the fullscreen panels may be, in percent: beyond it
 /// their text is lost on a light picture.
 pub const MAX_TRANSPARENCY: f64 = 80.0;
+/// The range of the subtitle size, in percent of mpv's.
+pub const SUB_SCALE_RANGE: std::ops::RangeInclusive<f64> = 50.0..=300.0;
+/// The range of the OSD size, in percent.
+pub const OSD_SCALE_RANGE: std::ops::RangeInclusive<f64> = 50.0..=200.0;
 
 /// Settings file that makes a copy portable: when it lies next to the exe
 /// (even empty) and can be written, the settings are kept in it instead of
@@ -123,6 +132,16 @@ pub struct Settings {
     pub fullscreen_transparency: f64,
     /// A strip with the file's name at the top in fullscreen.
     pub fullscreen_title: bool,
+    /// The font family of text subtitles, empty for mpv's.
+    pub sub_font: String,
+    /// The size of subtitles, in percent (mpv's `sub-scale`).
+    pub sub_scale: f64,
+    /// The font family of the OSD line, empty for the interface's.
+    pub osd_font: String,
+    /// The file and the face number of `osd_font`.
+    pub osd_font_file: Option<(PathBuf, u32)>,
+    /// The size of the OSD line, in percent.
+    pub osd_scale: f64,
     /// The window's restored rectangle in pixels (left, top, right,
     /// bottom) while it is maximized: eframe saves the maximized size.
     pub window_normal: Option<[i32; 4]>,
@@ -145,6 +164,11 @@ impl Default for Settings {
             time_mode: TimeMode::Both,
             fullscreen_transparency: 12.0,
             fullscreen_title: true,
+            sub_font: String::new(),
+            sub_scale: 100.0,
+            osd_font: String::new(),
+            osd_font_file: None,
+            osd_scale: 100.0,
             window_normal: None,
         }
     }
@@ -166,6 +190,13 @@ impl Settings {
                 .filter(|v| range.contains(v))
                 .unwrap_or(default)
         };
+        // The OSD's family and its file go together: one without the other
+        // is the default.
+        let osd_font = get(OSD_FONT).filter(|f| !f.is_empty()).and_then(|name| {
+            let file = get(OSD_FONT_FILE)?;
+            let (index, path) = file.split_once('|')?;
+            Some((name, (PathBuf::from(path), index.parse().ok()?)))
+        });
         Self {
             language: get(LANGUAGE)
                 .as_deref()
@@ -192,6 +223,14 @@ impl Settings {
                 d.fullscreen_transparency,
             ),
             fullscreen_title: flag(FULLSCREEN_TITLE, d.fullscreen_title),
+            sub_font: get(SUB_FONT).unwrap_or_default(),
+            sub_scale: number(SUB_SCALE, SUB_SCALE_RANGE, d.sub_scale),
+            osd_font: osd_font
+                .as_ref()
+                .map(|(name, _)| name.clone())
+                .unwrap_or_default(),
+            osd_font_file: osd_font.map(|(_, file)| file),
+            osd_scale: number(OSD_SCALE, OSD_SCALE_RANGE, d.osd_scale),
             window_normal: get(WINDOW_NORMAL).and_then(|v| {
                 let n: Vec<i32> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
                 <[i32; 4]>::try_from(n)
@@ -219,6 +258,19 @@ impl Settings {
             format!("{:.0}", self.fullscreen_transparency),
         );
         storage.set_string(FULLSCREEN_TITLE, self.fullscreen_title.to_string());
+        storage.set_string(SUB_FONT, self.sub_font.clone());
+        storage.set_string(SUB_SCALE, format!("{:.0}", self.sub_scale));
+        match &self.osd_font_file {
+            Some((path, index)) if !self.osd_font.is_empty() => {
+                storage.set_string(OSD_FONT, self.osd_font.clone());
+                storage.set_string(OSD_FONT_FILE, format!("{index}|{}", path.display()));
+            }
+            _ => {
+                storage.remove_string(OSD_FONT);
+                storage.remove_string(OSD_FONT_FILE);
+            }
+        }
+        storage.set_string(OSD_SCALE, format!("{:.0}", self.osd_scale));
         match self.window_normal {
             Some(r) => storage.set_string(
                 WINDOW_NORMAL,
@@ -268,6 +320,11 @@ mod tests {
             time_mode: TimeMode::Remaining,
             fullscreen_transparency: 40.0,
             fullscreen_title: false,
+            sub_font: "Arial".into(),
+            sub_scale: 150.0,
+            osd_font: "Segoe UI".into(),
+            osd_font_file: Some((PathBuf::from(r"C:\Windows\Fonts\segoeui.ttf"), 0)),
+            osd_scale: 80.0,
             window_normal: Some([10, 20, 1010, 720]),
         };
         let mut storage = MemStorage::default();
@@ -288,6 +345,9 @@ mod tests {
         storage.set_string(HWDEC, "maybe".into());
         storage.set_string(TIME_DISPLAY, "total".into());
         storage.set_string(FULLSCREEN_TRANSPARENCY, "95".into());
+        storage.set_string(SUB_SCALE, "10".into());
+        storage.set_string(OSD_FONT, "Segoe UI".into());
+        storage.set_string(OSD_FONT_FILE, "x|C:/f.ttf".into());
         storage.set_string(WINDOW_NORMAL, "1,2,3".into());
         assert_eq!(Settings::load(&storage), Settings::default());
     }

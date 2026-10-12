@@ -80,8 +80,12 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | Video | Hardware decoding (GPU) | on | Decoding on the graphics card where possible; the decoder in use is shown below |
 | Video | File name at the top | on | A strip with the file's name across the top in fullscreen, shown with the control bar |
 | Video | Panel transparency | 12 % | Transparency of the control bar and the file's name over the picture in fullscreen, 0–80 % |
+| Subtitles and OSD | Subtitles: font | default | A font installed in Windows, for text subtitles (SRT and the like); ASS subtitles keep their own fonts |
+| Subtitles and OSD | Subtitles: size | 100 % | The size of all subtitles, 50–300 % |
+| Subtitles and OSD | On-screen messages: font | default | A font installed in Windows, for the yellow line in the top left corner |
+| Subtitles and OSD | On-screen messages: size | 100 % | 50–200 % of the usual size, which follows the height of the picture |
 
-The **Keys** category lists the keyboard shortcuts for reference. The volume, the window and the playlist's visibility and width are remembered between runs.
+The list of fonts has a search field at its top. The **Keys** category lists the keyboard shortcuts for reference. The volume, the window and the playlist's visibility and width are remembered between runs.
 
 ## Keyboard shortcuts
 
