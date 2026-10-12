@@ -929,7 +929,7 @@ fn context_menu(
         tr!("Pause", "Пауза")
     };
     item(ui, pause.into(), tr!("Space", "Пробел"), Cmd::TogglePause);
-    item(ui, tr!("Stop", "Стоп").into(), "S", Cmd::Stop);
+    item(ui, tr!("Stop", "Стоп").into(), "", Cmd::Stop);
     item(
         ui,
         tr!("Previous file", "Предыдущий файл").into(),

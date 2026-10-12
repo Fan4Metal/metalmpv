@@ -46,7 +46,7 @@ pub enum Cmd {
     PlaylistClear,
     /// Open or close the tracks window (`T`).
     ToggleTracks,
-    /// The next audio track (`A`), the next subtitles or none (`J`),
+    /// The next audio track (`A`), the next subtitles or none (`S`, `J`),
     /// subtitles off and on again (`V`).
     CycleAudio,
     CycleSubs,
@@ -98,10 +98,10 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
         Key::F1 => Cmd::About,
         Key::F5 => Cmd::Settings,
         Key::Delete => Cmd::Delete,
-        Key::S if !ctrl => Cmd::Stop,
         Key::T if !ctrl => Cmd::ToggleTracks,
         Key::A if !ctrl => Cmd::CycleAudio,
-        Key::J if !ctrl => Cmd::CycleSubs,
+        // S as in subtitles; J as in mpv.
+        Key::S | Key::J if !ctrl => Cmd::CycleSubs,
         Key::V if !ctrl => Cmd::ToggleSubs,
         _ => return None,
     };
@@ -192,5 +192,9 @@ mod tests {
             Some(Cmd::CycleAudio)
         );
         assert_eq!(command(Key::J, Modifiers::NONE, true), None);
+        assert_eq!(
+            command(Key::S, Modifiers::NONE, false),
+            Some(Cmd::CycleSubs)
+        );
     }
 }

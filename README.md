@@ -101,9 +101,8 @@ The list of fonts has a search field at its top. The **Keys** category lists the
 | `M` | Mute |
 | `T` | The audio and subtitles window |
 | `A` | Next audio track |
-| `J` | Next subtitles; after the last, none |
+| `S`, `J` | Next subtitles; after the last, none |
 | `V` | Subtitles off, and on again |
-| `S` | Stop |
 | `Page Up` / `Page Down` | Previous / next file of the playlist |
 | `Enter`, `F11`, double click | Fullscreen; `Esc` leaves it |
 | `Ctrl+O` | Open files |

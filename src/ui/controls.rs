@@ -71,7 +71,7 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
     if flat(
         ui,
         slot(&mut x, SMALL),
-        tr!("Stop (S)", "Стоп (S)"),
+        tr!("Stop", "Стоп"),
         !state.idle,
         |p, o, c, _| icons::stop(p, o, s * 0.85, c),
     )
