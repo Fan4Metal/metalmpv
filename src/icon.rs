@@ -77,55 +77,83 @@ fn triangle(x: f32, y: f32, a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> f32 
     if inside { -d } else { d }
 }
 
+/// A film frame of graphite with light sprocket holes and a blue
+/// screen, flat: soft gradients, a hairline of light along the top, a soft
+/// shadow below.
+const FRAME: ((f32, f32), (f32, f32)) = ((0.04, 0.12), (0.96, 0.88));
+const FRAME_RADIUS: f32 = 0.129;
+/// The holes' centres across and down, their size and corner radius.
+const HOLE_X: [f32; 2] = [0.151, 0.849];
+const HOLE_Y: [f32; 3] = [0.272, 0.5, 0.728];
+const HOLE: (f32, f32) = (0.069, 0.076);
+const HOLE_RADIUS: f32 = 0.028;
+const SCREEN: ((f32, f32), (f32, f32)) = ((0.234, 0.158), (0.766, 0.842));
+const SCREEN_RADIUS: f32 = 0.076;
+/// Play (before its corners are rounded by `PLAY_ROUND`): centred across
+/// the screen, then moved right a little, as its weight is at its left side
+/// and exactly centred it looks shifted left.
+const PLAY: [(f32, f32); 3] = [(0.390, 0.360), (0.642, 0.5), (0.390, 0.640)];
+const PLAY_ROUND: f32 = 0.031;
+
 /// The colour of the icon at `(x, y)`, both in 0..1 of the icon's side, for
-/// an icon of `size` pixels: a brushed-metal rounded square with a blue
-/// disc and a white Play triangle.
+/// an icon of `size` pixels: a graphite film frame whose screen is blue with a
+/// white Play. Below 25 px the frame has no holes (they would be noise).
 fn sample(x: f32, y: f32, size: u32) -> Rgba {
     // Anti-aliasing width in icon units: a pixel at any size (a fixed width
     // in icon units blurs the edges of the large sizes).
     let aa = 0.5 / size as f32;
+    let cover = |d: f32| smoothstep(aa, -aa, d);
     let mut c = [0.0; 4];
 
-    // The plate: a vertical steel gradient with faint horizontal brushing.
-    let plate = rounded_box(x, y, (0.04, 0.04), (0.96, 0.96), 0.2);
-    let brushing = ((y * 97.0).sin() * 0.5 + 0.5) * 0.025;
-    let steel = mix(hex(0x5b626d), hex(0x1b1e23), y);
-    let steel = [
-        steel[0] + brushing,
-        steel[1] + brushing,
-        steel[2] + brushing,
-        1.0,
-    ];
-    c = over(c, with_alpha(steel, smoothstep(aa, -aa, plate)));
-    // A light rim along the top edge, a dark one along the bottom.
-    let rim = smoothstep(0.035, 0.0, -plate) * smoothstep(aa, -aa, plate);
+    // The frame, a soft shadow under it.
+    let (min, max) = FRAME;
+    let (width, height) = (max.0 - min.0, max.1 - min.1);
+    let frame = rounded_box(x, y, min, max, FRAME_RADIUS);
+    let below = rounded_box(
+        x,
+        y,
+        (min.0, min.1 + 0.02),
+        (max.0, max.1 + 0.02),
+        FRAME_RADIUS,
+    );
+    let shadow = (-below.max(0.0) / 0.02).exp() * smoothstep(0.08, 0.0, below) * 0.35;
+    c = over(c, with_alpha(hex(0x000000), shadow * (1.0 - cover(frame))));
+    let t = (x - min.0) / width * 0.35 + (y - min.1) / height * 0.65;
     c = over(
         c,
-        with_alpha(mix(hex(0xc9ced6), hex(0x0c0d10), y), rim * 0.7),
+        with_alpha(mix(hex(0x3a3f48), hex(0x16191e), t), cover(frame)),
+    );
+    let top = (1.0 - 2.0 * (y - min.1) / height).clamp(0.0, 1.0);
+    let hairline = (1.0 + frame / 0.008).clamp(0.0, 1.0) * cover(frame) * top;
+    c = over(c, with_alpha(hex(0xffffff), hairline * 0.35));
+
+    if size >= 25 {
+        let (hw, hh) = (HOLE.0 / 2.0, HOLE.1 / 2.0);
+        for hx in HOLE_X {
+            for hy in HOLE_Y {
+                let hole = rounded_box(x, y, (hx - hw, hy - hh), (hx + hw, hy + hh), HOLE_RADIUS);
+                c = over(c, with_alpha(hex(0xe6eaf0), cover(hole) * 0.85));
+            }
+        }
+    }
+
+    // The screen, lighter at its top left.
+    let ((sx0, sy0), (sx1, sy1)) = SCREEN;
+    let screen = rounded_box(x, y, (sx0, sy0), (sx1, sy1), SCREEN_RADIUS);
+    let st = (x - sx0) / (sx1 - sx0) * 0.4 + (y - sy0) / (sy1 - sy0) * 0.6;
+    c = over(
+        c,
+        with_alpha(mix(hex(0x4fa3ff), hex(0x2a4fd8), st), cover(screen)),
     );
 
-    // The disc: blue, lighter at the top.
-    let (cx, cy, r) = (0.5, 0.5, 0.32);
-    let disc = ((x - cx).powi(2) + (y - cy).powi(2)).sqrt() - r;
-    c = over(
-        c,
-        with_alpha(hex(0x000000), smoothstep(0.06, -0.02, disc - 0.02) * 0.35),
-    );
-    let blue = mix(hex(0x5aa2ff), hex(0x1a56c4), (y - (cy - r)) / (2.0 * r));
-    c = over(c, with_alpha(blue, smoothstep(aa, -aa, disc)));
-    // A highlight across the upper half of the disc.
-    let shine = ((x - cx).powi(2) + (y - (cy - 0.13)).powi(2) * 2.2).sqrt() - 0.22;
-    c = over(
-        c,
-        with_alpha(
-            hex(0xffffff),
-            smoothstep(aa, -aa, shine) * smoothstep(aa, -aa, disc) * 0.16,
-        ),
-    );
-
-    // Play, its centre of mass a little right of the disc's centre.
-    let play = triangle(x, y, (0.43, 0.355), (0.645, 0.5), (0.43, 0.645)) - 0.012;
-    c = over(c, with_alpha(hex(0xffffff), smoothstep(aa, -aa, play)));
+    // Play, white, with a soft shadow below it.
+    let play = |dy: f32| {
+        let [a, b, p] = PLAY.map(|(px, py)| (px, py + dy));
+        triangle(x, y, a, b, p) - PLAY_ROUND
+    };
+    let shade = (-play(0.012).max(0.0) / 0.02).exp() * cover(screen);
+    c = over(c, with_alpha(hex(0x0b1f6b), shade * 0.45));
+    c = over(c, with_alpha(hex(0xffffff), cover(play(0.0))));
     c
 }
 
