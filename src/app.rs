@@ -36,6 +36,8 @@ use crate::win;
 /// How long the mouse may rest in fullscreen before the control bar and
 /// the pointer hide.
 const HIDE_AFTER: Duration = Duration::from_millis(500);
+/// The height of the strip with the file's name at the top in fullscreen.
+const FULLSCREEN_TITLE_HEIGHT: f32 = 34.0;
 /// Files handed over by other starts this close together make one
 /// playlist (Explorer starts one process per selected file).
 const SAME_BATCH: Duration = Duration::from_millis(1500);
@@ -648,7 +650,17 @@ impl App {
                 style::TEXT_BRIGHT,
             );
         }
-        self.osd.paint(ui.ctx(), rect, state);
+        // In fullscreen the line goes under the strip with the name while
+        // that is shown.
+        let osd_rect = if self.fullscreen
+            && self.settings.fullscreen_title
+            && self.fullscreen_panels_shown(ui.ctx())
+        {
+            rect.with_min_y(rect.top() + FULLSCREEN_TITLE_HEIGHT)
+        } else {
+            rect
+        };
+        self.osd.paint(ui.ctx(), osd_rect, state);
     }
 
     /// The black area without a picture: the start screen, the title of an
@@ -754,25 +766,50 @@ impl App {
         }
     }
 
-    /// The control bar over the picture in fullscreen, while the mouse
-    /// moves or rests near the bottom; the pointer hides with it.
-    fn fullscreen_controls(&mut self, ctx: &egui::Context, state: &State, cmds: &mut Vec<Cmd>) {
+    /// How long the mouse has rested.
+    fn pointer_rest(ctx: &egui::Context) -> Duration {
+        Duration::from_secs_f32(ctx.input(|i| i.pointer.time_since_last_movement()).max(0.0))
+    }
+
+    /// Whether the panels over the picture in fullscreen are shown: while
+    /// the mouse moves or rests near the bottom (or the top, with the strip
+    /// of the name), a seek is dragged or the tracks window is open.
+    fn fullscreen_panels_shown(&self, ctx: &egui::Context) -> bool {
         let screen = ctx.content_rect();
-        let rest =
-            Duration::from_secs_f32(ctx.input(|i| i.pointer.time_since_last_movement()).max(0.0));
-        let near_bottom = ctx
-            .pointer_hover_pos()
-            .is_some_and(|p| p.y > screen.bottom() - 90.0);
-        let show = rest < HIDE_AFTER
-            || near_bottom
+        let top = self.settings.fullscreen_title;
+        let near_edge = ctx.pointer_hover_pos().is_some_and(|p| {
+            p.y > screen.bottom() - 90.0
+                || (top && p.y < screen.top() + FULLSCREEN_TITLE_HEIGHT + 16.0)
+        });
+        Self::pointer_rest(ctx) < HIDE_AFTER
+            || near_edge
             || self.seek_drag.is_some()
-            || egui::Popup::is_id_open(ctx, crate::ui::tracks::popup_id());
-        if !show {
+            || egui::Popup::is_id_open(ctx, crate::ui::tracks::popup_id())
+    }
+
+    /// The control bar and the file's name over the picture in fullscreen
+    /// ([`Self::fullscreen_panels_shown`]); the pointer hides with them.
+    fn fullscreen_controls(
+        &mut self,
+        ctx: &egui::Context,
+        state: &State,
+        title: &str,
+        cmds: &mut Vec<Cmd>,
+    ) {
+        if !self.fullscreen_panels_shown(ctx) {
             ctx.set_cursor_icon(CursorIcon::None);
             return;
         }
+        let screen = ctx.content_rect();
+        let rest = Self::pointer_rest(ctx);
         if rest < HIDE_AFTER {
             ctx.request_repaint_after(HIDE_AFTER - rest);
+        }
+        let alpha = (255.0 * (1.0 - self.settings.fullscreen_transparency / 100.0)).round() as u8;
+        let fill = style::BAR_BG.gamma_multiply_u8(alpha);
+
+        if self.settings.fullscreen_title {
+            fullscreen_title(ctx, screen, title, fill);
         }
         let bar = ui::controls::Bar {
             state,
@@ -789,7 +826,7 @@ impl App {
             .anchor(Align2::LEFT_BOTTOM, egui::vec2(0.0, 0.0))
             .show(ctx, |ui| {
                 egui::Frame::NONE
-                    .fill(Color32::from_rgba_unmultiplied(0x17, 0x19, 0x1d, 225))
+                    .fill(fill)
                     .inner_margin(egui::Margin {
                         left: 0,
                         right: 0,
@@ -820,6 +857,35 @@ impl App {
 /// window (both embedded at 100–200 %).
 fn start_icon_size(rect: Rect) -> f32 {
     if rect.height() >= 340.0 { 112.0 } else { 64.0 }
+}
+
+/// The strip with the file's name across the top in fullscreen. It takes no
+/// clicks, so a double click there still leaves fullscreen.
+fn fullscreen_title(ctx: &egui::Context, screen: Rect, title: &str, fill: Color32) {
+    egui::Area::new(egui::Id::new("fullscreen_title"))
+        .order(egui::Order::Foreground)
+        .interactable(false)
+        .fixed_pos(screen.min)
+        .show(ctx, |ui| {
+            let (rect, _) = ui.allocate_exact_size(
+                egui::vec2(screen.width(), FULLSCREEN_TITLE_HEIGHT),
+                Sense::hover(),
+            );
+            ui.painter().rect_filled(rect, 0.0, fill);
+            let galley = ui.fonts_mut(|f| {
+                let mut job = egui::text::LayoutJob::simple_singleline(
+                    title.to_owned(),
+                    FontId::proportional(14.0),
+                    style::TEXT,
+                );
+                job.wrap = egui::text::TextWrapping::truncate_at_width(rect.width() - 48.0);
+                f.layout_job(job)
+            });
+            let pos = Align2::CENTER_CENTER
+                .anchor_size(rect.center(), galley.size())
+                .min;
+            ui.painter().galley(pos, galley, style::TEXT);
+        });
 }
 
 /// The menu of a right click on the picture.
@@ -1040,7 +1106,7 @@ impl eframe::App for App {
         egui::CentralPanel::no_frame()
             .show(root_ui, |ui| self.video_area(ui, frame, &state, &mut cmds));
         if fullscreen {
-            self.fullscreen_controls(&ctx, &state, &mut cmds);
+            self.fullscreen_controls(&ctx, &state, &title, &mut cmds);
         }
 
         let changed = self.settings_dialog.show(

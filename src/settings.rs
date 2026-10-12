@@ -25,10 +25,15 @@ const FILL_PLAYLIST: &str = "fill_playlist_from_folder";
 const PLAYLIST_VISIBLE: &str = "playlist_visible";
 const CHAPTER_MARKS: &str = "chapter_marks";
 const TIME_DISPLAY: &str = "time_display";
+const FULLSCREEN_TRANSPARENCY: &str = "fullscreen_transparency";
+const FULLSCREEN_TITLE: &str = "fullscreen_title";
 const WINDOW_NORMAL: &str = "window_normal";
 
 /// The longest seek step the settings accept, in seconds.
 pub const MAX_STEP: f64 = 3600.0;
+/// The most transparent the fullscreen panels may be, in percent: beyond it
+/// their text is lost on a light picture.
+pub const MAX_TRANSPARENCY: f64 = 80.0;
 
 /// Settings file that makes a copy portable: when it lies next to the exe
 /// (even empty) and can be written, the settings are kept in it instead of
@@ -113,6 +118,11 @@ pub struct Settings {
     pub chapter_marks: bool,
     /// What the time in the control bar shows (a click changes it).
     pub time_mode: TimeMode,
+    /// How transparent the panels over the picture in fullscreen are, in
+    /// percent (0 to [`MAX_TRANSPARENCY`]).
+    pub fullscreen_transparency: f64,
+    /// A strip with the file's name at the top in fullscreen.
+    pub fullscreen_title: bool,
     /// The window's restored rectangle in pixels (left, top, right,
     /// bottom) while it is maximized: eframe saves the maximized size.
     pub window_normal: Option<[i32; 4]>,
@@ -133,6 +143,8 @@ impl Default for Settings {
             playlist_visible: false,
             chapter_marks: true,
             time_mode: TimeMode::Both,
+            fullscreen_transparency: 12.0,
+            fullscreen_title: true,
             window_normal: None,
         }
     }
@@ -174,6 +186,12 @@ impl Settings {
                 .as_deref()
                 .and_then(TimeMode::from_name)
                 .unwrap_or(d.time_mode),
+            fullscreen_transparency: number(
+                FULLSCREEN_TRANSPARENCY,
+                0.0..=MAX_TRANSPARENCY,
+                d.fullscreen_transparency,
+            ),
+            fullscreen_title: flag(FULLSCREEN_TITLE, d.fullscreen_title),
             window_normal: get(WINDOW_NORMAL).and_then(|v| {
                 let n: Vec<i32> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
                 <[i32; 4]>::try_from(n)
@@ -196,6 +214,11 @@ impl Settings {
         storage.set_string(PLAYLIST_VISIBLE, self.playlist_visible.to_string());
         storage.set_string(CHAPTER_MARKS, self.chapter_marks.to_string());
         storage.set_string(TIME_DISPLAY, self.time_mode.name().into());
+        storage.set_string(
+            FULLSCREEN_TRANSPARENCY,
+            format!("{:.0}", self.fullscreen_transparency),
+        );
+        storage.set_string(FULLSCREEN_TITLE, self.fullscreen_title.to_string());
         match self.window_normal {
             Some(r) => storage.set_string(
                 WINDOW_NORMAL,
@@ -243,6 +266,8 @@ mod tests {
             playlist_visible: true,
             chapter_marks: false,
             time_mode: TimeMode::Remaining,
+            fullscreen_transparency: 40.0,
+            fullscreen_title: false,
             window_normal: Some([10, 20, 1010, 720]),
         };
         let mut storage = MemStorage::default();
@@ -262,6 +287,7 @@ mod tests {
         storage.set_string(SEEK_LONG, "NaN".into());
         storage.set_string(HWDEC, "maybe".into());
         storage.set_string(TIME_DISPLAY, "total".into());
+        storage.set_string(FULLSCREEN_TRANSPARENCY, "95".into());
         storage.set_string(WINDOW_NORMAL, "1,2,3".into());
         assert_eq!(Settings::load(&storage), Settings::default());
     }

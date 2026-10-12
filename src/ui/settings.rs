@@ -12,7 +12,7 @@ use egui::{
 
 use super::style;
 use crate::i18n::LangChoice;
-use crate::settings::{MAX_STEP, Settings};
+use crate::settings::{MAX_STEP, MAX_TRANSPARENCY, Settings};
 use crate::update::{Status, Updates, release_url, version_of};
 
 /// The size of the window's content in points.
@@ -63,7 +63,10 @@ impl Page {
                 "How far the arrow keys move playback; the chapter marks.",
                 "На сколько перематывают клавиши со стрелками; метки глав."
             ),
-            Page::Video => tr!("How video is decoded.", "Как декодируется видео."),
+            Page::Video => tr!(
+                "How video is decoded; the panels in fullscreen.",
+                "Как декодируется видео; панели в полноэкранном режиме."
+            ),
             Page::Updates => tr!(
                 "Asking GitHub whether a newer version is out.",
                 "Проверка выхода новой версии на GitHub."
@@ -558,6 +561,44 @@ fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>) -> b
             |ui| ui.label(RichText::new(now).color(style::TEXT_BRIGHT)),
         );
     });
+    section(
+        ui,
+        tr!("Fullscreen", "Полноэкранный режим"),
+        |ui| {
+            row(
+                ui,
+                tr!("File name at the top", "Название файла вверху"),
+                Some(tr!(
+                    "A strip with the name across the top of the screen, shown with the control bar.",
+                    "Полоса с названием вдоль верхнего края экрана, появляется вместе с панелью управления."
+                )),
+                50.0,
+                |ui| switch(ui, &mut settings.fullscreen_title),
+            );
+            divider(ui);
+            row(
+                ui,
+                tr!("Panel transparency", "Прозрачность панелей"),
+                Some(tr!(
+                    "The control bar and the file's name over the picture.",
+                    "Панель управления и название файла поверх изображения."
+                )),
+                230.0,
+                |ui| {
+                    ui.spacing_mut().slider_width = 160.0;
+                    ui.add(
+                        egui::Slider::new(
+                            &mut settings.fullscreen_transparency,
+                            0.0..=MAX_TRANSPARENCY,
+                        )
+                        .step_by(1.0)
+                        .fixed_decimals(0)
+                        .suffix(" %"),
+                    );
+                },
+            );
+        },
+    );
     changed
 }
 
@@ -802,6 +843,8 @@ fn reset(settings: &mut Settings, updates: &mut Updates) -> bool {
     settings.hwdec = d.hwdec;
     settings.fill_playlist = d.fill_playlist;
     settings.chapter_marks = d.chapter_marks;
+    settings.fullscreen_transparency = d.fullscreen_transparency;
+    settings.fullscreen_title = d.fullscreen_title;
     updates.enabled = d.check_updates;
     hwdec
 }
