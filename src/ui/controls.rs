@@ -17,6 +17,8 @@ pub struct Bar<'a> {
     pub has_next: bool,
     /// Marks at the chapters' starts on the seek bar.
     pub chapter_marks: bool,
+    /// What the time left of the buttons shows.
+    pub time_mode: crate::format::TimeMode,
     /// The seek bar is being dragged: the position under the pointer.
     pub drag: &'a mut Option<f64>,
 }
@@ -133,20 +135,40 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
         out.push(Cmd::TogglePlaylist);
     }
 
-    // The time, left of the buttons (left out when there is no room).
+    // The time, left of the buttons (left out when there is no room); a
+    // click on it switches between both times, the elapsed and the
+    // remaining one.
     let time_rect = Rect::from_min_max(
         pos2(row.left() + 12.0, row.top()),
         pos2(group.left() - 8.0, row.bottom()),
     );
     if time_rect.width() > 60.0 {
-        let text = crate::format::position(state.time, state.duration);
-        ui.painter_at(time_rect).text(
-            time_rect.left_center(),
-            Align2::LEFT_CENTER,
-            text,
-            FontId::monospace(12.0),
-            style::TEXT_WEAK,
-        );
+        let text = crate::format::time_line(bar.time_mode, state.time, state.duration);
+        // The colour is chosen once the pointer is known: painted with the galley.
+        let galley =
+            ui.painter()
+                .layout_no_wrap(text, FontId::monospace(12.0), Color32::PLACEHOLDER);
+        let text_rect = Align2::LEFT_CENTER.anchor_size(time_rect.left_center(), galley.size());
+        let response = ui
+            .interact(
+                text_rect.expand2(vec2(6.0, 4.0)),
+                ui.id().with("time"),
+                Sense::CLICK,
+            )
+            .on_hover_text(tr!(
+                "Elapsed / total, elapsed or remaining time (click)",
+                "Прошло / всего, прошло или осталось (щелчок)"
+            ));
+        let color = if response.hovered() {
+            style::TEXT_BRIGHT
+        } else {
+            style::TEXT_WEAK
+        };
+        ui.painter_at(time_rect)
+            .galley(text_rect.min, galley, color);
+        if response.clicked() {
+            out.push(Cmd::CycleTime);
+        }
     }
 
     // The volume and fullscreen, right of the buttons.

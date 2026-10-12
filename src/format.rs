@@ -31,6 +31,61 @@ pub fn position(time_pos: Option<f64>, duration: Option<f64>) -> String {
     format!("{} / {}", time(time_pos, long), time(duration, long))
 }
 
+/// What the control bar's time shows; a click on it moves to the next.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TimeMode {
+    /// The position and the duration (`position`).
+    #[default]
+    Both,
+    /// The position only.
+    Elapsed,
+    /// The time left, with a minus.
+    Remaining,
+}
+
+impl TimeMode {
+    /// Both → elapsed → remaining → both.
+    pub fn next(self) -> Self {
+        match self {
+            Self::Both => Self::Elapsed,
+            Self::Elapsed => Self::Remaining,
+            Self::Remaining => Self::Both,
+        }
+    }
+
+    /// The name in the settings.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Both => "both",
+            Self::Elapsed => "elapsed",
+            Self::Remaining => "remaining",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        [Self::Both, Self::Elapsed, Self::Remaining]
+            .into_iter()
+            .find(|m| m.name() == name)
+    }
+}
+
+/// The control bar's time in `mode`: `01:23 / 45:00`, `01:23`, `-43:37`;
+/// with hours when the file is an hour or longer.
+pub fn time_line(mode: TimeMode, time_pos: Option<f64>, duration: Option<f64>) -> String {
+    let long = duration.is_some_and(|d| d >= 3600.0);
+    match mode {
+        TimeMode::Both => position(time_pos, duration),
+        TimeMode::Elapsed => time(time_pos, long),
+        TimeMode::Remaining => match (time_pos, duration) {
+            (Some(t), Some(d)) if t.is_finite() && d.is_finite() => {
+                // Rounded up, so that the two readouts add up to the duration.
+                format!("-{}", time(Some((d - t).max(0.0).ceil()), long))
+            }
+            _ => time(None, long),
+        },
+    }
+}
+
 /// The OSD's clock: always `HH:MM:SS`.
 pub fn clock(seconds: f64) -> String {
     let total = seconds.max(0.0) as u64;
@@ -217,6 +272,31 @@ mod tests {
         assert_eq!(position(Some(83.0), Some(6360.0)), "0:01:23 / 1:46:00");
         assert_eq!(position(Some(83.0), Some(600.0)), "01:23 / 10:00");
         assert_eq!(clock(83.4), "00:01:23");
+    }
+
+    #[test]
+    fn time_modes() {
+        let (t, d) = (Some(83.4), Some(600.0));
+        assert_eq!(time_line(TimeMode::Both, t, d), "01:23 / 10:00");
+        assert_eq!(time_line(TimeMode::Elapsed, t, d), "01:23");
+        assert_eq!(time_line(TimeMode::Remaining, t, d), "-08:37");
+        assert_eq!(
+            time_line(TimeMode::Remaining, Some(0.0), Some(6360.0)),
+            "-1:46:00"
+        );
+        assert_eq!(
+            time_line(TimeMode::Elapsed, Some(83.0), Some(6360.0)),
+            "0:01:23"
+        );
+        assert_eq!(time_line(TimeMode::Remaining, Some(700.0), d), "-00:00");
+        assert_eq!(time_line(TimeMode::Remaining, t, None), "--:--");
+        let mut m = TimeMode::default();
+        for expected in [TimeMode::Elapsed, TimeMode::Remaining, TimeMode::Both] {
+            m = m.next();
+            assert_eq!(m, expected);
+            assert_eq!(TimeMode::from_name(m.name()), Some(m));
+        }
+        assert_eq!(TimeMode::from_name("total"), None);
     }
 
     #[test]

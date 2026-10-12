@@ -403,6 +403,7 @@ impl App {
             Cmd::ToggleChapterMarks => {
                 self.settings.chapter_marks = !self.settings.chapter_marks;
             }
+            Cmd::CycleTime => self.settings.time_mode = self.settings.time_mode.next(),
             Cmd::Frame { forward } => {
                 if let Some(player) = &mut self.player
                     && !player.state.idle
@@ -780,6 +781,7 @@ impl App {
             has_prev: self.playlist.prev().is_some(),
             has_next: self.playlist.next().is_some(),
             chapter_marks: self.settings.chapter_marks,
+            time_mode: self.settings.time_mode,
             drag: &mut self.seek_drag,
         };
         egui::Area::new(egui::Id::new("fullscreen_controls"))
@@ -1002,6 +1004,7 @@ impl eframe::App for App {
                 has_prev: self.playlist.prev().is_some(),
                 has_next: self.playlist.next().is_some(),
                 chapter_marks: self.settings.chapter_marks,
+                time_mode: self.settings.time_mode,
                 drag: &mut self.seek_drag,
             };
             egui::Panel::bottom("controls")

@@ -59,6 +59,8 @@ pub enum Cmd {
     Chapter(usize),
     /// Show or hide the chapter marks on the seek bar.
     ToggleChapterMarks,
+    /// The time in the control bar: both, elapsed, remaining (a click on it).
+    CycleTime,
     Minimize,
     ToggleMaximize,
     Close,
