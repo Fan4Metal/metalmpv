@@ -892,7 +892,10 @@ fn keys(ui: &mut Ui) {
         ),
         (
             "Esc",
-            tr!("Leave fullscreen", "Выйти из полноэкранного режима"),
+            tr!(
+                "Leave fullscreen; in a window, close the program",
+                "Выйти из полноэкранного режима; в окне — закрыть программу"
+            ),
         ),
         (
             "T",

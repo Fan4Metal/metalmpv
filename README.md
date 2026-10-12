@@ -125,7 +125,8 @@ The list of fonts has a search field at its top. The **Keys** category lists the
 | `S`, `J` | Next subtitles; after the last, none |
 | `V` | Subtitles off, and on again |
 | `Page Up` / `Page Down` | Previous / next file of the playlist |
-| `Enter`, `F11`, double click | Fullscreen; `Esc` leaves it |
+| `Enter`, `F11`, double click | Fullscreen |
+| `Esc` | Closes the file information window, else leaves fullscreen, else closes the program |
 | `Ctrl+O` | Open files |
 | `L`, middle click on the picture | Show or hide the playlist |
 | `Delete` | Remove the selected playlist entry |

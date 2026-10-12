@@ -23,7 +23,9 @@ pub enum Cmd {
     Volume(f64),
     ToggleMute,
     ToggleFullscreen,
-    LeaveFullscreen,
+    /// Close the information window, else leave fullscreen, else close
+    /// the program.
+    Escape,
     Next,
     Prev,
     Open,
@@ -98,7 +100,7 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
         Key::PageUp => Cmd::Prev,
         Key::PageDown => Cmd::Next,
         Key::Enter | Key::F11 if !ctrl => Cmd::ToggleFullscreen,
-        Key::Escape => Cmd::LeaveFullscreen,
+        Key::Escape => Cmd::Escape,
         Key::O if ctrl => Cmd::Open,
         Key::L if !ctrl => Cmd::TogglePlaylist,
         Key::F1 => Cmd::About,

@@ -594,9 +594,15 @@ impl App {
             Cmd::ToggleFullscreen => {
                 self.set_fullscreen(ctx, frame, !frameless::is_fullscreen(ctx))
             }
-            Cmd::LeaveFullscreen => {
-                if !self.info.close() {
+            Cmd::Escape => {
+                // The big cover and the information window first, then
+                // fullscreen, then the program (as its close button: the
+                // settings are saved).
+                if self.info.close() {
+                } else if frameless::is_fullscreen(ctx) {
                     self.set_fullscreen(ctx, frame, false);
+                } else {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
             Cmd::ToggleInfo => self.info.toggle(),
