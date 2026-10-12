@@ -35,11 +35,14 @@ use crate::update::Updates;
 use crate::video::Video;
 use crate::win;
 
-/// How long the mouse may rest in fullscreen before the control bar and
-/// the pointer hide.
+/// How long the mouse may rest in fullscreen, away from the panels, before
+/// the pointer hides.
 const HIDE_AFTER: Duration = Duration::from_millis(500);
 /// The height of the strip with the file's name at the top in fullscreen.
 const FULLSCREEN_TITLE_HEIGHT: f32 = 34.0;
+/// How near the bottom edge the pointer shows the control bar in
+/// fullscreen (the bar is a little lower).
+const FULLSCREEN_BAR_ZONE: f32 = 90.0;
 /// Files handed over by other starts this close together make one
 /// playlist (Explorer starts one process per selected file).
 const SAME_BATCH: Duration = Duration::from_millis(1500);
@@ -818,10 +821,7 @@ impl App {
         }
         // In fullscreen the line goes under the strip with the name while
         // that is shown.
-        let osd_rect = if self.fullscreen
-            && self.settings.fullscreen_title
-            && self.fullscreen_panels_shown(ui.ctx())
-        {
+        let osd_rect = if self.fullscreen && self.fullscreen_panels(ui.ctx()).top {
             rect.with_min_y(rect.top() + FULLSCREEN_TITLE_HEIGHT)
         } else {
             rect
@@ -941,25 +941,25 @@ impl App {
         Duration::from_secs_f32(ctx.input(|i| i.pointer.time_since_last_movement()).max(0.0))
     }
 
-    /// Whether the panels over the picture in fullscreen are shown: while
-    /// the mouse moves or rests near the bottom (or the top, with the strip
-    /// of the name), a seek is dragged or the tracks window is open.
-    fn fullscreen_panels_shown(&self, ctx: &egui::Context) -> bool {
+    /// Which panels over the picture are shown in fullscreen, each on its
+    /// own: the control bar while the pointer is near the bottom, a seek is
+    /// dragged or the tracks window is open; the strip with the name (when
+    /// it is on) while the pointer is near the top.
+    fn fullscreen_panels(&self, ctx: &egui::Context) -> Panels {
         let screen = ctx.content_rect();
-        let top = self.settings.fullscreen_title;
-        let near_edge = ctx.pointer_hover_pos().is_some_and(|p| {
-            p.y > screen.bottom() - 90.0
-                || (top && p.y < screen.top() + FULLSCREEN_TITLE_HEIGHT + 16.0)
-        });
-        Self::pointer_rest(ctx) < HIDE_AFTER
-            || near_edge
-            || self.seek_drag.is_some()
-            || egui::Popup::is_id_open(ctx, crate::ui::tracks::popup_id())
-            || self.info.open
+        let pointer = ctx.pointer_hover_pos();
+        Panels {
+            top: self.settings.fullscreen_title
+                && pointer.is_some_and(|p| p.y < screen.top() + FULLSCREEN_TITLE_HEIGHT + 16.0),
+            bottom: pointer.is_some_and(|p| p.y > screen.bottom() - FULLSCREEN_BAR_ZONE)
+                || self.seek_drag.is_some()
+                || egui::Popup::is_id_open(ctx, crate::ui::tracks::popup_id()),
+        }
     }
 
     /// The control bar and the file's name over the picture in fullscreen
-    /// ([`Self::fullscreen_panels_shown`]); the pointer hides with them.
+    /// ([`Self::fullscreen_panels`]). The pointer hides after a rest away
+    /// from them, unless the information window is open.
     fn fullscreen_controls(
         &mut self,
         ctx: &egui::Context,
@@ -967,20 +967,22 @@ impl App {
         title: &str,
         cmds: &mut Vec<Cmd>,
     ) {
-        if !self.fullscreen_panels_shown(ctx) {
-            ctx.set_cursor_icon(CursorIcon::None);
-            return;
-        }
-        let screen = ctx.content_rect();
+        let panels = self.fullscreen_panels(ctx);
         let rest = Self::pointer_rest(ctx);
         if rest < HIDE_AFTER {
             ctx.request_repaint_after(HIDE_AFTER - rest);
+        } else if !panels.top && !panels.bottom && !self.info.open {
+            ctx.set_cursor_icon(CursorIcon::None);
         }
+        let screen = ctx.content_rect();
         let alpha = (255.0 * (1.0 - self.settings.fullscreen_transparency / 100.0)).round() as u8;
         let fill = style::BAR_BG.gamma_multiply_u8(alpha);
 
-        if self.settings.fullscreen_title {
+        if panels.top {
             fullscreen_title(ctx, screen, title, fill);
+        }
+        if !panels.bottom {
+            return;
         }
         let bar = ui::controls::Bar {
             state,
@@ -1022,6 +1024,14 @@ impl App {
             self.shown_title = wanted;
         }
     }
+}
+
+/// The panels over the picture in fullscreen that are shown.
+struct Panels {
+    /// The strip with the file's name.
+    top: bool,
+    /// The control bar.
+    bottom: bool,
 }
 
 /// The icon of the start screen in points: 112 as in qview, 64 in a low
