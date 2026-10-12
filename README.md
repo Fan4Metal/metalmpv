@@ -30,7 +30,7 @@ Metal Player is a video player for Windows with a classic layout: the picture fi
 - **Hardware decoding** (NVDEC, D3D11VA and others, chosen by libmpv), which can be turned off in the settings.
 - **Playlist**: files opened together, dropped onto the window or added with the **+** button of the playlist; optionally the other media files of the folder of an opened file.
 - **One window**: a file opened from Explorer while the player runs is played in the window already open.
-- **English or Russian interface**: it follows the language of Windows and can be changed in the About window (`F1`).
+- **English or Russian interface**: it follows the language of Windows and can be changed in the settings (`F5`).
 - **Portable**: the [portable archive](#installation) keeps its settings next to the program.
 - **Privacy**: no network access beyond the optional update check (see [Update check and privacy](#update-check-and-privacy)).
 
@@ -62,13 +62,13 @@ The button with a speech bubble left of the volume (`T`) opens a window with the
 
 ### Settings
 
-The settings window (`F5` or the gear button) lists the categories on the left and shows the settings of the chosen one on the right in framed groups. **Reset** under the list puts every setting back to its default.
+The settings window (`F5` or the gear button) lists the categories on the left and shows the settings of the chosen one on the right in groups: each row names a setting, explains it underneath and holds its control on the right. **Reset** under the list puts every setting back to its default.
 
 | Category | Setting | Default | Meaning |
 |---|---|---|---|
-| General | Interface language | as in Windows | Also in the About window |
-| Updates | Check for updates at start-up | off | See [Update check and privacy](#update-check-and-privacy); **Check now** asks at once |
-| General | Opening a file adds the other media files of its folder | off | One opened file brings the media files of its folder into the playlist |
+| General | Language | as in Windows | "System" follows the language of Windows |
+| Updates | Check at start-up | off | See [Update check and privacy](#update-check-and-privacy); **Check now** asks at once |
+| General | Add the folder's files | off | One opened file brings the media files of its folder into the playlist |
 | Playback | Left / Right | 10 s | The step of `←` and `→`, on keyframes |
 | Playback | Ctrl+Left / Right | 60 s | The step of `Ctrl+←` and `Ctrl+→`, on keyframes |
 | Video | Hardware decoding (GPU) | on | Decoding on the graphics card where possible; the decoder in use is shown below |
@@ -104,7 +104,7 @@ A seek on keyframes is instant, since nothing has to be decoded before the frame
 
 ## Update check and privacy
 
-The update check is optional and off by default. With **Check for updates at start-up (once a day)** enabled in the About window, the program asks the GitHub Releases API (`api.github.com`) for the latest release at most once a day; **Check now** in the same window asks at once. The request carries nothing but the program version in its `User-Agent` header, and nothing is downloaded or installed: when a newer release exists, a button with its version appears in the title row and opens the release page in the browser. Otherwise the program does not access the network; libmpv's network features (streaming, `youtube-dl`) are not used.
+The update check is optional and off by default. With **Check at start-up** enabled on the Updates page of the settings, the program asks the GitHub Releases API (`api.github.com`) for the latest release at most once a day; **Check now** on the same page asks at once. The request carries nothing but the program version in its `User-Agent` header, and nothing is downloaded or installed: when a newer release exists, a button with its version appears in the title row and opens the release page in the browser. Otherwise the program does not access the network; libmpv's network features (streaming, `youtube-dl`) are not used.
 
 ## Building
 

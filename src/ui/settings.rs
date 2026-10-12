@@ -2,8 +2,8 @@
 //! frames, the categories in a darker column on the left with Reset and
 //! Close under them, the page of the chosen category on the right in
 //! cards of rows (the name and a hint on the left, the control on the
-//! right). The language and the update check are also in About, as in
-//! every app of the family; both edit the same values.
+//! right). Unlike the family's other apps, the language and the update
+//! check are here only, not in About.
 
 use egui::{
     Align, Align2, Color32, CornerRadius, FontId, Layout, Margin, Rect, Response, RichText, Sense,
@@ -13,7 +13,7 @@ use egui::{
 use super::style;
 use crate::i18n::LangChoice;
 use crate::settings::{MAX_STEP, Settings};
-use crate::update::{Status, Updates};
+use crate::update::{Status, Updates, release_url, version_of};
 
 /// The size of the window's content in points.
 const SIZE: egui::Vec2 = vec2(820.0, 560.0);
@@ -549,7 +549,7 @@ fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>) -> b
     changed
 }
 
-/// The update check, the same as in About.
+/// The update check.
 fn updates_page(ui: &mut Ui, updates: &mut Updates) {
     section(
         ui,
@@ -583,7 +583,7 @@ fn updates_page(ui: &mut Ui, updates: &mut Updates) {
             }
             if updates.status != Status::Unknown {
                 ui.add_space(2.0);
-                super::about::update_status(ui, updates, false);
+                update_status(ui, updates);
                 ui.add_space(8.0);
             }
         },
@@ -600,6 +600,47 @@ fn updates_page(ui: &mut Ui, updates: &mut Updates) {
             ui.add_space(8.0);
         },
     );
+}
+
+/// The outcome of the last check, if any.
+fn update_status(ui: &mut Ui, updates: &Updates) {
+    match &updates.status {
+        Status::Unknown => {}
+        Status::Checking => {
+            ui.horizontal(|ui| {
+                ui.add(egui::Spinner::new());
+                ui.weak(tr!("Checking…", "Проверка…"));
+            });
+        }
+        Status::UpToDate => {
+            ui.weak(tr!(
+                "This is the latest version",
+                "Установлена последняя версия"
+            ));
+        }
+        Status::Newer(tag) => {
+            let version = version_of(tag);
+            let url = release_url(tag);
+            if ui
+                .link(tr!(
+                    format!("Version {version} is available"),
+                    format!("Доступна версия {version}")
+                ))
+                .on_hover_text(url.as_str())
+                .clicked()
+                && !crate::win::shell_open(&url)
+            {
+                log::warn!("could not open {url}");
+            }
+        }
+        Status::Failed(e) => {
+            ui.weak(tr!(
+                "Could not check for updates",
+                "Не удалось проверить обновления"
+            ))
+            .on_hover_text(e);
+        }
+    }
 }
 
 /// The keys, as in the README.

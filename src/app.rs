@@ -143,8 +143,6 @@ impl App {
 
         let mut updates = Updates::new(settings.check_updates, settings.last_update_check);
         updates.start_if_due(ctx);
-        let mut about = AboutDialog::default();
-        about.lang = settings.language;
         let mut app = Self {
             settings,
             player,
@@ -152,7 +150,7 @@ impl App {
             engine_error,
             file_error: None,
             playlist: Playlist::default(),
-            about,
+            about: AboutDialog::default(),
             settings_dialog: SettingsDialog::default(),
             updates,
             osd: OsdLine::default(),
@@ -964,22 +962,18 @@ impl eframe::App for App {
             self.fullscreen_controls(&ctx, &state, &mut cmds);
         }
 
-        // About and the settings edit the same language: About's copy is
-        // the one saved.
-        self.settings.language = self.about.lang;
         let changed = self.settings_dialog.show(
             &ctx,
             &mut self.settings,
             &mut self.updates,
             state.hwdec.as_deref(),
         );
-        self.about.lang = self.settings.language;
         if changed.hwdec
             && let Some(player) = &mut self.player
         {
             player.set_hwdec(self.settings.hwdec);
         }
-        self.about.show(&ctx, &mut self.updates);
+        self.about.show(&ctx);
 
         for cmd in cmds {
             self.run(&ctx, frame, cmd);
@@ -989,7 +983,6 @@ impl eframe::App for App {
 
     /// Called by eframe every `auto_save_interval` and on exit.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        self.settings.language = self.about.lang;
         self.settings.check_updates = self.updates.enabled;
         self.settings.last_update_check = self.updates.last_check;
         if let Some(player) = &self.player {
