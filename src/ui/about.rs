@@ -152,7 +152,7 @@ impl AboutDialog {
                 ui.add_space(8.0);
                 ui.separator();
                 ui.add_space(4.0);
-                update_section(ui, updates, true);
+                update_section(ui, updates);
                 ui.add_space(4.0);
             });
             closed
@@ -168,8 +168,8 @@ impl AboutDialog {
 }
 
 /// The update check: the start-up option, a button to check now and the
-/// outcome; `centred` in About, aligned left in the settings.
-pub(crate) fn update_section(ui: &mut Ui, updates: &mut Updates, centred: bool) {
+/// outcome.
+fn update_section(ui: &mut Ui, updates: &mut Updates) {
     let before = updates.enabled;
     ui.checkbox(
         &mut updates.enabled,
@@ -192,6 +192,12 @@ pub(crate) fn update_section(ui: &mut Ui, updates: &mut Updates, centred: bool) 
     {
         updates.start(ui.ctx());
     }
+    update_status(ui, updates, true);
+}
+
+/// The outcome of the last check, if any; `centred` in About, aligned
+/// left in the settings.
+pub(crate) fn update_status(ui: &mut Ui, updates: &Updates, centred: bool) {
     match &updates.status {
         Status::Unknown => {}
         Status::Checking => {

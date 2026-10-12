@@ -1,20 +1,26 @@
-//! The settings window (F5 or the gear button): the categories in a list
-//! on the left, Reset and Close under
-//! it, the page of the chosen category on the right in framed groups. The
-//! language and the update check are also in About, as in every app of
-//! the family; both edit the same values.
+//! The settings window (F5 or the gear button): one surface without inner
+//! frames, the categories in a darker column on the left with Reset and
+//! Close under them, the page of the chosen category on the right in
+//! cards of rows (the name and a hint on the left, the control on the
+//! right). The language and the update check are also in About, as in
+//! every app of the family; both edit the same values.
 
-use egui::{Margin, Rect, RichText, Stroke, Ui, pos2, vec2};
+use egui::{
+    Align, Align2, Color32, CornerRadius, FontId, Layout, Margin, Rect, Response, RichText, Sense,
+    Stroke, Ui, pos2, vec2,
+};
 
 use super::style;
 use crate::i18n::LangChoice;
 use crate::settings::{MAX_STEP, Settings};
-use crate::update::Updates;
+use crate::update::{Status, Updates};
 
 /// The size of the window's content in points.
 const SIZE: egui::Vec2 = vec2(820.0, 560.0);
-/// The width of the category list.
-const LIST_WIDTH: f32 = 170.0;
+/// The width of the category column.
+const SIDEBAR_WIDTH: f32 = 190.0;
+/// The corner radius of the window.
+const RADIUS: u8 = 10;
 
 /// A category of the list.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -111,35 +117,48 @@ impl SettingsDialog {
             .frame(
                 egui::Frame::popup(&ctx.style_of(egui::Theme::Dark))
                     .fill(style::PANEL_BG)
-                    .inner_margin(Margin::same(10)),
+                    .corner_radius(RADIUS)
+                    .inner_margin(Margin::ZERO),
             )
             .show(ctx, |ui| {
+                round_widgets(ui);
                 // Every part gets a rectangle of its own with a top-down
                 // layout: nested horizontal layouts would lay the groups
                 // out side by side and widen the window past the screen.
-                let (rect, _) = ui.allocate_exact_size(SIZE, egui::Sense::hover());
+                let (rect, _) = ui.allocate_exact_size(SIZE, Sense::hover());
 
-                let title = Rect::from_min_size(rect.min, vec2(rect.width(), 28.0));
-                child(ui, title).heading(tr!("Settings", "Настройки"));
-                let cross =
-                    Rect::from_min_size(pos2(title.right() - 24.0, title.top()), vec2(24.0, 24.0));
-                close |= super::close_cross(&mut child(ui, cross));
+                // The category column, flush with the window's left edge.
+                let sidebar = Rect::from_min_size(rect.min, vec2(SIDEBAR_WIDTH, rect.height()));
+                let inner = RADIUS - 1;
+                ui.painter().rect_filled(
+                    sidebar,
+                    CornerRadius {
+                        nw: inner,
+                        sw: inner,
+                        ne: 0,
+                        se: 0,
+                    },
+                    style::SIDEBAR_BG,
+                );
+                ui.painter().text(
+                    sidebar.left_top() + vec2(20.0, 20.0),
+                    Align2::LEFT_TOP,
+                    tr!("Settings", "Настройки"),
+                    FontId::proportional(18.0),
+                    style::TEXT_BRIGHT,
+                );
+                let list = Rect::from_min_max(
+                    sidebar.left_top() + vec2(10.0, 62.0),
+                    sidebar.right_bottom() - vec2(10.0, 100.0),
+                );
+                self.categories(ui, list);
 
-                let body = Rect::from_min_max(pos2(rect.left(), title.bottom() + 8.0), rect.max);
-                const BUTTON: f32 = 28.0;
-                let list = Rect::from_min_size(
-                    body.min,
-                    vec2(LIST_WIDTH, body.height() - 2.0 * BUTTON - 16.0),
-                );
-                self.categories(&mut child(ui, list));
-                let reset_rect = Rect::from_min_size(
-                    pos2(body.left(), list.bottom() + 8.0),
-                    vec2(LIST_WIDTH, BUTTON),
-                );
+                const BUTTON: f32 = 30.0;
                 let close_rect = Rect::from_min_size(
-                    pos2(body.left(), reset_rect.bottom() + 8.0),
-                    vec2(LIST_WIDTH, BUTTON),
+                    pos2(sidebar.left() + 12.0, sidebar.bottom() - 14.0 - BUTTON),
+                    vec2(SIDEBAR_WIDTH - 24.0, BUTTON),
                 );
+                let reset_rect = close_rect.translate(vec2(0.0, -BUTTON - 8.0));
                 if child(ui, reset_rect)
                     .add_sized(
                         reset_rect.size(),
@@ -160,20 +179,45 @@ impl SettingsDialog {
                     )
                     .clicked();
 
-                let page = Rect::from_min_max(pos2(list.right() + 10.0, body.top()), body.max);
-                ui.painter().rect_filled(page, 4.0, style::LIST_BG);
-                let mut ui = child(ui, page.shrink(12.0));
-                ui.label(RichText::new(self.page.title()).size(17.0).strong());
-                ui.weak(self.page.summary());
+                // The page.
+                let page = Rect::from_min_max(pos2(sidebar.right(), rect.top()), rect.max);
+                let cross = Rect::from_min_size(
+                    pos2(page.right() - 14.0 - 24.0, page.top() + 14.0),
+                    vec2(24.0, 24.0),
+                );
+                close |= super::close_cross(&mut child(ui, cross));
+                // The scroll bar takes the right margin, next to the cards.
+                let content = Rect::from_min_max(
+                    page.left_top() + vec2(28.0, 18.0),
+                    page.right_bottom() - vec2(10.0, 0.0),
+                );
+                let mut ui = child(ui, content);
+                ui.label(
+                    RichText::new(self.page.title())
+                        .size(20.0)
+                        .strong()
+                        .color(style::TEXT_BRIGHT),
+                );
+                ui.add_space(2.0);
+                ui.label(RichText::new(self.page.summary()).color(style::TEXT_WEAK));
                 ui.add_space(4.0);
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
-                    .show(&mut ui, |ui| match self.page {
-                        Page::General => general(ui, settings),
-                        Page::Updates => updates_page(ui, updates),
-                        Page::Playback => playback(ui, settings),
-                        Page::Video => changed.hwdec |= video(ui, settings, hwdec_current),
-                        Page::Keys => keys(ui),
+                    .show(&mut ui, |ui| {
+                        egui::Frame::new()
+                            .inner_margin(Margin {
+                                left: 0,
+                                right: 18,
+                                top: 0,
+                                bottom: 18,
+                            })
+                            .show(ui, |ui| match self.page {
+                                Page::General => general(ui, settings),
+                                Page::Updates => updates_page(ui, updates),
+                                Page::Playback => playback(ui, settings),
+                                Page::Video => changed.hwdec |= video(ui, settings, hwdec_current),
+                                Page::Keys => keys(ui),
+                            });
                     });
             });
         if close || (!fresh && modal.should_close()) {
@@ -182,36 +226,31 @@ impl SettingsDialog {
         changed
     }
 
-    /// The list of categories, filling `ui`.
-    fn categories(&mut self, ui: &mut Ui) {
-        let rect = ui.max_rect();
-        ui.painter().rect_filled(rect, 4.0, style::LIST_BG);
-        let mut y = rect.top() + 6.0;
+    /// The list of categories in `rect`.
+    fn categories(&mut self, ui: &mut Ui, rect: Rect) {
+        let mut y = rect.top();
         for page in Page::ALL {
-            let row =
-                Rect::from_min_size(pos2(rect.left() + 6.0, y), vec2(rect.width() - 12.0, 30.0));
-            y += 32.0;
+            let row = Rect::from_min_size(pos2(rect.left(), y), vec2(rect.width(), 34.0));
+            y += 36.0;
             let response = ui.interact(
                 row,
                 ui.id().with(("settings_page", page as u8)),
-                egui::Sense::CLICK,
+                Sense::CLICK,
             );
             let selected = self.page == page;
             let fill = if selected {
-                style::SELECTED_BG
+                Color32::from_white_alpha(14)
             } else if response.hovered() {
-                style::HOVER
+                Color32::from_white_alpha(7)
             } else {
-                style::LIST_BG
+                Color32::TRANSPARENT
             };
-            ui.painter().rect_filled(row, 3.0, fill);
+            ui.painter().rect_filled(row, 6.0, fill);
             if selected {
-                ui.painter().rect_stroke(
-                    row,
-                    3.0,
-                    Stroke::new(1.0, style::ACCENT),
-                    egui::StrokeKind::Inside,
-                );
+                // A short accent bar at the left edge marks the page.
+                let bar =
+                    Rect::from_center_size(pos2(row.left() + 3.0, row.center().y), vec2(3.0, 16.0));
+                ui.painter().rect_filled(bar, 1.5, style::ACCENT);
             }
             let color = if selected {
                 style::TEXT_BRIGHT
@@ -219,10 +258,10 @@ impl SettingsDialog {
                 style::TEXT
             };
             ui.painter().text(
-                row.center(),
-                egui::Align2::CENTER_CENTER,
+                pos2(row.left() + 16.0, row.center().y),
+                Align2::LEFT_CENTER,
                 page.title(),
-                egui::FontId::proportional(14.0),
+                FontId::proportional(14.0),
                 color,
             );
             if response.clicked() {
@@ -232,97 +271,249 @@ impl SettingsDialog {
     }
 }
 
+/// Rounder buttons, lists and fields in the window.
+fn round_widgets(ui: &mut Ui) {
+    let w = &mut ui.style_mut().visuals.widgets;
+    for v in [
+        &mut w.noninteractive,
+        &mut w.inactive,
+        &mut w.hovered,
+        &mut w.active,
+        &mut w.open,
+    ] {
+        v.corner_radius = CornerRadius::same(5);
+    }
+    ui.spacing_mut().button_padding = vec2(10.0, 4.0);
+}
+
 /// A part of the window in `rect`, laid out from the top.
 fn child(ui: &mut Ui, rect: Rect) -> Ui {
     ui.new_child(
         egui::UiBuilder::new()
             .max_rect(rect)
-            .layout(egui::Layout::top_down(egui::Align::Min)),
+            .layout(Layout::top_down(Align::Min)),
     )
 }
 
-/// A framed group with a title.
-fn group(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui)) {
-    ui.add_space(8.0);
+/// A card: a lighter rounded ground without a frame.
+fn card(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
     egui::Frame::new()
-        .stroke(Stroke::new(1.0, style::LINE))
-        .corner_radius(4.0)
-        .inner_margin(Margin {
-            left: 12,
-            right: 12,
-            top: 8,
-            bottom: 10,
-        })
+        .fill(style::CARD_BG)
+        .corner_radius(8.0)
+        .inner_margin(Margin::symmetric(16, 4))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(RichText::new(title).strong());
-            ui.add_space(4.0);
             add(ui);
         });
 }
 
-fn general(ui: &mut Ui, settings: &mut Settings) {
-    group(
-        ui,
-        tr!("Interface language", "Язык интерфейса"),
-        |ui| {
-            let mut choice = settings.language;
-            egui::ComboBox::from_id_salt("settings_language")
-                .selected_text(choice.label())
-                .width(240.0)
-                .show_ui(ui, |ui| {
-                    for c in LangChoice::ALL {
-                        ui.selectable_value(&mut choice, c, c.label());
-                    }
-                });
-            if choice != settings.language {
-                settings.language = choice;
-                crate::i18n::set_lang(choice.resolve());
-            }
-        },
+/// A titled group of settings: the title over a card.
+fn section(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui)) {
+    ui.add_space(16.0);
+    ui.label(RichText::new(title).strong().color(style::TEXT_BRIGHT));
+    ui.add_space(4.0);
+    card(ui, add);
+}
+
+/// A remark under a card.
+fn note(ui: &mut Ui, text: &str) {
+    ui.add_space(4.0);
+    ui.label(RichText::new(text).size(12.5).color(style::TEXT_WEAK));
+}
+
+/// A line between the rows of a card.
+fn divider(ui: &mut Ui) {
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+    ui.painter().hline(
+        rect.x_range(),
+        rect.center().y,
+        Stroke::new(1.0, style::LINE),
     );
-    group(
+}
+
+/// A row of a card: the name with an optional hint under it on the left,
+/// what `control` adds right-aligned in `control_width` points on the
+/// right, centred vertically.
+fn row<R>(
+    ui: &mut Ui,
+    title: &str,
+    hint: Option<&str>,
+    control_width: f32,
+    control: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    const PAD: f32 = 8.0;
+    let width = ui.available_width();
+    let text_width = (width - control_width - 24.0).max(80.0);
+    let title = ui.painter().layout(
+        title.to_owned(),
+        FontId::proportional(14.0),
+        style::TEXT,
+        text_width,
+    );
+    let hint = hint.map(|h| {
+        ui.painter().layout(
+            h.to_owned(),
+            FontId::proportional(12.5),
+            style::TEXT_WEAK,
+            text_width,
+        )
+    });
+    let text_height = title.size().y + hint.as_ref().map_or(0.0, |h| 2.0 + h.size().y);
+    let height = text_height.max(ui.spacing().interact_size.y) + 2.0 * PAD;
+    let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+    let mut y = rect.center().y - text_height / 2.0;
+    let title_height = title.size().y;
+    ui.painter()
+        .galley(pos2(rect.left(), y), title, style::TEXT);
+    y += title_height + 2.0;
+    if let Some(hint) = hint {
+        ui.painter()
+            .galley(pos2(rect.left(), y), hint, style::TEXT_WEAK);
+    }
+    let control_rect = Rect::from_min_max(pos2(rect.right() - control_width, rect.top()), rect.max);
+    let mut ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(control_rect)
+            .layout(Layout::right_to_left(Align::Center)),
+    );
+    control(&mut ui)
+}
+
+/// An on/off switch.
+fn switch(ui: &mut Ui, on: &mut bool) -> Response {
+    let size = vec2(40.0, 20.0);
+    let (rect, mut response) = ui.allocate_exact_size(size, Sense::click());
+    if response.clicked() {
+        *on = !*on;
+        response.mark_changed();
+    }
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), *on, "")
+    });
+    if ui.is_rect_visible(rect) {
+        let t = ui.ctx().animate_bool(response.id, *on);
+        let hovered = response.hovered();
+        let radius = rect.height() / 2.0;
+        let painter = ui.painter();
+        if *on {
+            let fill = if hovered {
+                style::ACCENT_HOVER
+            } else {
+                style::ACCENT
+            };
+            painter.rect_filled(rect, radius, fill);
+        } else {
+            painter.rect_filled(rect, radius, style::TRACK);
+        }
+        let knob = if *on || hovered {
+            style::TEXT_BRIGHT
+        } else {
+            style::TEXT_WEAK
+        };
+        let x = egui::lerp(rect.left() + radius..=rect.right() - radius, t);
+        painter.circle_filled(pos2(x, rect.center().y), radius - 4.0 + t, knob);
+    }
+    response
+}
+
+fn general(ui: &mut Ui, settings: &mut Settings) {
+    section(ui, tr!("Interface", "Интерфейс"), |ui| {
+        row(
+            ui,
+            tr!("Language", "Язык"),
+            Some(tr!(
+                "\"System\" follows the language of Windows.",
+                "«Системный» следует языку Windows."
+            )),
+            230.0,
+            |ui| {
+                let mut choice = settings.language;
+                egui::ComboBox::from_id_salt("settings_language")
+                    .selected_text(choice.label())
+                    .width(220.0)
+                    .show_ui(ui, |ui| {
+                        for c in LangChoice::ALL {
+                            ui.selectable_value(&mut choice, c, c.label());
+                        }
+                    });
+                if choice != settings.language {
+                    settings.language = choice;
+                    crate::i18n::set_lang(choice.resolve());
+                }
+            },
+        );
+    });
+    section(
         ui,
         tr!("Playlist", "Список воспроизведения"),
         |ui| {
-            ui.checkbox(
-                &mut settings.fill_playlist,
-                tr!(
-                    "Opening a file adds the other media files of its folder",
-                    "При открытии файла добавлять остальные медиафайлы его папки"
-                ),
+            row(
+                ui,
+                tr!("Add the folder's files", "Добавлять файлы папки"),
+                Some(tr!(
+                    "Opening a file adds the other media files of its folder.",
+                    "При открытии файла добавляются остальные медиафайлы его папки."
+                )),
+                50.0,
+                |ui| switch(ui, &mut settings.fill_playlist),
             );
         },
     );
 }
 
 fn playback(ui: &mut Ui, settings: &mut Settings) {
-    group(ui, tr!("Seek steps", "Шаги перемотки"), |ui| {
-        ui.weak(tr!(
+    section(ui, tr!("Seek steps", "Шаги перемотки"), |ui| {
+        row(
+            ui,
+            tr!("Left / Right", "← / →"),
+            Some(tr!(
+                "The short step, on keyframes.",
+                "Короткий шаг, по ключевым кадрам."
+            )),
+            120.0,
+            |ui| step(ui, &mut settings.seek_short),
+        );
+        divider(ui);
+        row(
+            ui,
+            tr!("Ctrl+Left / Right", "Ctrl+← / →"),
+            Some(tr!(
+                "The long step, on keyframes.",
+                "Длинный шаг, по ключевым кадрам."
+            )),
+            120.0,
+            |ui| step(ui, &mut settings.seek_long),
+        );
+    });
+    note(
+        ui,
+        tr!(
             "A seek on keyframes is instant: playback goes on from the keyframe nearest to the target.",
             "Перемотка по ключевым кадрам мгновенна: воспроизведение продолжается с ключевого кадра, ближайшего к цели."
-        ));
-        ui.add_space(6.0);
-        egui::Grid::new("seek_steps")
-            .num_columns(2)
-            .spacing([12.0, 8.0])
-            .show(ui, |ui| {
-                ui.label(tr!("Left / Right:", "← / →:"));
-                step(ui, &mut settings.seek_short);
-                ui.end_row();
-                ui.label(tr!("Ctrl+Left / Right:", "Ctrl+← / →:"));
-                step(ui, &mut settings.seek_long);
-                ui.end_row();
-            });
-    });
-    group(
+        ),
+    );
+    section(
         ui,
         tr!("Exact seeking", "Точная перемотка"),
         |ui| {
-            ui.label(tr!(
-                "Shift+Left / Right moves by 1 s to the exact frame; , and . step by one frame.",
-                "Shift+← / → перематывает на 1 с точно до кадра; «,» и «.» — на один кадр."
-            ));
+            row(
+                ui,
+                tr!("Shift+Left / Right", "Shift+← / →"),
+                Some(tr!(
+                    "Moves by 1 s to the exact frame.",
+                    "Перематывает на 1 с точно до кадра."
+                )),
+                0.0,
+                |_| (),
+            );
+            divider(ui);
+            row(
+                ui,
+                ", / .",
+                Some(tr!("Steps by one frame.", "Переходит на один кадр.")),
+                0.0,
+                |_| (),
+            );
         },
     );
 }
@@ -330,56 +521,83 @@ fn playback(ui: &mut Ui, settings: &mut Settings) {
 /// The video page; whether hardware decoding was switched.
 fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>) -> bool {
     let mut changed = false;
-    group(ui, tr!("Decoding", "Декодирование"), |ui| {
-        changed = ui
-            .checkbox(&mut settings.hwdec, tr!("Hardware decoding (GPU)", "Аппаратное декодирование (GPU)"))
-            .on_hover_text(tr!(
-                "Decodes video on the graphics card where it can; off, the processor decodes everything",
-                "Видео декодирует видеокарта, где это возможно; если выключено, всё декодирует процессор"
-            ))
-            .changed();
-        ui.add_space(4.0);
+    section(ui, tr!("Decoding", "Декодирование"), |ui| {
+        changed = row(
+            ui,
+            tr!("Hardware decoding (GPU)", "Аппаратное декодирование (GPU)"),
+            Some(tr!(
+                "Decodes video on the graphics card where it can; off, the processor decodes everything. The change applies to the playing file at once.",
+                "Видео декодирует видеокарта, где это возможно; если выключено, всё декодирует процессор. Изменение сразу применяется к воспроизводимому файлу."
+            )),
+            50.0,
+            |ui| switch(ui, &mut settings.hwdec),
+        )
+        .changed();
+        divider(ui);
         let now = match hwdec_current {
-            Some(h) => tr!(
-                format!("In use now: {h}"),
-                format!("Сейчас используется: {h}")
-            ),
-            None => tr!(
-                "In use now: software".into(),
-                "Сейчас используется: программное".into()
-            ),
+            Some(h) => h.to_owned(),
+            None => tr!("software", "программное").to_owned(),
         };
-        ui.weak(now);
-        ui.weak(tr!(
-            "The change applies to the playing file at once.",
-            "Изменение сразу применяется к воспроизводимому файлу."
-        ));
+        row(
+            ui,
+            tr!("In use now", "Сейчас используется"),
+            None,
+            200.0,
+            |ui| ui.label(RichText::new(now).color(style::TEXT_BRIGHT)),
+        );
     });
     changed
 }
 
 /// The update check, the same as in About.
 fn updates_page(ui: &mut Ui, updates: &mut Updates) {
-    group(
+    section(
         ui,
         tr!("Update check", "Проверка обновлений"),
         |ui| {
-            ui.label(tr!(
+            let enabled = row(
+                ui,
+                tr!("Check at start-up", "Проверять при запуске"),
+                Some(tr!("Once a day.", "Раз в сутки.")),
+                50.0,
+                |ui| switch(ui, &mut updates.enabled),
+            );
+            if enabled.changed() && updates.enabled {
+                updates.start_if_due(ui.ctx());
+            }
+            divider(ui);
+            let installed = tr!(
                 format!("Installed version: {}", crate::VERSION),
                 format!("Установленная версия: {}", crate::VERSION)
-            ));
-            ui.add_space(4.0);
-            super::about::update_section(ui, updates, false);
+            );
+            let checking = updates.status == Status::Checking;
+            let check = row(ui, &installed, None, 160.0, |ui| {
+                ui.add_enabled(
+                    !checking,
+                    egui::Button::new(tr!("Check now", "Проверить сейчас")),
+                )
+                .clicked()
+            });
+            if check {
+                updates.start(ui.ctx());
+            }
+            if updates.status != Status::Unknown {
+                ui.add_space(2.0);
+                super::about::update_status(ui, updates, false);
+                ui.add_space(8.0);
+            }
         },
     );
-    group(
+    section(
         ui,
         tr!("Privacy", "Конфиденциальность"),
         |ui| {
-            ui.weak(tr!(
-            "Only api.github.com is asked, with the program's version in the request; nothing is downloaded or installed. A newer version shows a button in the title row that opens its release page.",
-            "Запрос уходит только к api.github.com и содержит лишь версию программы; ничего не скачивается и не устанавливается. О новой версии сообщает кнопка в строке заголовка, открывающая страницу выпуска."
-        ));
+            ui.add_space(8.0);
+            ui.label(RichText::new(tr!(
+                "Only api.github.com is asked, with the program's version in the request; nothing is downloaded or installed. A newer version shows a button in the title row that opens its release page.",
+                "Запрос уходит только к api.github.com и содержит лишь версию программы; ничего не скачивается и не устанавливается. О новой версии сообщает кнопка в строке заголовка, открывающая страницу выпуска."
+            )).color(style::TEXT_WEAK));
+            ui.add_space(8.0);
         },
     );
 }
@@ -465,34 +683,49 @@ fn keys(ui: &mut Ui) {
             tr!("Settings / About", "Настройки / О программе"),
         ),
     ];
-    ui.add_space(8.0);
-    // Two columns by hand: a Grid sizes its columns to their content and
-    // would not wrap a long action.
-    const KEY_WIDTH: f32 = 190.0;
-    for (i, (key, action)) in rows.into_iter().enumerate() {
-        let width = ui.available_width();
-        let row = ui.horizontal_top(|ui| {
-            ui.add_sized(
-                vec2(KEY_WIDTH, 22.0),
-                egui::Label::new(RichText::new(key).strong().color(style::TEXT_BRIGHT))
-                    .halign(egui::Align::Min),
-            );
-            ui.add(egui::Label::new(action).wrap());
-        });
-        if i % 2 == 1 {
-            let r = row.response.rect;
-            let stripe = Rect::from_min_size(r.min, vec2(width, r.height()));
-            ui.painter().rect_filled(
-                stripe.expand2(vec2(0.0, 2.0)),
-                2.0,
-                egui::Color32::from_white_alpha(6),
-            );
+    ui.add_space(16.0);
+    card(ui, |ui| {
+        for (i, (key, action)) in rows.into_iter().enumerate() {
+            if i > 0 {
+                divider(ui);
+            }
+            key_row(ui, key, action);
         }
-    }
+    });
+}
+
+/// A row of the key list: the key on a keycap ground, the action after it,
+/// wrapped (by hand: a Grid sizes its columns to their content and would
+/// not wrap a long action).
+fn key_row(ui: &mut Ui, key: &str, action: &str) {
+    const KEY_WIDTH: f32 = 210.0;
+    const PAD: f32 = 6.0;
+    let width = ui.available_width();
+    let key = ui.painter().layout_no_wrap(
+        key.to_owned(),
+        FontId::proportional(13.0),
+        style::TEXT_BRIGHT,
+    );
+    let action = ui.painter().layout(
+        action.to_owned(),
+        FontId::proportional(14.0),
+        style::TEXT,
+        width - KEY_WIDTH,
+    );
+    let cap = key.size() + vec2(16.0, 6.0);
+    let height = cap.y.max(action.size().y) + 2.0 * PAD;
+    let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+    let cap = Rect::from_min_size(pos2(rect.left(), rect.center().y - cap.y / 2.0), cap);
+    let painter = ui.painter();
+    painter.rect_filled(cap, 5.0, style::KEY_BG);
+    painter.galley(cap.min + vec2(8.0, 3.0), key, style::TEXT_BRIGHT);
+    let y = rect.center().y - action.size().y / 2.0;
+    painter.galley(pos2(rect.left() + KEY_WIDTH, y), action, style::TEXT);
 }
 
 /// A seek step in seconds.
 fn step(ui: &mut Ui, value: &mut f64) {
+    ui.spacing_mut().interact_size.x = 80.0;
     ui.add(
         egui::DragValue::new(value)
             .range(1.0..=MAX_STEP)

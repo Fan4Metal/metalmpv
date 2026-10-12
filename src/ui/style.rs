@@ -14,6 +14,12 @@ pub const BAR_BG: Color32 = rgb(0x17, 0x19, 0x1d);
 /// The playlist and dialogs.
 pub const PANEL_BG: Color32 = rgb(0x20, 0x22, 0x27);
 pub const LIST_BG: Color32 = rgb(0x15, 0x16, 0x19);
+/// The category list of the settings.
+pub const SIDEBAR_BG: Color32 = rgb(0x1a, 0x1c, 0x20);
+/// A group of settings on a page.
+pub const CARD_BG: Color32 = rgb(0x29, 0x2c, 0x32);
+/// A key's name in the list of keys.
+pub const KEY_BG: Color32 = rgb(0x38, 0x3c, 0x45);
 /// Lines between parts.
 pub const LINE: Color32 = rgb(0x2e, 0x31, 0x37);
 pub const TEXT: Color32 = rgb(0xd4, 0xd7, 0xdc);
