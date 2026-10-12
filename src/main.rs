@@ -9,8 +9,10 @@
 mod i18n;
 
 mod app;
+mod assoc;
 mod chapters;
 mod cover;
+mod filetypes;
 mod fonts;
 mod format;
 mod frameless;
@@ -23,6 +25,7 @@ mod player;
 mod playlist;
 mod settings;
 mod tracks;
+mod type_icon;
 mod ui;
 mod update;
 mod video;
@@ -88,6 +91,25 @@ fn main() -> eframe::Result {
                 }
                 return Ok(());
             }
+            Some(flag @ ("--register" | "--unregister")) => {
+                // For the installer: register or unregister the file types,
+                // then exit; an error is shown (the installer runs it hidden).
+                // The types are named in the language of Windows.
+                i18n::set_lang(i18n::system_lang());
+                let result = if flag == "--register" {
+                    std::env::current_exe()
+                        .map_err(|e| e.to_string())
+                        .and_then(|exe| assoc::register(&exe))
+                } else {
+                    assoc::unregister()
+                };
+                if let Err(e) = &result {
+                    log::error!("{flag}: {e}");
+                    win::error_box(APP_NAME, e);
+                    std::process::exit(1);
+                }
+                return Ok(());
+            }
             Some("-V" | "--version") => {
                 win::attach_parent_console();
                 let _ = writeln!(std::io::stdout(), "{APP_NAME} {VERSION}");
@@ -97,7 +119,7 @@ fn main() -> eframe::Result {
                 win::attach_parent_console();
                 let _ = writeln!(
                     std::io::stdout(),
-                    "{APP_NAME} {VERSION}\n\nmetalmpv [FILE...]\nmetalmpv --version | --help | --export-icon FILE.ico"
+                    "{APP_NAME} {VERSION}\n\nmetalmpv [FILE...]\nmetalmpv --version | --help | --export-icon FILE.ico\nmetalmpv --register | --unregister   (the file types, for the installer)"
                 );
                 return Ok(());
             }

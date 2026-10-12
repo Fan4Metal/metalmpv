@@ -193,16 +193,21 @@ pub fn rgba(size: u32) -> Vec<u8> {
 }
 
 /// Encode the icon as a multi-resolution `.ico` (32-bit BMP entries).
-/// qview stores the 256 px layer as PNG through the `png` crate instead:
-/// ~50 KB an icon instead of ~306 KB.
 pub fn ico(sizes: &[u32]) -> Vec<u8> {
-    let images: Vec<Vec<u8>> = sizes.iter().map(|&s| bmp_entry(s)).collect();
+    let layers: Vec<(u32, Vec<u8>)> = sizes.iter().map(|&s| (s, bmp(&rgba(s), s))).collect();
+    ico_of(&layers)
+}
+
+/// A multi-resolution `.ico` of `layers`: each size with its image, a
+/// [`bmp`] entry or a PNG file (Windows takes both; build.rs stores the
+/// 256 px layers of the file type icons as PNG, ~10 KB instead of 262 KB).
+pub fn ico_of(layers: &[(u32, Vec<u8>)]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&[0, 0, 1, 0]); // reserved, type = icon
-    out.extend_from_slice(&(sizes.len() as u16).to_le_bytes());
-    let mut offset = 6 + 16 * sizes.len() as u32;
-    for (&s, img) in sizes.iter().zip(&images) {
-        let dim = if s >= 256 { 0 } else { s as u8 };
+    out.extend_from_slice(&(layers.len() as u16).to_le_bytes());
+    let mut offset = 6 + 16 * layers.len() as u32;
+    for (s, img) in layers {
+        let dim = if *s >= 256 { 0 } else { *s as u8 };
         out.extend_from_slice(&[dim, dim, 0, 0]);
         out.extend_from_slice(&1u16.to_le_bytes()); // planes
         out.extend_from_slice(&32u16.to_le_bytes()); // bpp
@@ -210,15 +215,15 @@ pub fn ico(sizes: &[u32]) -> Vec<u8> {
         out.extend_from_slice(&offset.to_le_bytes());
         offset += img.len() as u32;
     }
-    for img in images {
-        out.extend_from_slice(&img);
+    for (_, img) in layers {
+        out.extend_from_slice(img);
     }
     out
 }
 
+/// An `.ico` entry of straight RGBA pixels `px` of `size` x `size`:
 /// BITMAPINFOHEADER + bottom-up BGRA pixels + 1-bpp AND mask.
-fn bmp_entry(size: u32) -> Vec<u8> {
-    let px = rgba(size);
+pub fn bmp(px: &[u8], size: u32) -> Vec<u8> {
     let n = size as usize;
     let mask_stride = n.div_ceil(32) * 4;
     let mut out = Vec::with_capacity(40 + n * n * 4 + mask_stride * n);

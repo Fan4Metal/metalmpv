@@ -32,6 +32,7 @@ MetalMPV is a video player for Windows with a classic layout: the picture fills 
 - **Hardware decoding** (NVDEC, D3D11VA and others, chosen by libmpv), which can be turned off in the settings.
 - **Playlist**: files opened together, dropped onto the window or added with the **+** button of the playlist; optionally the other media files of the folder of an opened file.
 - **One window**: a file opened from Explorer while the player runs is played in the window already open.
+- **File types**: the player can be registered with Windows for its video and audio formats, each with an icon of its own, and chosen as the default player (see [File types](#file-types)).
 - **English or Russian interface**: it follows the language of Windows and can be changed in the settings (`F5`).
 - **Portable**: the [portable archive](#installation) keeps its settings next to the program.
 - **Privacy**: no network access beyond the optional update check (see [Update check and privacy](#update-check-and-privacy)).
@@ -40,7 +41,7 @@ MetalMPV is a video player for Windows with a classic layout: the picture fills 
 
 The installer and the portable archive are on the [Releases](https://github.com/Fan4Metal/metalmpv/releases) page.
 
-The installer, `MetalMPV_<version>_Setup.exe`, needs no administrator rights: the program is placed in `%LOCALAPPDATA%\Programs\MetalMPV`. The installed program keeps its settings in `%APPDATA%\MetalMPV`.
+The installer, `MetalMPV_<version>_Setup.exe`, needs no administrator rights: the program is placed in `%LOCALAPPDATA%\Programs\MetalMPV`. The installed program keeps its settings in `%APPDATA%\MetalMPV`. Its **File types** task, on by default, registers the player for its formats (see [File types](#file-types)); on the last page it offers to open Windows Settings to choose the player as the default. Uninstalling removes the registration.
 
 The portable archive, `MetalMPV_<version>_portable.zip`, holds the program in a `MetalMPV` folder and runs without installation. It also holds an empty `metalmpv.ron`. While that file is next to `metalmpv.exe` and the folder is writable, the settings are kept in it, so the program can be carried on a removable drive. Without the file, the program keeps them in `%APPDATA%\MetalMPV`, as the installed program does. The About window shows where the settings are kept.
 
@@ -71,6 +72,18 @@ The button with a speech bubble left of the volume (`T`) opens a window with the
 `I`, the **i** button in the title row or **File information** in the picture's context menu opens a window over the player; playback and the keys go on while it is open, and `I` or `Esc` closes it. At the top it shows the cover with the title, the artist and the album; a click on the cover shows it as big as the window allows. Below come the file (name, folder, size, container, duration, overall bitrate, number of chapters; a click on the folder shows the file in Explorer), its tags (the common ones first, named in the interface's language, then the others as the file names them) and its tracks, each with a line of its format, size, frame rate, bit depth, HDR, channels, sampling rate and bitrate. A click on a track unfolds its details: the codec's profile, the aspect ratio, the channel layout, the stream's estimated size, the track's flags and tags, and for the video on screen also the chroma subsampling, the scan, the color range, primaries, transfer and matrix, the HDR light levels and whether it is decoded in hardware. **Copy all** puts the whole of it on the clipboard as text, and **Save the cover…** saves the picture as it is stored. The window stays at the player's top right corner, also when the player's window is resized; its bottom edge can be dragged to make it taller or shorter.
 
 The cover is taken from the file's tags (MP3, FLAC, OGG, Opus, M4A, MP4, WAV, APE and others) or from its attachments (MKV, MKA, WebM); for an audio file without one, a picture named `cover`, `folder` or `front` next to it is used. While an audio file plays, its cover fills the picture with the title, the artist and the album under it.
+
+### File types
+
+**File Associations…** in the picture's context menu opens a window with the formats the player registers, their extensions and whether the player opens each by default, with the buttons **Register** (**Update Registration** once registered), **Choose as Default…** and **Unregister**. The installer registers the formats too.
+
+![The icons of the registered file types](images/file_types.png)
+
+The registration is per user and needs no administrator rights. Each format gets a type of its own with an icon (colours after GOM Player's: one hue per family of formats, Play on video, a note on audio) and a name in Explorer's Type column; the player appears in **Open with** for these files and in **Settings → Apps → Default apps**. Windows lets only the user choose the default program: **Choose as Default…** opens that page of Settings, and Windows also offers the player the next time such a file is opened. A format no program opens yet gets the player as its default at once. **Unregister** removes everything the registration wrote; the choice of another program stays as it is.
+
+Registered formats: video MP4 (`.mp4`, `.m4v`), MKV, WebM, AVI (`.avi`, `.divx`), MOV (`.mov`, `.qt`), WMV (`.wmv`, `.asf`), FLV (`.flv`, `.f4v`), MPEG (`.mpg`, `.mpeg`, `.m2v`, `.vob`), TS (`.ts`, `.m2ts`, `.mts`), 3GP (`.3gp`, `.3g2`), OGV and RM (`.rm`, `.rmvb`); audio MP3, FLAC, AAC (`.m4a`, `.aac`), Ogg (`.ogg`, `.oga`), Opus, WAV, WMA, APE, WavPack (`.wv`), MKA, AC3 and DTS.
+
+The installer and other scripts can do the same from the command line: `metalmpv.exe --register` and `metalmpv.exe --unregister`.
 
 ### Settings
 

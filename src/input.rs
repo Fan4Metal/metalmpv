@@ -67,6 +67,8 @@ pub enum Cmd {
     ShowInFolder,
     /// The time in the control bar: both, elapsed, remaining (a click on it).
     CycleTime,
+    /// The File Associations dialog (the context menu).
+    Associations,
     Minimize,
     ToggleMaximize,
     Close,

@@ -3,6 +3,7 @@
 //! own.
 
 pub mod about;
+pub mod assoc;
 pub mod controls;
 pub mod icons;
 pub mod info;
