@@ -14,26 +14,54 @@ pub mod tracks;
 
 use egui::{Response, TextureHandle, TextureOptions, Ui};
 
-/// The app icon as a texture for `points` wide, from the smallest embedded
-/// size (64, 128, 256 px) that covers it at the display's pixel density;
-/// kept in `cache` and replaced when that density changes.
+/// The app icon as a texture of exactly `points` at the display's pixel
+/// density, so that it is never scaled (a scaled icon is blurred): an
+/// embedded rendering when there is one of that size, else drawn now
+/// (a millisecond or two). Kept in `cache`, one per place it is shown, and
+/// replaced when the size in pixels changes.
 pub fn app_icon(
     ctx: &egui::Context,
     points: f32,
     cache: &mut Option<TextureHandle>,
 ) -> TextureHandle {
-    let px = (points * ctx.pixels_per_point()).round() as u32;
-    let size = [64u32, 128, 256]
-        .into_iter()
-        .find(|&s| s >= px)
-        .unwrap_or(256);
-    let n = size as usize;
+    let px = (points * ctx.pixels_per_point()).round().max(1.0) as u32;
+    let n = px as usize;
     if cache.as_ref().is_none_or(|t| t.size() != [n, n]) {
-        let image = egui::ColorImage::from_rgba_unmultiplied([n, n], crate::embedded_icon(size));
-        let options = TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear));
-        *cache = Some(ctx.load_texture(format!("app_icon_{size}"), image, options));
+        let drawn;
+        let rgba = match crate::embedded_icon(px) {
+            Some(rgba) => rgba,
+            None => {
+                let start = std::time::Instant::now();
+                drawn = crate::icon::rgba(px);
+                log::debug!("icon drawn at {px} px in {:?}", start.elapsed());
+                &drawn
+            }
+        };
+        let image = egui::ColorImage::from_rgba_unmultiplied([n, n], rgba);
+        *cache = Some(ctx.load_texture(format!("app_icon_{px}"), image, TextureOptions::LINEAR));
     }
     cache.clone().expect("set above")
+}
+
+/// Paint `icon` (from `app_icon`) pixel for pixel, centred on `centre` as
+/// near as the pixel grid allows; its rectangle.
+pub fn paint_icon(
+    painter: &egui::Painter,
+    icon: &TextureHandle,
+    centre: egui::Pos2,
+    tint: egui::Color32,
+) -> egui::Rect {
+    let ppp = painter.ctx().pixels_per_point();
+    let size = egui::vec2(icon.size()[0] as f32, icon.size()[1] as f32) / ppp;
+    let min = ((centre - size / 2.0) * ppp).round() / ppp;
+    let rect = egui::Rect::from_min_size(min, size);
+    painter.image(
+        icon.id(),
+        rect,
+        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+        tint,
+    );
+    rect
 }
 
 /// A newer release: its version with a download arrow in the link colour;

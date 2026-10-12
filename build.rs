@@ -12,9 +12,9 @@ fn main() {
 
     let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
     copy_libmpv(&out_dir);
-    // The icon as raw RGBA for the window icon, the start page and About
-    // (see `main::embedded_icon`), so that nothing is rasterised at start-up.
-    for size in [64u32, 128, 256] {
+    // The icon as raw RGBA for the window icon and the start screen (see
+    // `main::embedded_icon`), so that nothing big is rasterised at start-up.
+    for size in [64u32, 80, 96, 112, 128, 140, 168, 196, 224] {
         std::fs::write(
             out_dir.join(format!("app_icon_{size}.rgba")),
             icon::rgba(size),

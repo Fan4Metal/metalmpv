@@ -55,7 +55,9 @@ impl AboutDialog {
                 super::close_cross(&mut ui.new_child(egui::UiBuilder::new().max_rect(corner)));
             ui.vertical_centered(|ui| {
                 ui.add_space(4.0);
-                ui.image((icon.id(), egui::vec2(ICON, ICON)));
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(ICON, ICON), egui::Sense::hover());
+                super::paint_icon(ui.painter(), &icon, rect.center(), egui::Color32::WHITE);
                 ui.add_space(6.0);
                 ui.heading(crate::APP_NAME);
                 ui.label(tr!(

@@ -56,7 +56,10 @@ pub struct App {
     updates: Updates,
     osd: OsdLine,
     hwnd: Option<isize>,
+    /// The app icon of the title row and of the start screen, each at its
+    /// size.
     icon: Option<TextureHandle>,
+    start_icon: Option<TextureHandle>,
     /// The seek bar is being dragged: the position under the pointer.
     seek_drag: Option<f64>,
     /// When the last file came from another start.
@@ -155,6 +158,7 @@ impl App {
             osd: OsdLine::default(),
             hwnd,
             icon: None,
+            start_icon: None,
             seek_drag: None,
             last_received: None,
             shown_title: String::new(),
@@ -626,26 +630,24 @@ impl App {
         self.osd.paint(ui.ctx(), rect, state);
     }
 
-    /// The black area without a picture: the logo and a hint, the title of
-    /// an audio file, or why nothing plays.
+    /// The black area without a picture: the start screen, the title of an
+    /// audio file, or why nothing plays.
     fn placeholder(&mut self, ui: &egui::Ui, rect: Rect, state: &State) {
-        let icon = ui::app_icon(ui.ctx(), 96.0, &mut self.icon);
+        let failed = self.engine_error.is_some() || (state.idle && self.file_error.is_some());
+        if state.idle && !failed {
+            self.start_screen(ui, rect);
+            return;
+        }
+        let size = start_icon_size(rect);
+        let icon = ui::app_icon(ui.ctx(), size, &mut self.start_icon);
         let painter = ui.painter_at(rect);
-        let centre = rect.center();
-        let size = (rect.height() * 0.22).clamp(32.0, 96.0);
-        let icon_rect =
-            Rect::from_center_size(centre - egui::vec2(0.0, size * 0.4), egui::vec2(size, size));
         let tint = if state.idle {
             Color32::from_white_alpha(70)
         } else {
             Color32::WHITE
         };
-        painter.image(
-            icon.id(),
-            icon_rect,
-            Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-            tint,
-        );
+        let centre = rect.center() - egui::vec2(0.0, size * 0.3);
+        let icon_rect = ui::paint_icon(&painter, &icon, centre, tint);
         let below = icon_rect.center_bottom() + egui::vec2(0.0, 14.0);
         let (text, color) = if let Some(e) = &self.engine_error {
             (
@@ -667,15 +669,6 @@ impl App {
                 ),
                 style::ERROR,
             )
-        } else if state.idle {
-            (
-                tr!(
-                    "Drop a file here, or open one with Ctrl+O",
-                    "Перетащите файл сюда или откройте его через Ctrl+O"
-                )
-                .to_owned(),
-                style::TEXT_WEAK,
-            )
         } else {
             // An audio file: its title.
             (state.title.clone().unwrap_or_default(), style::TEXT)
@@ -687,6 +680,57 @@ impl App {
             FontId::proportional(14.0),
             color,
         );
+    }
+
+    /// Nothing plays: the icon, the name, the version and what to do, as
+    /// in qview; centred, a little above the middle.
+    fn start_screen(&mut self, ui: &egui::Ui, rect: Rect) {
+        let size = start_icon_size(rect);
+        let big = size > 64.0;
+        let icon = ui::app_icon(ui.ctx(), size, &mut self.start_icon);
+        let painter = ui.painter_at(rect);
+        let layout = |text: String, points: f32, color: Color32| {
+            painter.layout_no_wrap(text, FontId::proportional(points), color)
+        };
+        let name = layout(
+            crate::APP_NAME.to_owned(),
+            if big { 30.0 } else { 22.0 },
+            style::TEXT_BRIGHT,
+        );
+        let version = layout(
+            tr!(
+                format!("Version {}", crate::VERSION),
+                format!("Версия {}", crate::VERSION)
+            ),
+            13.0,
+            style::TEXT_WEAK,
+        );
+        let hint = layout(
+            tr!(
+                "Drop a file here, or open one with Ctrl+O",
+                "Перетащите файл сюда или откройте его через Ctrl+O"
+            )
+            .to_owned(),
+            14.0,
+            style::TEXT,
+        );
+        const GAPS: [f32; 3] = [14.0, 2.0, 18.0];
+        let height =
+            size + GAPS.iter().sum::<f32>() + name.size().y + version.size().y + hint.size().y;
+        let top = (rect.center().y - height * 0.55).max(rect.top() + 8.0);
+        let icon_rect = ui::paint_icon(
+            &painter,
+            &icon,
+            egui::pos2(rect.center().x, top + size / 2.0),
+            Color32::WHITE,
+        );
+        let mut y = icon_rect.bottom() + GAPS[0];
+        for (galley, gap) in [(name, GAPS[1]), (version, GAPS[2]), (hint, 0.0)] {
+            let h = galley.size().y;
+            let x = rect.center().x - galley.size().x / 2.0;
+            painter.galley(egui::pos2(x, y), galley, style::TEXT);
+            y += h + gap;
+        }
     }
 
     /// The control bar over the picture in fullscreen, while the mouse
@@ -747,6 +791,12 @@ impl App {
             self.shown_title = wanted;
         }
     }
+}
+
+/// The icon of the start screen in points: 112 as in qview, 64 in a low
+/// window (both embedded at 100–200 %).
+fn start_icon_size(rect: Rect) -> f32 {
+    if rect.height() >= 340.0 { 112.0 } else { 64.0 }
 }
 
 /// The menu of a right click on the picture.

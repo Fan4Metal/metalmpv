@@ -2,7 +2,7 @@
 //! middle, minimise, maximise and close on the right. Its free area drags
 //! the window; a double click maximises it or brings it back.
 
-use egui::{Align2, FontId, Rect, Sense, TextureHandle, Ui, pos2, vec2};
+use egui::{Align2, FontId, Rect, Sense, TextureHandle, Ui, pos2};
 
 use super::{icons, style};
 use crate::input::Cmd;
@@ -25,13 +25,10 @@ pub fn row(
     if crate::ui::double_clicked(&drag) {
         cmd = Some(Cmd::ToggleMaximize);
     }
-    let painter = ui.painter();
-    let icon_rect =
-        Rect::from_center_size(pos2(rect.left() + 18.0, rect.center().y), vec2(16.0, 16.0));
-    painter.image(
-        icon.id(),
-        icon_rect,
-        Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+    super::paint_icon(
+        ui.painter(),
+        icon,
+        pos2(rect.left() + 18.0, rect.center().y),
         egui::Color32::WHITE,
     );
 

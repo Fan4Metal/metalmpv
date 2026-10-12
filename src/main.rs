@@ -210,21 +210,26 @@ fn normalize(arg: &str) -> PathBuf {
 /// The icon of the window, from the embedded 64-pixel rendering.
 pub fn window_icon() -> Arc<egui::IconData> {
     Arc::new(egui::IconData {
-        rgba: embedded_icon(64).to_vec(),
+        rgba: embedded_icon(64).expect("embedded").to_vec(),
         width: 64,
         height: 64,
     })
 }
 
 /// The app icon rasterised at build time (`build.rs`) as straight RGBA,
-/// `size` x `size` pixels for 64, 128 and 256, so that nothing is drawn at
-/// start-up.
-pub fn embedded_icon(size: u32) -> &'static [u8] {
-    match size {
-        64 => include_bytes!(concat!(env!("OUT_DIR"), "/app_icon_64.rgba")),
-        128 => include_bytes!(concat!(env!("OUT_DIR"), "/app_icon_128.rgba")),
-        _ => include_bytes!(concat!(env!("OUT_DIR"), "/app_icon_256.rgba")),
+/// `size` x `size` pixels, for the window icon and the start screen's at
+/// 100–200 % (drawing 224 px takes ~30 ms, while the title row's 16 to
+/// 32 px take under a millisecond); `None` for other sizes.
+pub fn embedded_icon(size: u32) -> Option<&'static [u8]> {
+    macro_rules! sizes {
+        ($($n:literal),*) => {
+            match size {
+                $($n => Some(include_bytes!(concat!(env!("OUT_DIR"), "/app_icon_", $n, ".rgba")).as_slice()),)*
+                _ => None,
+            }
+        };
     }
+    sizes!(64, 80, 96, 112, 128, 140, 168, 196, 224)
 }
 
 /// The release build aborts on a panic and has no console, so the window

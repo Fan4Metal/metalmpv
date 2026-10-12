@@ -77,11 +77,13 @@ fn triangle(x: f32, y: f32, a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> f32 
     if inside { -d } else { d }
 }
 
-/// The colour of the icon at `(x, y)`, both in 0..1 of the icon's side: a
-/// brushed-metal rounded square with a blue disc and a white Play triangle.
-fn sample(x: f32, y: f32) -> Rgba {
-    // Anti-aliasing width in icon units: about a pixel at 16 px.
-    let aa = 1.0 / 32.0;
+/// The colour of the icon at `(x, y)`, both in 0..1 of the icon's side, for
+/// an icon of `size` pixels: a brushed-metal rounded square with a blue
+/// disc and a white Play triangle.
+fn sample(x: f32, y: f32, size: u32) -> Rgba {
+    // Anti-aliasing width in icon units: a pixel at any size (a fixed width
+    // in icon units blurs the edges of the large sizes).
+    let aa = 0.5 / size as f32;
     let mut c = [0.0; 4];
 
     // The plate: a vertical steel gradient with faint horizontal brushing.
@@ -141,7 +143,7 @@ pub fn rgba(size: u32) -> Vec<u8> {
                 for sx in 0..SS {
                     let x = (px as f32 + (sx as f32 + 0.5) / SS as f32) / size as f32;
                     let y = (py as f32 + (sy as f32 + 0.5) / SS as f32) / size as f32;
-                    let c = sample(x, y);
+                    let c = sample(x, y, size);
                     for i in 0..3 {
                         acc[i] += c[i] * c[3];
                     }
