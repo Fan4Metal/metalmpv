@@ -192,7 +192,7 @@ pub fn close(p: &Painter, o: Pos2, s: f32, c: Color32) {
     p.line_segment([o + vec2(-s, s), o + vec2(s, -s)], stroke);
 }
 
-/// An "i" in a circle: About.
+/// An "i" in a circle: the file's information.
 pub fn info(p: &Painter, o: Pos2, s: f32, c: Color32) {
     p.circle_stroke(o, s, Stroke::new(1.1, c));
     p.circle_filled(o + vec2(0.0, -s * 0.45), 0.95, c);

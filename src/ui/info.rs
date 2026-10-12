@@ -21,6 +21,11 @@ use crate::tracks::Track;
 const LABEL_WIDTH: f32 = 170.0;
 /// The side of the cover in the header.
 const THUMB: f32 = 120.0;
+/// The width of the window's content.
+const WIDTH: f32 = 520.0;
+/// The window's top right corner from the player's: under the title row,
+/// a little in from the edge.
+const CORNER: egui::Vec2 = vec2(-23.0, 46.0);
 
 #[derive(Default)]
 pub struct InfoWindow {
@@ -54,7 +59,11 @@ impl InfoWindow {
         true
     }
 
-    /// Draw the window while it is open; the commands of its buttons.
+    /// Draw the window while it is open; the commands of its buttons. The
+    /// window stays at the player's top right corner (anchored, so it
+    /// follows the corner as the player's window changes) with a fixed
+    /// width; only its bottom edge is dragged, and egui's memory keeps the
+    /// height.
     pub fn show(
         &mut self,
         ctx: &egui::Context,
@@ -72,10 +81,12 @@ impl InfoWindow {
             .id(egui::Id::new("file_info"))
             .open(&mut open)
             .collapsible(false)
-            .resizable(true)
-            .default_size(vec2(520.0, 620.0))
-            .min_width(380.0)
-            .default_pos(screen.right_top() + vec2(-540.0, 50.0))
+            .anchor(egui::Align2::RIGHT_TOP, CORNER)
+            .resizable([false, true])
+            .default_height(620.0)
+            .min_height(200.0)
+            .min_width(WIDTH)
+            .max_width(WIDTH)
             .constrain_to(screen)
             .frame(
                 egui::Frame::window(&ctx.style_of(egui::Theme::Dark))

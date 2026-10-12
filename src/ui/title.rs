@@ -44,15 +44,15 @@ pub fn row(
         ),
         (Cmd::Minimize, tr!("Minimize", "Свернуть")),
         (
-            Cmd::About,
-            tr!("About MetalMPV (F1)", "О программе MetalMPV (F1)"),
+            Cmd::ToggleInfo,
+            tr!("File information (I)", "Сведения о файле (I)"),
         ),
     ];
     let mut right = rect.right();
     for (kind, tip) in buttons {
         let r = Rect::from_min_max(pos2(right - BUTTON, rect.top()), pos2(right, rect.bottom()));
-        // The About button is narrower than the window's own.
-        let r = if kind == Cmd::About {
+        // The information button is narrower than the window's own.
+        let r = if kind == Cmd::ToggleInfo {
             Rect::from_min_max(pos2(r.right() - 34.0, r.top()), r.max)
         } else {
             r
@@ -77,7 +77,7 @@ pub fn row(
         match kind {
             Cmd::Close => icons::close(ui.painter(), o, 5.0, color),
             Cmd::ToggleMaximize => icons::maximize(ui.painter(), o, 5.0, color, maximized),
-            Cmd::About => icons::info(ui.painter(), o, 6.5, color),
+            Cmd::ToggleInfo => icons::info(ui.painter(), o, 6.5, color),
             _ => icons::minimize(ui.painter(), o, 5.0, color),
         }
         if response.on_hover_text(tip).clicked() {
