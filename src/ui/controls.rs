@@ -22,6 +22,9 @@ pub struct Bar<'a> {
 /// Draw the bar in `ui` (its full width); the commands of its buttons.
 pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
     let mut out = Vec::new();
+    // The free space between the controls moves the window.
+    let free = ui.max_rect();
+    crate::frameless::drag_area(ui, free, ui.id().with("bar_drag"), Sense::hover());
     let width = ui.available_width();
     let (seek_rect, _) = ui.allocate_exact_size(vec2(width, style::SEEK_HEIGHT), Sense::hover());
     if let Some(cmd) = seek_bar(ui, seek_rect.shrink2(vec2(10.0, 0.0)), bar.state, bar.drag) {

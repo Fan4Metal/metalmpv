@@ -49,7 +49,7 @@ The executables are not code-signed, so Windows SmartScreen may warn about an un
 
 A file is opened with the **Open** button (the eject symbol, `Ctrl+O`), by dropping it onto the window, from Explorer (**Open with**), or from the command line: `metal_player.exe file.mkv [more files]`. Several files make a playlist; at the end of a file the next one starts.
 
-The window has its own title row: it is moved by dragging the title, resized by its edges, and maximised by a double click on the title. A double click on the picture or `Enter` switches to fullscreen, where only the picture is left; the control bar appears over it while the mouse moves, and the pointer hides after half a second of rest.
+The window has its own title row: it is moved by dragging the title, the picture or the free space of the control bar, resized by its edges, and maximised by a double click on the title. A double click on the picture or `Enter` switches to fullscreen, where only the picture is left; the control bar appears over it while the mouse moves, and the pointer hides after half a second of rest.
 
 The control bar holds the seek bar (a click or a drag moves there; the time under the pointer is shown), the position and the duration, the buttons **Open**, **Stop**, **Previous file**, **Play/Pause**, **Next file**, **Settings** and **Playlist**, the volume and the fullscreen button. A right click on the picture opens a menu with the same commands.
 

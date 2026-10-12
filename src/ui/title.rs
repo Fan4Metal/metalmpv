@@ -19,24 +19,11 @@ pub fn row(
     update: Option<&str>,
 ) -> Option<Cmd> {
     let rect = ui.max_rect();
-    // First, under the buttons: what they leave drags the window. The top
-    // edge is left to the resize strip (frameless::resize_edges), which a
-    // later widget would cover.
-    let drag_rect = if maximized {
-        rect
-    } else {
-        rect.with_min_y(rect.top() + 5.0)
-    };
-    let drag = ui.interact(
-        drag_rect,
-        ui.id().with("title_drag"),
-        Sense::click_and_drag(),
-    );
+    // First, under the buttons: what they leave drags the window.
+    let drag = crate::frameless::drag_area(ui, rect, ui.id().with("title_drag"), Sense::CLICK);
     let mut cmd = None;
     if crate::ui::double_clicked(&drag) {
         cmd = Some(Cmd::ToggleMaximize);
-    } else if drag.drag_started_by(egui::PointerButton::Primary) {
-        ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
     }
     let painter = ui.painter();
     let icon_rect =

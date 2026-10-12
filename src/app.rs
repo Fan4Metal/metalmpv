@@ -479,7 +479,8 @@ impl App {
     ) {
         let rect = ui.max_rect();
         ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
-        let response = ui.interact(rect, ui.id().with("video"), Sense::CLICK);
+        // A double click switches fullscreen, a drag moves the window.
+        let response = frameless::drag_area(ui, rect, ui.id().with("video"), Sense::CLICK);
         let visible = state.video().is_some() && self.video.is_some();
         if !state.idle
             && let Some(video) = &mut self.video

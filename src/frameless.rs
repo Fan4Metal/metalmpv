@@ -8,12 +8,40 @@
 
 use egui::{CursorIcon, ResizeDirection as D, Sense, Ui, vec2};
 
+/// The width of the strips along the window's edges that resize it.
+pub const EDGE: f32 = 5.0;
+
+/// A free area that moves the window when dragged (the title row, the
+/// picture, the control bar under its buttons); `sense`
+/// adds what else it answers (clicks). Registered before the widgets on
+/// it, which take their clicks first. It leaves the resize strips along
+/// the window's edges alone (a later widget would cover them), and drags
+/// nothing in fullscreen.
+pub fn drag_area(ui: &mut Ui, rect: egui::Rect, id: egui::Id, sense: Sense) -> egui::Response {
+    let ctx = ui.ctx().clone();
+    let fullscreen = is_fullscreen(&ctx);
+    let rect = if fullscreen || is_maximized(&ctx) {
+        rect
+    } else {
+        rect.intersect(ctx.content_rect().shrink(EDGE))
+    };
+    let sense = if fullscreen {
+        sense
+    } else {
+        sense | Sense::drag()
+    };
+    let response = ui.interact(rect, id, sense);
+    if !fullscreen && response.drag_started_by(egui::PointerButton::Primary) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+    }
+    response
+}
+
 /// Strips along the edges and squares at the corners hand a drag to
 /// Windows (`ViewportCommand::BeginResize`), as a sizing frame would.
 /// Placed before the panels, so that their widgets near an edge still take
 /// clicks first. Not while maximized or in fullscreen.
 pub fn resize_edges(ui: &mut Ui) {
-    const EDGE: f32 = 5.0;
     const CORNER: f32 = 14.0;
     let r = ui.ctx().content_rect();
     let grips = [
