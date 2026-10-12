@@ -97,6 +97,7 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | General | Add the folder's files | off | One opened file brings the media files of its folder into the playlist |
 | Playback | Go on from where it stopped | on | A file of 5 minutes or more opened again starts where it was left, with a message on the screen; `Home` goes to the beginning. A file watched to its last 30 seconds, or stopped in its first 10 seconds, starts from the beginning. The last 200 files are remembered; **Forget all** clears the list |
 | Playback | Remember the tracks | on | A file opened again plays the audio track and the subtitles (or no subtitles) chosen in it last time, whatever its length; kept for files with more than one audio track or with subtitles |
+| Playback | Like tracks in new files | on | A file opened for the first time plays the audio track and the subtitles most like those last chosen by hand: the same title first, else the same language; subtitles turned off by hand stay off. Meant for series: the voice-over chosen in one episode plays in the next. Nothing alike leaves the usual choice |
 | Playback | Left / Right | 10 s | The step of `←` and `→`, on keyframes |
 | Playback | Ctrl+Left / Right | 60 s | The step of `Ctrl+←` and `Ctrl+→`, on keyframes |
 | Playback | Marks on the seek bar | on | Cuts in the seek bar where the chapters start; also in the context menu |

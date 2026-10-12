@@ -517,6 +517,20 @@ fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                 |ui| switch(ui, &mut settings.remember_tracks),
             );
             divider(ui);
+            row(
+                ui,
+                tr!(
+                    "Like tracks in new files",
+                    "В новых файлах — похожие дорожки"
+                ),
+                Some(tr!(
+                    "A file opened for the first time plays the audio track and the subtitles most like those last chosen by hand, by title and language: the same voice-over in the next episode of a series.",
+                    "Файл, открытый впервые, воспроизводится со звуковой дорожкой и субтитрами, больше всего похожими на последние выбранные вручную, по названию и языку: та же озвучка в следующей серии сериала."
+                )),
+                50.0,
+                |ui| switch(ui, &mut settings.prefer_last_tracks),
+            );
+            divider(ui);
             changed.forget_positions |= row(
                 ui,
                 tr!(
@@ -1048,6 +1062,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.chapter_marks = d.chapter_marks;
     settings.resume_playback = d.resume_playback;
     settings.remember_tracks = d.remember_tracks;
+    settings.prefer_last_tracks = d.prefer_last_tracks;
     settings.fullscreen_transparency = d.fullscreen_transparency;
     settings.fullscreen_title = d.fullscreen_title;
     settings.sub_font = d.sub_font;

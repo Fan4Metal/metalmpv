@@ -12,6 +12,7 @@ use std::sync::OnceLock;
 
 use crate::format::TimeMode;
 use crate::i18n::LangChoice;
+use crate::tracks::Likeness;
 
 const LANGUAGE: &str = "language";
 const CHECK_UPDATES: &str = "check_updates";
@@ -35,6 +36,9 @@ const OSD_SCALE: &str = "osd_scale";
 const WINDOW_NORMAL: &str = "window_normal";
 const RESUME_PLAYBACK: &str = "resume_playback";
 const REMEMBER_TRACKS: &str = "remember_tracks";
+const PREFER_LAST_TRACKS: &str = "prefer_last_tracks";
+const LAST_AUDIO: &str = "last_audio";
+const LAST_SUB: &str = "last_sub";
 
 /// The longest seek step the settings accept, in seconds.
 pub const MAX_STEP: f64 = 3600.0;
@@ -151,6 +155,13 @@ pub struct Settings {
     pub resume_playback: bool,
     /// A file opened again plays the audio and subtitles it played.
     pub remember_tracks: bool,
+    /// A file opened for the first time plays the tracks most like the
+    /// last chosen by hand (`tracks::most_like`).
+    pub prefer_last_tracks: bool,
+    /// The audio track and the subtitles last chosen by hand (subtitles:
+    /// `Some(None)` for none). Not settings, so Reset keeps them.
+    pub last_audio: Option<Likeness>,
+    pub last_sub: Option<Option<Likeness>>,
 }
 
 impl Default for Settings {
@@ -178,6 +189,9 @@ impl Default for Settings {
             window_normal: None,
             resume_playback: true,
             remember_tracks: true,
+            prefer_last_tracks: true,
+            last_audio: None,
+            last_sub: None,
         }
     }
 }
@@ -247,6 +261,12 @@ impl Settings {
             }),
             resume_playback: flag(RESUME_PLAYBACK, d.resume_playback),
             remember_tracks: flag(REMEMBER_TRACKS, d.remember_tracks),
+            prefer_last_tracks: flag(PREFER_LAST_TRACKS, d.prefer_last_tracks),
+            last_audio: get(LAST_AUDIO).as_deref().and_then(Likeness::parse),
+            last_sub: get(LAST_SUB).and_then(|v| match v.as_str() {
+                "off" => Some(None),
+                v => Likeness::parse(v).map(Some),
+            }),
         }
     }
 
@@ -290,6 +310,16 @@ impl Settings {
         }
         storage.set_string(RESUME_PLAYBACK, self.resume_playback.to_string());
         storage.set_string(REMEMBER_TRACKS, self.remember_tracks.to_string());
+        storage.set_string(PREFER_LAST_TRACKS, self.prefer_last_tracks.to_string());
+        match &self.last_audio {
+            Some(like) => storage.set_string(LAST_AUDIO, like.to_text()),
+            None => storage.remove_string(LAST_AUDIO),
+        }
+        match &self.last_sub {
+            Some(Some(like)) => storage.set_string(LAST_SUB, like.to_text()),
+            Some(None) => storage.set_string(LAST_SUB, "off".into()),
+            None => storage.remove_string(LAST_SUB),
+        }
     }
 }
 
@@ -340,6 +370,12 @@ mod tests {
             window_normal: Some([10, 20, 1010, 720]),
             resume_playback: false,
             remember_tracks: false,
+            prefer_last_tracks: false,
+            last_audio: Some(Likeness {
+                lang: Some("russian".into()),
+                title: Some("многоголосый".into()),
+            }),
+            last_sub: Some(None),
         };
         let mut storage = MemStorage::default();
         s.save(&mut storage);

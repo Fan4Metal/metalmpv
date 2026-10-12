@@ -92,6 +92,10 @@ pub struct App {
     fullscreen: bool,
     /// Where the files were left (`resume_playback`).
     positions: Positions,
+    /// The file being loaded gets the tracks most like the last chosen
+    /// (`prefer_last_tracks`), once it is loaded (`pick_ready`).
+    pick_tracks: bool,
+    pick_ready: bool,
 }
 
 impl App {
@@ -198,6 +202,8 @@ impl App {
             fullscreen: false,
             last_sub: None,
             positions,
+            pick_tracks: false,
+            pick_ready: false,
         };
         app.open(files);
         app
@@ -262,6 +268,12 @@ impl App {
             path.display(),
             crate::since_start()
         );
+        // A file without tracks of its own to come back to gets those like
+        // the last chosen, once it is loaded.
+        self.pick_tracks = tracks.is_none()
+            && self.settings.prefer_last_tracks
+            && (self.settings.last_audio.is_some() || self.settings.last_sub.is_some());
+        self.pick_ready = false;
         if let Some(player) = &mut self.player {
             player.load(&path, start, tracks);
         }
@@ -476,6 +488,15 @@ impl App {
         }
         player.select_track(kind, id);
         let all = &player.state.tracks;
+        // A choice by hand: what the next new file is matched against.
+        let like = id
+            .and_then(|id| all.iter().find(|t| t.kind == kind && t.id == id))
+            .map(tracks::Likeness::of);
+        match kind {
+            Kind::Audio => self.settings.last_audio = like.or(self.settings.last_audio.take()),
+            Kind::Sub => self.settings.last_sub = Some(like),
+            Kind::Video => {}
+        }
         let now = id
             .and_then(|id| all.iter().find(|t| t.kind == kind && t.id == id))
             .map(|t| t.summary_in(crate::i18n::lang(), all));
@@ -768,6 +789,7 @@ impl App {
                 Happened::FileLoaded => {
                     log::debug!("file loaded at {:.0} ms", crate::since_start());
                     self.file_error = None;
+                    self.pick_ready = self.pick_tracks;
                 }
                 Happened::Eof => {
                     if let Some(i) = self.playlist.next() {
@@ -795,6 +817,43 @@ impl App {
                     self.engine_error = Some("mpv has shut down".into());
                 }
             }
+        }
+        self.pick_like_tracks();
+    }
+
+    /// In a file loaded without tracks of its own to come back to, the
+    /// audio and subtitles most like the last chosen by hand
+    /// (`prefer_last_tracks`); nothing alike leaves mpv's choice.
+    fn pick_like_tracks(&mut self) {
+        let Some(player) = &mut self.player else {
+            return;
+        };
+        if !self.pick_ready || player.state.tracks.is_empty() {
+            return;
+        }
+        self.pick_tracks = false;
+        self.pick_ready = false;
+        let all = &player.state.tracks;
+        let audio = self
+            .settings
+            .last_audio
+            .as_ref()
+            .and_then(|like| tracks::most_like(all, Kind::Audio, like));
+        let sub = match &self.settings.last_sub {
+            Some(Some(like)) => tracks::most_like(all, Kind::Sub, like).map(Some),
+            // None by hand last time: none now either.
+            Some(None) => Some(None),
+            None => None,
+        };
+        let now = |kind| tracks::selected(all, kind).map(|t| t.id);
+        let (audio_now, sub_now) = (now(Kind::Audio), now(Kind::Sub));
+        if let Some(id) = audio.filter(|id| Some(*id) != audio_now) {
+            log::debug!("audio track {id}, like the last chosen");
+            player.select_track(Kind::Audio, Some(id));
+        }
+        if let Some(id) = sub.filter(|id| *id != sub_now) {
+            log::debug!("subtitles {id:?}, like the last chosen");
+            player.select_track(Kind::Sub, id);
         }
     }
 
@@ -1403,6 +1462,8 @@ impl eframe::App for App {
         }
         if changed.forget_positions {
             self.positions.clear();
+            self.settings.last_audio = None;
+            self.settings.last_sub = None;
         }
         if changed.osd_font {
             let data = osd_font(&self.settings);

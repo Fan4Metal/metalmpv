@@ -160,6 +160,72 @@ fn track_tags(metadata: &Value) -> Vec<(String, String)> {
         .collect()
 }
 
+/// What a track chosen by hand is like: its language and title, to choose
+/// the most alike in a file opened for the first time (the same voice-over
+/// in the next episode of a series; `prefer_last_tracks`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Likeness {
+    /// The language as English names it, in lower case ("russian").
+    pub lang: Option<String>,
+    /// The title, in lower case.
+    pub title: Option<String>,
+}
+
+impl Likeness {
+    pub fn of(track: &Track) -> Self {
+        Self {
+            lang: track
+                .lang
+                .as_deref()
+                .map(|code| language_in(Lang::En, code).to_lowercase()),
+            title: track
+                .title
+                .as_deref()
+                .map(|t| t.trim().to_lowercase())
+                .filter(|t| !t.is_empty()),
+        }
+    }
+
+    /// How alike `track` is: the title counts more than the language.
+    fn score(&self, track: &Track) -> u8 {
+        let other = Self::of(track);
+        let same = |a: &Option<String>, b: &Option<String>| a.is_some() && a == b;
+        2 * u8::from(same(&self.title, &other.title)) + u8::from(same(&self.lang, &other.lang))
+    }
+
+    /// `language<TAB>title`, empty for what is not known.
+    pub fn to_text(&self) -> String {
+        format!(
+            "{}\t{}",
+            self.lang.as_deref().unwrap_or_default(),
+            self.title.as_deref().unwrap_or_default()
+        )
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        let (lang, title) = text.split_once('\t')?;
+        let known = |s: &str| (!s.is_empty()).then(|| s.to_owned());
+        let like = Self {
+            lang: known(lang),
+            title: known(title),
+        };
+        (like != Self::default()).then_some(like)
+    }
+}
+
+/// The track of `kind` most like `like`, the first of equals; `None` when
+/// none shares its title or language.
+pub fn most_like(tracks: &[Track], kind: Kind, like: &Likeness) -> Option<i64> {
+    let mut best: Option<(u8, i64)> = None;
+    for t in of_kind(tracks, kind) {
+        let score = like.score(t);
+        if score > 0 && best.is_none_or(|(s, _)| score > s) {
+            best = Some((score, t.id));
+        }
+    }
+    best.map(|(_, id)| id)
+}
+
 /// The tracks of `kind`, in the file's order.
 pub fn of_kind(tracks: &[Track], kind: Kind) -> Vec<&Track> {
     tracks.iter().filter(|t| t.kind == kind).collect()
@@ -450,6 +516,44 @@ mod tests {
         assert_eq!(t[2].name_in(Lang::En, 2), "Русский дубляж");
         assert_eq!(language_in(Lang::En, "pt-BR"), "Portuguese");
         assert_eq!(language_in(Lang::Ru, "xyz"), "XYZ");
+    }
+
+    #[test]
+    fn the_most_alike_track() {
+        let episode = |tracks: &[(&str, Option<&str>)]| -> Vec<Track> {
+            tracks
+                .iter()
+                .enumerate()
+                .map(|(i, (lang, title))| Track {
+                    id: i as i64 + 1,
+                    kind: Kind::Audio,
+                    lang: Some((*lang).into()),
+                    title: title.map(str::to_owned),
+                    ..Track::default()
+                })
+                .collect()
+        };
+        let first = episode(&[
+            ("eng", None),
+            ("rus", Some("Дубляж")),
+            ("rus", Some("Многоголосый")),
+        ]);
+        let like = Likeness::of(&first[2]);
+        assert_eq!(Likeness::parse(&like.to_text()), Some(like.clone()));
+        // The same voice-over in another order, its title in another case.
+        let next = episode(&[
+            ("rus", Some("Дубляж")),
+            ("eng", None),
+            ("ru", Some("МНОГОГОЛОСЫЙ")),
+        ]);
+        assert_eq!(most_like(&next, Kind::Audio, &like), Some(3));
+        // No such title: the first of the same language.
+        let other = episode(&[("eng", None), ("rus", Some("Дубляж"))]);
+        assert_eq!(most_like(&other, Kind::Audio, &like), Some(2));
+        // Nothing alike: mpv's choice stays.
+        let none = episode(&[("eng", None), ("jpn", None)]);
+        assert_eq!(most_like(&none, Kind::Audio, &like), None);
+        assert_eq!(Likeness::parse("\t"), None);
     }
 
     #[test]
