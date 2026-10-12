@@ -104,9 +104,13 @@ enum Prop {
     Hwdec,
     TrackList,
     ChapterList,
+    Metadata,
+    FileSize,
+    FileFormat,
+    VideoParams,
 }
 
-const PROPS: [(Prop, &str, sys::mpv_format); 16] = [
+const PROPS: [(Prop, &str, sys::mpv_format); 20] = [
     (Prop::Pause, "pause", sys::MPV_FORMAT_FLAG),
     (Prop::TimePos, "time-pos", sys::MPV_FORMAT_DOUBLE),
     (Prop::Duration, "duration", sys::MPV_FORMAT_DOUBLE),
@@ -127,6 +131,11 @@ const PROPS: [(Prop, &str, sys::mpv_format); 16] = [
     (Prop::Hwdec, "hwdec-current", sys::MPV_FORMAT_STRING),
     (Prop::TrackList, "track-list", sys::MPV_FORMAT_NODE),
     (Prop::ChapterList, "chapter-list", sys::MPV_FORMAT_NODE),
+    // For the file's information (changed only when a file is loaded).
+    (Prop::Metadata, "metadata", sys::MPV_FORMAT_NODE),
+    (Prop::FileSize, "file-size", sys::MPV_FORMAT_INT64),
+    (Prop::FileFormat, "file-format", sys::MPV_FORMAT_STRING),
+    (Prop::VideoParams, "video-params", sys::MPV_FORMAT_NODE),
 ];
 
 /// What the interface shows of the playback.
@@ -156,6 +165,42 @@ pub struct State {
     pub tracks: Vec<Track>,
     /// The file's chapters, by start.
     pub chapters: Vec<Chapter>,
+    /// The file's tags, in the file's order, as mpv names them.
+    pub metadata: Vec<(String, String)>,
+    pub file_size: Option<i64>,
+    /// FFmpeg's container name ("matroska,webm", "mov,mp4,m4a,3gp,3g2,mj2").
+    pub file_format: Option<String>,
+    /// The decoded picture's format.
+    pub video_params: Option<VideoParams>,
+}
+
+/// What mpv says of the decoded picture (`video-params`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct VideoParams {
+    /// `yuv420p10`.
+    pub pixel_format: Option<String>,
+    /// `bt.2020`.
+    pub primaries: Option<String>,
+    /// The transfer function: `pq` and `hlg` are HDR.
+    pub gamma: Option<String>,
+}
+
+impl VideoParams {
+    fn from_value(value: &Value) -> Option<Self> {
+        let text = |key| {
+            value
+                .get(key)
+                .and_then(Value::string)
+                .filter(|s| !s.is_empty() && *s != "auto")
+                .map(str::to_owned)
+        };
+        let params = Self {
+            pixel_format: text("hw-pixelformat").or_else(|| text("pixelformat")),
+            primaries: text("primaries"),
+            gamma: text("gamma"),
+        };
+        (params != Self::default()).then_some(params)
+    }
 }
 
 impl Default for State {
@@ -177,6 +222,10 @@ impl Default for State {
             hwdec: None,
             tracks: Vec::new(),
             chapters: Vec::new(),
+            metadata: Vec::new(),
+            file_size: None,
+            file_format: None,
+            video_params: None,
         }
     }
 }
@@ -213,6 +262,21 @@ impl State {
             }
             Prop::TrackList => self.tracks = tracks::from_value(value),
             Prop::ChapterList => self.chapters = chapters::from_value(value),
+            Prop::Metadata => {
+                self.metadata = match value {
+                    Value::Map(entries) => entries
+                        .iter()
+                        .filter_map(|(k, v)| Some((k.clone(), v.string()?.trim().to_owned())))
+                        .filter(|(_, v)| !v.is_empty())
+                        .collect(),
+                    _ => Vec::new(),
+                }
+            }
+            Prop::FileSize => self.file_size = value.int().filter(|s| *s >= 0),
+            Prop::FileFormat => {
+                self.file_format = value.string().filter(|s| !s.is_empty()).map(str::to_owned)
+            }
+            Prop::VideoParams => self.video_params = VideoParams::from_value(value),
         }
     }
 

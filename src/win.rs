@@ -71,6 +71,19 @@ pub fn shell_open(target: impl AsRef<OsStr>) -> bool {
     result as isize > 32
 }
 
+/// Open the folder of `file` in Explorer with the file selected.
+pub fn show_in_folder(file: &std::path::Path) {
+    use std::os::windows::process::CommandExt;
+    // Explorer parses its own command line: the path in quotes after the
+    // comma, not escaped the way Rust would quote an argument.
+    let result = std::process::Command::new("explorer.exe")
+        .raw_arg(format!("/select,\"{}\"", file.display()))
+        .spawn();
+    if let Err(e) = result {
+        log::warn!("cannot start Explorer: {e}");
+    }
+}
+
 /// HTTPS GET of `path` on `host` through WinHTTP, which brings the system's
 /// TLS and proxy settings (no HTTP crate); `headers` are extra request
 /// lines joined with `\r\n`. Returns the status code and the body, refused

@@ -59,6 +59,12 @@ pub enum Cmd {
     Chapter(usize),
     /// Show or hide the chapter marks on the seek bar.
     ToggleChapterMarks,
+    /// Open or close the file's information window (`I`).
+    ToggleInfo,
+    /// Save the file's cover as a picture file.
+    SaveCover,
+    /// Show the file in Explorer.
+    ShowInFolder,
     /// The time in the control bar: both, elapsed, remaining (a click on it).
     CycleTime,
     Minimize,
@@ -99,6 +105,7 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
         Key::F5 => Cmd::Settings,
         Key::Delete => Cmd::Delete,
         Key::T if !ctrl => Cmd::ToggleTracks,
+        Key::I if !ctrl => Cmd::ToggleInfo,
         Key::A if !ctrl => Cmd::CycleAudio,
         // S as in subtitles; J as in mpv.
         Key::S | Key::J if !ctrl => Cmd::CycleSubs,

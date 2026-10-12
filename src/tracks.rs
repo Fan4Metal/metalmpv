@@ -40,6 +40,20 @@ pub struct Track {
     /// FFmpeg's codec name (`ac3`, `subrip`).
     pub codec: Option<String>,
     pub channels: Option<i64>,
+    /// The channel layout (`5.1(side)`).
+    pub layout: Option<String>,
+    /// FFmpeg's long codec name ("H.265 / HEVC (High Efficiency Video Coding)").
+    pub codec_desc: Option<String>,
+    /// A picture's size in pixels as the file states it.
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub fps: Option<f64>,
+    /// Audio samples per second.
+    pub samplerate: Option<i64>,
+    /// Bits per second as the file states it.
+    pub bitrate: Option<i64>,
+    /// A cover picture, not a video.
+    pub albumart: bool,
     /// Loaded from a file of its own (subtitles next to the video).
     pub external: bool,
     pub default: bool,
@@ -73,6 +87,14 @@ pub fn from_value(list: &Value) -> Vec<Track> {
                 lang: text("lang"),
                 codec: text("codec"),
                 channels: t.get("demux-channel-count").and_then(Value::int),
+                layout: text("demux-channels"),
+                codec_desc: text("codec-desc"),
+                width: t.get("demux-w").and_then(Value::int),
+                height: t.get("demux-h").and_then(Value::int),
+                fps: t.get("demux-fps").and_then(Value::double),
+                samplerate: t.get("demux-samplerate").and_then(Value::int),
+                bitrate: t.get("demux-bitrate").and_then(Value::int),
+                albumart: flag("albumart"),
                 external: flag("external"),
                 default: flag("default"),
                 forced: flag("forced"),
@@ -194,7 +216,7 @@ impl Track {
 }
 
 /// The codec as people know the format.
-fn codec_name(codec: &str) -> String {
+pub fn codec_name(codec: &str) -> String {
     match codec {
         "subrip" | "srt" => "SRT".into(),
         "ass" => "ASS".into(),
@@ -208,12 +230,16 @@ fn codec_name(codec: &str) -> String {
         "truehd" => "TrueHD".into(),
         "vorbis" => "Vorbis".into(),
         "opus" => "Opus".into(),
+        "h264" => "H.264".into(),
+        "mpeg2video" => "MPEG-2".into(),
+        "mpeg4" => "MPEG-4".into(),
+        "mjpeg" => "JPEG".into(),
         c if c.starts_with("pcm_") => "PCM".into(),
         c => c.to_uppercase(),
     }
 }
 
-fn channels_in(lang: Lang, n: i64) -> String {
+pub fn channels_in(lang: Lang, n: i64) -> String {
     match (n, lang) {
         (1, Lang::En) => "mono".into(),
         (1, Lang::Ru) => "моно".into(),

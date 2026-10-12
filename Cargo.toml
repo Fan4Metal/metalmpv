@@ -32,6 +32,10 @@ winit = { version = "0.30", default-features = false, features = ["rwh_06"] }
 fontdb = { version = "0.23.0", default-features = false, features = ["fs", "memmap"] }
 # Already used by egui, which reads fonts with it: a chosen font is checked with it first.
 skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
+# Cover art: the pictures of audio tags and of MP4 (cover.rs; MKV is read by hand).
+lofty = "0.25.4"
+# Decoding a cover (already used by eframe's clipboard): JPEG and PNG only.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 
 [target.'cfg(windows)'.dependencies]
 # Keep the feature list minimal; add a feature only for an API that is used.

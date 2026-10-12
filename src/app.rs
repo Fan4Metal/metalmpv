@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 
 use egui::{Align2, Color32, CursorIcon, FontId, Rect, Sense, TextureHandle};
 
+use crate::cover::Cover;
 use crate::format::Osd;
 use crate::frameless;
 use crate::input::{self, Cmd};
@@ -26,6 +27,7 @@ use crate::playlist::{self, Playlist};
 use crate::settings::Settings;
 use crate::tracks::{self, Kind};
 use crate::ui::about::AboutDialog;
+use crate::ui::info::{CoverView, InfoWindow};
 use crate::ui::osd::OsdLine;
 use crate::ui::settings::SettingsDialog;
 use crate::ui::{self, style};
@@ -55,6 +57,9 @@ pub struct App {
     playlist: Playlist,
     about: AboutDialog,
     settings_dialog: SettingsDialog,
+    info: InfoWindow,
+    /// The cover of the file playing, while or once it is looked for.
+    cover: Option<CoverSlot>,
     updates: Updates,
     osd: OsdLine,
     hwnd: Option<isize>,
@@ -163,6 +168,8 @@ impl App {
             file_error: None,
             playlist: Playlist::default(),
             about: AboutDialog::default(),
+            info: InfoWindow::default(),
+            cover: None,
             settings_dialog: SettingsDialog::default(),
             updates,
             osd: OsdLine::default(),
@@ -236,6 +243,144 @@ impl App {
         if let Some(player) = &mut self.player {
             player.load(&path);
         }
+    }
+
+    /// Look for the cover of the file playing once it is loaded, and take
+    /// it when it is found.
+    fn update_cover(&mut self, ctx: &egui::Context, state: &State) {
+        let wanted = self
+            .playlist
+            .current_path()
+            .filter(|_| !state.idle && !state.tracks.is_empty());
+        if let Some(path) = wanted
+            && self.cover.as_ref().is_none_or(|c| c.path != path)
+        {
+            self.cover = Some(CoverSlot {
+                path: path.to_path_buf(),
+                loading: Some(crate::cover::load(path.to_path_buf(), ctx)),
+                loaded: None,
+            });
+        }
+        let Some(slot) = &mut self.cover else {
+            return;
+        };
+        let Some(rx) = &slot.loading else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(found) => {
+                slot.loading = None;
+                slot.loaded = found.map(|mut cover| {
+                    let image = std::mem::take(&mut cover.image);
+                    let options = egui::TextureOptions {
+                        magnification: egui::TextureFilter::Linear,
+                        minification: egui::TextureFilter::Linear,
+                        wrap_mode: egui::TextureWrapMode::ClampToEdge,
+                        mipmap_mode: Some(egui::TextureFilter::Linear),
+                    };
+                    let texture = ctx.load_texture("cover", image, options);
+                    (cover, texture)
+                });
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => slot.loading = None,
+        }
+    }
+
+    /// Save the cover of the file playing where the user says.
+    fn save_cover(&mut self, frame: &eframe::Frame) {
+        let Some((cover, _)) = self.cover.as_ref().and_then(|c| c.loaded.as_ref()) else {
+            return;
+        };
+        let path = self.playlist.current_path();
+        let stem = path
+            .and_then(Path::file_stem)
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "cover".into());
+        let mut dialog = rfd::FileDialog::new()
+            .set_parent(frame)
+            .set_title(tr!("Save the cover", "Сохранить обложку"))
+            .set_file_name(format!("{stem}.{}", cover.extension))
+            .add_filter(cover.extension.to_uppercase(), &[cover.extension]);
+        if let Some(dir) = path.and_then(Path::parent) {
+            dialog = dialog.set_directory(dir);
+        }
+        if let Some(target) = dialog.save_file()
+            && let Err(e) = std::fs::write(&target, &cover.bytes)
+        {
+            log::warn!("cannot save the cover to {}: {e}", target.display());
+        }
+    }
+
+    /// An audio file with a cover: the cover as big as fits, the title, the
+    /// artist and the album under it. Whether there was one.
+    fn audio_cover(&self, ui: &egui::Ui, rect: Rect, state: &State) -> bool {
+        let has_video = state
+            .tracks
+            .iter()
+            .any(|t| t.kind == tracks::Kind::Video && !t.albumart);
+        let Some((_, texture)) = self
+            .cover
+            .as_ref()
+            .filter(|_| !has_video)
+            .and_then(|c| c.loaded.as_ref())
+        else {
+            return false;
+        };
+        let painter = ui.painter_at(rect);
+        let title = crate::info::tag(&state.metadata, &["title"])
+            .map(str::to_owned)
+            .or_else(|| state.title.clone())
+            .unwrap_or_default();
+        let mut lines = vec![(title, 18.0, style::TEXT_BRIGHT)];
+        if let Some(artist) = crate::info::artist(&state.metadata) {
+            lines.push((artist.to_owned(), 15.0, style::TEXT));
+        }
+        if let Some(album) = crate::info::album(&state.metadata) {
+            lines.push((album, 14.0, style::TEXT_WEAK));
+        }
+        let galleys: Vec<_> = lines
+            .into_iter()
+            .map(|(text, size, color)| {
+                ui.fonts_mut(|f| {
+                    let mut job = egui::text::LayoutJob::simple_singleline(
+                        text,
+                        FontId::proportional(size),
+                        color,
+                    );
+                    job.wrap = egui::text::TextWrapping::truncate_at_width(rect.width() - 48.0);
+                    f.layout_job(job)
+                })
+            })
+            .collect();
+        const GAP: f32 = 18.0;
+        let text_height: f32 = galleys.iter().map(|g| g.size().y + 4.0).sum();
+        let room = egui::vec2(
+            rect.width() - 64.0,
+            (rect.height() - 64.0 - GAP - text_height).min(rect.height() * 0.7),
+        );
+        if room.x < 32.0 || room.y < 32.0 {
+            return false;
+        }
+        let picture = texture.size_vec2();
+        let scale = (room.x / picture.x).min(room.y / picture.y);
+        let size = picture * scale;
+        let top = rect.center().y - (size.y + GAP + text_height) / 2.0;
+        let image = Rect::from_min_size(egui::pos2(rect.center().x - size.x / 2.0, top), size);
+        painter.image(
+            texture.id(),
+            image,
+            Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            Color32::WHITE,
+        );
+        let mut y = image.bottom() + GAP;
+        for galley in galleys {
+            let h = galley.size().y;
+            let x = rect.center().x - galley.size().x / 2.0;
+            painter.galley(egui::pos2(x, y), galley, style::TEXT);
+            y += h + 4.0;
+        }
+        true
     }
 
     /// Ask for media files to play (`add`: append them to the playlist).
@@ -446,7 +591,18 @@ impl App {
             Cmd::ToggleFullscreen => {
                 self.set_fullscreen(ctx, frame, !frameless::is_fullscreen(ctx))
             }
-            Cmd::LeaveFullscreen => self.set_fullscreen(ctx, frame, false),
+            Cmd::LeaveFullscreen => {
+                if !self.info.close() {
+                    self.set_fullscreen(ctx, frame, false);
+                }
+            }
+            Cmd::ToggleInfo => self.info.toggle(),
+            Cmd::SaveCover => self.save_cover(frame),
+            Cmd::ShowInFolder => {
+                if let Some(path) = self.playlist.current_path() {
+                    win::show_in_folder(path);
+                }
+            }
             Cmd::Next => {
                 if let Some(i) = self.playlist.next() {
                     self.play(i);
@@ -682,6 +838,9 @@ impl App {
             self.start_screen(ui, rect);
             return;
         }
+        if !failed && self.audio_cover(ui, rect, state) {
+            return;
+        }
         let size = start_icon_size(rect);
         let icon = ui::app_icon(ui.ctx(), size, &mut self.start_icon);
         let painter = ui.painter_at(rect);
@@ -796,6 +955,7 @@ impl App {
             || near_edge
             || self.seek_drag.is_some()
             || egui::Popup::is_id_open(ctx, crate::ui::tracks::popup_id())
+            || self.info.open
     }
 
     /// The control bar and the file's name over the picture in fullscreen
@@ -870,6 +1030,14 @@ fn start_icon_size(rect: Rect) -> f32 {
     if rect.height() >= 340.0 { 112.0 } else { 64.0 }
 }
 
+/// The cover of a file: looked for on a thread of its own, then decoded
+/// with its texture.
+struct CoverSlot {
+    path: PathBuf,
+    loading: Option<std::sync::mpsc::Receiver<Option<Cover>>>,
+    loaded: Option<(Cover, TextureHandle)>,
+}
+
 /// The font chosen for the OSD line, read from its file; `None` for the
 /// interface's font or a file that cannot be used.
 fn osd_font(settings: &Settings) -> Option<egui::FontData> {
@@ -922,6 +1090,12 @@ fn context_menu(
         }
     };
     item(ui, tr!("Open…", "Открыть…").into(), "Ctrl+O", Cmd::Open);
+    item(
+        ui,
+        tr!("File information", "Сведения о файле").into(),
+        "I",
+        Cmd::ToggleInfo,
+    );
     ui.separator();
     let pause = if state.paused || state.idle {
         tr!("Play", "Воспроизвести")
@@ -1153,6 +1327,16 @@ impl eframe::App for App {
             style::set_fonts(&ctx, data);
         }
         self.about.show(&ctx);
+        self.update_cover(&ctx, &state);
+        let cover = self
+            .cover
+            .as_ref()
+            .and_then(|c| c.loaded.as_ref())
+            .map(|(cover, texture)| CoverView { cover, texture });
+        let info_cmds = self
+            .info
+            .show(&ctx, self.playlist.current_path(), &state, cover);
+        cmds.extend(info_cmds);
 
         for cmd in cmds {
             self.run(&ctx, frame, cmd);

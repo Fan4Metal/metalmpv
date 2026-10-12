@@ -10,10 +10,12 @@ mod i18n;
 
 mod app;
 mod chapters;
+mod cover;
 mod fonts;
 mod format;
 mod frameless;
 mod icon;
+mod info;
 mod input;
 mod instance;
 mod mpv;

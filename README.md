@@ -27,6 +27,7 @@ MetalMPV is a video player for Windows with a classic layout: the picture fills 
 - **Instant seeking on keyframes** with the arrow keys, exact seeking and frame stepping on other keys (see [Keyboard shortcuts](#keyboard-shortcuts)); every seek is reported on the screen.
 - **Every common format**: MP4, MKV, AVI, MOV, WebM, TS, WMV and more, audio files included; subtitles next to the video are loaded automatically.
 - **Audio tracks and subtitles** in one window by the volume (`T`), both lists side by side; subtitles from a file of their own by **Load from a file…** or by dropping the file onto the playing video (see [Audio and subtitles](#audio-and-subtitles)).
+- **File information** (`I`): the cover, the tags, the size, the container and the details of every track in a window that stays over the player while it plays; the cover of an audio file fills the picture (see [File information](#file-information)).
 - **Chapters**: marks on the seek bar, which can be turned off, and a list under the playlist to go to a chapter (see [Chapters](#chapters)).
 - **Hardware decoding** (NVDEC, D3D11VA and others, chosen by libmpv), which can be turned off in the settings.
 - **Playlist**: files opened together, dropped onto the window or added with the **+** button of the playlist; optionally the other media files of the folder of an opened file.
@@ -65,6 +66,12 @@ When the file has chapters, the seek bar is cut at the start of each, and the to
 
 The button with a speech bubble left of the volume (`T`) opens a window with the audio tracks and the subtitles of the file side by side. Each entry names the language first and the track's title after a dash ("Russian — Superbit"); under it, badges show the format, the channels and whether the track is external, forced or the file's default. A long list scrolls. A choice applies at once and the window stays open, so both can be changed in one go; a click outside or `Esc` closes it. **Load from a file…** under the subtitles adds subtitles from a file of their own (SRT, ASS, SSA, VobSub, PGS, WebVTT); a subtitle file dropped onto the playing video is added the same way. Subtitles named like the video next to it are loaded by themselves. The same lists are in the picture's context menu, and every change is reported on the screen.
 
+### File information
+
+`I` or **File information** in the picture's context menu opens a window over the player; playback and the keys go on while it is open, and `I` or `Esc` closes it. At the top it shows the cover with the title, the artist and the album; a click on the cover shows it as big as the window allows. Below come the file (name, folder, size, container, duration, overall bitrate; a click on the folder shows the file in Explorer), its tags (the common ones first, named in the interface's language, then the others as the file names them) and its tracks with their format, size, frame rate, bit depth, HDR, channels, sampling rate and bitrate. **Copy all** puts the whole of it on the clipboard as text, and **Save the cover…** saves the picture as it is stored.
+
+The cover is taken from the file's tags (MP3, FLAC, OGG, Opus, M4A, MP4, WAV, APE and others) or from its attachments (MKV, MKA, WebM); for an audio file without one, a picture named `cover`, `folder` or `front` next to it is used. While an audio file plays, its cover fills the picture with the title, the artist and the album under it.
+
 ### Settings
 
 The settings window (`F5` or the gear button) lists the categories on the left and shows the settings of the chosen one on the right in groups: each row names a setting, explains it underneath and holds its control on the right. **Reset** under the list puts every setting back to its default.
@@ -100,6 +107,7 @@ The list of fonts has a search field at its top. The **Keys** category lists the
 | `↑` / `↓`, mouse wheel | Volume up / down |
 | `M` | Mute |
 | `T` | The audio and subtitles window |
+| `I` | The file information window |
 | `A` | Next audio track |
 | `S`, `J` | Next subtitles; after the last, none |
 | `V` | Subtitles off, and on again |
@@ -177,6 +185,9 @@ The workflow stops if the tag does not match the version in `Cargo.toml`. Runnin
 - [mpv / libmpv](https://mpv.io): decoding, playback and rendering of every file;
 - [mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake): the Windows build of libmpv that is shipped;
 - [egui / eframe](https://github.com/emilk/egui): the user interface and the window;
+- [Lofty](https://github.com/Serial-ATA/lofty-rs): the covers stored in tags;
+- [image](https://github.com/image-rs/image): decoding the covers;
+- [fontdb](https://github.com/RazrFalcon/fontdb): the list of the system's fonts;
 - [7-Zip](https://www.7-zip.org): unpacking libmpv during the build;
 - [Inno Setup](https://jrsoftware.org/isinfo.php): the installer.
 
