@@ -69,6 +69,8 @@ pub enum Cmd {
     ShowInFolder,
     /// The time in the control bar: both, elapsed, remaining (a click on it).
     CycleTime,
+    /// The position, the duration and the chapter on the OSD (`O`).
+    ShowPosition,
     Minimize,
     ToggleMaximize,
     Close,
@@ -102,6 +104,8 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
         Key::Enter | Key::F11 if !ctrl => Cmd::ToggleFullscreen,
         Key::Escape => Cmd::Escape,
         Key::O if ctrl => Cmd::Open,
+        // O as in mpv: where playback is.
+        Key::O => Cmd::ShowPosition,
         Key::L if !ctrl => Cmd::TogglePlaylist,
         Key::F1 => Cmd::About,
         Key::F5 => Cmd::Settings,
@@ -187,7 +191,10 @@ mod tests {
     #[test]
     fn other_keys() {
         assert_eq!(command(Key::O, Modifiers::COMMAND, false), Some(Cmd::Open));
-        assert_eq!(command(Key::O, Modifiers::NONE, false), None);
+        assert_eq!(
+            command(Key::O, Modifiers::NONE, false),
+            Some(Cmd::ShowPosition)
+        );
         assert_eq!(
             command(Key::F11, Modifiers::NONE, false),
             Some(Cmd::ToggleFullscreen)

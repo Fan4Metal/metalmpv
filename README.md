@@ -121,6 +121,7 @@ The list of fonts has a search field at its top. The **Keys** category lists the
 | `M` | Mute |
 | `T` | The audio and subtitles window |
 | `I` | The file information window |
+| `O` | Shows the position, the duration and the chapter playing on the screen |
 | `A` | Next audio track |
 | `S`, `J` | Next subtitles; after the last, none |
 | `V` | Subtitles off, and on again |

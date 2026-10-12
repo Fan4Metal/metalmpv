@@ -167,6 +167,13 @@ pub enum Osd {
         number: usize,
         title: Option<String>,
     },
+    /// Where playback is (`O`): `time` of `duration`, and the chapter
+    /// playing (its number from 1 and its title) if the file has chapters.
+    Position {
+        time: f64,
+        duration: Option<f64>,
+        chapter: Option<(usize, Option<String>)>,
+    },
     /// Free text: a file name, an error.
     Text(String),
 }
@@ -249,6 +256,29 @@ impl Osd {
                     Some(t) => format!("[ {chapter} {number}: {t} ]"),
                     None => format!("[ {chapter} {number} ]"),
                 }
+            }
+            Osd::Position {
+                time,
+                duration,
+                chapter,
+            } => {
+                let mut text = match duration.filter(|d| *d > 0.0) {
+                    Some(d) => format!(
+                        "{} / {} ({})",
+                        clock(*time),
+                        clock(d),
+                        percent_in(lang, time / d)
+                    ),
+                    None => clock(*time),
+                };
+                if let Some((number, title)) = chapter {
+                    let word = if ru { "Глава" } else { "Chapter" };
+                    match title {
+                        Some(t) => text.push_str(&format!(" · {word} {number}: {t}")),
+                        None => text.push_str(&format!(" · {word} {number}")),
+                    }
+                }
+                format!("[ {text} ]")
             }
             Osd::Text(t) => t.clone(),
         }
@@ -364,5 +394,18 @@ mod tests {
             "[ Глава 3: The Quickening ]"
         );
         assert_eq!(chapter(None).text_in(Lang::En), "[ Chapter 3 ]");
+        let position = |chapter| Osd::Position {
+            time: 2530.0,
+            duration: Some(6537.0),
+            chapter,
+        };
+        assert_eq!(
+            position(None).text_in(Lang::Ru),
+            "[ 00:42:10 / 01:48:57 (38,7%) ]"
+        );
+        assert_eq!(
+            position(Some((3, Some("The Quickening".into())))).text_in(Lang::En),
+            "[ 00:42:10 / 01:48:57 (38.7%) · Chapter 3: The Quickening ]"
+        );
     }
 }

@@ -846,7 +846,7 @@ fn update_status(ui: &mut Ui, updates: &Updates) {
 
 /// The keys, as in the README.
 fn keys(ui: &mut Ui) {
-    let rows: [(&str, &str); 20] = [
+    let rows: [(&str, &str); 21] = [
         (
             tr!("Space", "Пробел"),
             tr!("Play / pause", "Воспроизведение / пауза"),
@@ -903,6 +903,13 @@ fn keys(ui: &mut Ui) {
         ),
         ("A", tr!("Next audio track", "Следующая звуковая дорожка")),
         ("I", tr!("File information", "Сведения о файле")),
+        (
+            "O",
+            tr!(
+                "Position and chapter on the screen",
+                "Позиция и глава на экране"
+            ),
+        ),
         (
             "S / J",
             tr!(

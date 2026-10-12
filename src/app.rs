@@ -560,6 +560,18 @@ impl App {
                     });
                 }
             }
+            Cmd::ShowPosition => {
+                let state = self.state();
+                if let (false, Some(time)) = (state.idle, state.time) {
+                    let chapter = crate::chapters::current(&state.chapters, time)
+                        .map(|i| (i + 1, state.chapters[i].title.clone()));
+                    self.osd.show(Osd::Position {
+                        time,
+                        duration: state.duration,
+                        chapter,
+                    });
+                }
+            }
             Cmd::ToggleChapterMarks => {
                 self.settings.chapter_marks = !self.settings.chapter_marks;
             }
