@@ -23,6 +23,7 @@ mod instance;
 mod mpv;
 mod player;
 mod playlist;
+mod resume;
 mod settings;
 mod tracks;
 mod type_icon;

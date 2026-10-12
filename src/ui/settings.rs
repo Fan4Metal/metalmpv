@@ -67,8 +67,8 @@ impl Page {
                 "Язык интерфейса и составление списка воспроизведения."
             ),
             Page::Playback => tr!(
-                "How far the arrow keys move playback; the chapter marks.",
-                "На сколько перематывают клавиши со стрелками; метки глав."
+                "Going on where a file was left; how far the arrow keys move playback; the chapter marks.",
+                "Продолжение с места остановки; на сколько перематывают клавиши со стрелками; метки глав."
             ),
             Page::Video => tr!(
                 "How video is decoded; the panels in fullscreen.",
@@ -111,6 +111,8 @@ pub struct Changed {
     /// The subtitles' font or size.
     pub subs: bool,
     pub osd_font: bool,
+    /// Forget where the files were left.
+    pub forget_positions: bool,
 }
 
 impl SettingsDialog {
@@ -236,7 +238,7 @@ impl SettingsDialog {
                             .show(ui, |ui| match self.page {
                                 Page::General => general(ui, settings),
                                 Page::Updates => updates_page(ui, updates),
-                                Page::Playback => playback(ui, settings),
+                                Page::Playback => playback(ui, settings, &mut changed),
                                 Page::Video => changed.hwdec |= video(ui, settings, hwdec_current),
                                 Page::Text => text(ui, settings, &mut changed),
                                 Page::Files => self.file_types.show(ui),
@@ -485,7 +487,48 @@ fn general(ui: &mut Ui, settings: &mut Settings) {
     );
 }
 
-fn playback(ui: &mut Ui, settings: &mut Settings) {
+fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
+    section(
+        ui,
+        tr!("Resume", "Продолжение просмотра"),
+        |ui| {
+            row(
+                ui,
+                tr!(
+                    "Go on from where it stopped",
+                    "Продолжать с места остановки"
+                ),
+                Some(tr!(
+                    "A file of 5 minutes or more opened again starts where it was left; Home goes to the beginning.",
+                    "Файл длиной от 5 минут при повторном открытии начинается с того места, где остановился; Home переходит к началу."
+                )),
+                50.0,
+                |ui| switch(ui, &mut settings.resume_playback),
+            );
+            divider(ui);
+            row(
+                ui,
+                tr!("Remember the tracks", "Запоминать дорожки"),
+                Some(tr!(
+                    "A file opened again plays the audio track and the subtitles (or none) chosen in it last time.",
+                    "Файл при повторном открытии воспроизводится с той звуковой дорожкой и теми субтитрами (или без них), что были выбраны в нём в прошлый раз."
+                )),
+                50.0,
+                |ui| switch(ui, &mut settings.remember_tracks),
+            );
+            divider(ui);
+            changed.forget_positions |= row(
+                ui,
+                tr!(
+                    "Remembered positions and tracks",
+                    "Запомненные позиции и дорожки"
+                ),
+                None,
+                160.0,
+                |ui| ui.button(tr!("Forget all", "Забыть все")).clicked(),
+            );
+        },
+    );
     section(ui, tr!("Seek steps", "Шаги перемотки"), |ui| {
         row(
             ui,
@@ -1003,6 +1046,8 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.hwdec = d.hwdec;
     settings.fill_playlist = d.fill_playlist;
     settings.chapter_marks = d.chapter_marks;
+    settings.resume_playback = d.resume_playback;
+    settings.remember_tracks = d.remember_tracks;
     settings.fullscreen_transparency = d.fullscreen_transparency;
     settings.fullscreen_title = d.fullscreen_title;
     settings.sub_font = d.sub_font;

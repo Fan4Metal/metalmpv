@@ -30,6 +30,7 @@ MetalMPV is a video player for Windows with a classic layout: the picture fills 
 - **File information** (`I`): the cover, the tags, the size, the container and the details of every track in a window that stays over the player while it plays; the cover of an audio file fills the picture (see [File information](#file-information)).
 - **Chapters**: marks on the seek bar, which can be turned off, and a list under the playlist to go to a chapter (see [Chapters](#chapters)).
 - **Hardware decoding** (NVDEC, D3D11VA and others, chosen by libmpv), which can be turned off in the settings.
+- **Resume**: a film opened again goes on from where it was stopped (see [Settings](#settings)).
 - **Playlist**: files opened together, dropped onto the window or added with the **+** button of the playlist; optionally the other media files of the folder of an opened file.
 - **One window**: a file opened from Explorer while the player runs is played in the window already open.
 - **File types**: the player can be registered with Windows for its video and audio formats, each with an icon of its own, and chosen as the default player (see [File types](#file-types)).
@@ -94,6 +95,8 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | General | Language | as in Windows | "System" follows the language of Windows |
 | Updates | Check at start-up | off | See [Update check and privacy](#update-check-and-privacy); **Check now** asks at once |
 | General | Add the folder's files | off | One opened file brings the media files of its folder into the playlist |
+| Playback | Go on from where it stopped | on | A file of 5 minutes or more opened again starts where it was left, with a message on the screen; `Home` goes to the beginning. A file watched to its last 30 seconds, or stopped in its first 10 seconds, starts from the beginning. The last 200 files are remembered; **Forget all** clears the list |
+| Playback | Remember the tracks | on | A file opened again plays the audio track and the subtitles (or no subtitles) chosen in it last time, whatever its length; kept for files with more than one audio track or with subtitles |
 | Playback | Left / Right | 10 s | The step of `←` and `→`, on keyframes |
 | Playback | Ctrl+Left / Right | 60 s | The step of `Ctrl+←` and `Ctrl+→`, on keyframes |
 | Playback | Marks on the seek bar | on | Cuts in the seek bar where the chapters start; also in the context menu |

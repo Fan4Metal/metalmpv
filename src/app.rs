@@ -24,6 +24,7 @@ use crate::input::{self, Cmd};
 use crate::mpv::Mpv;
 use crate::player::{Happened, Player, Seek, State};
 use crate::playlist::{self, Playlist};
+use crate::resume::{Positions, Tracks};
 use crate::settings::Settings;
 use crate::tracks::{self, Kind};
 use crate::ui::about::AboutDialog;
@@ -48,6 +49,8 @@ const FULLSCREEN_BAR_ZONE: f32 = 90.0;
 const SAME_BATCH: Duration = Duration::from_millis(1500);
 /// How long the window stays cloaked at most while it is being maximized.
 const UNCLOAK_TIMEOUT: Duration = Duration::from_secs(1);
+/// The storage key of where the files were left (`resume.rs`).
+const POSITIONS_KEY: &str = "resume_positions";
 
 pub struct App {
     settings: Settings,
@@ -87,6 +90,8 @@ pub struct App {
     /// In fullscreen as of the last frame (for `save`, which has no egui
     /// context).
     fullscreen: bool,
+    /// Where the files were left (`resume_playback`).
+    positions: Positions,
 }
 
 impl App {
@@ -98,6 +103,11 @@ impl App {
         log::debug!("window created at {:.0} ms", crate::since_start());
         let ctx = &cc.egui_ctx;
         let mut settings = cc.storage.map(Settings::load).unwrap_or_default();
+        let positions = cc
+            .storage
+            .and_then(|s| s.get_string(POSITIONS_KEY))
+            .map(|text| Positions::parse(&text))
+            .unwrap_or_default();
         // Before any text is made.
         crate::i18n::set_lang(settings.language.resolve());
         let osd = osd_font(&settings);
@@ -187,6 +197,7 @@ impl App {
             first_frame_logged: false,
             fullscreen: false,
             last_sub: None,
+            positions,
         };
         app.open(files);
         app
@@ -238,14 +249,58 @@ impl App {
         };
         self.playlist.selected = Some(index);
         self.file_error = None;
+        self.remember_position();
+        let left = self.positions.get(&path);
+        let start = left
+            .and_then(|l| l.time)
+            .filter(|_| self.settings.resume_playback);
+        let tracks = left
+            .and_then(|l| l.tracks)
+            .filter(|_| self.settings.remember_tracks);
         log::debug!(
             "loading {} at {:.0} ms",
             path.display(),
             crate::since_start()
         );
         if let Some(player) = &mut self.player {
-            player.load(&path);
+            player.load(&path, start, tracks);
         }
+        if let Some(t) = start {
+            let at = crate::format::time(Some(t), false);
+            self.osd.show(Osd::Text(tr!(
+                format!("Resumed from {at} (Home: from the beginning)"),
+                format!("Продолжение с {at} (Home — с начала)")
+            )));
+        }
+    }
+
+    /// Keep where the file playing is now (`resume_playback`) and which
+    /// tracks it plays (`remember_tracks`; only when there is a choice: more
+    /// than one audio track, or subtitles).
+    fn remember_position(&mut self) {
+        let (resume, tracks) = (self.settings.resume_playback, self.settings.remember_tracks);
+        if !resume && !tracks {
+            return;
+        }
+        let Some(state) = self.player.as_ref().map(|p| &p.state) else {
+            return;
+        };
+        // Not while a file is still loading: its tracks are not known yet.
+        if state.idle || state.seeking || state.tracks.is_empty() {
+            return;
+        }
+        let (Some(path), Some(time), Some(duration)) = (&state.path, state.time, state.duration)
+        else {
+            return;
+        };
+        let choice = tracks::of_kind(&state.tracks, Kind::Audio).len() > 1
+            || !tracks::of_kind(&state.tracks, Kind::Sub).is_empty();
+        let chosen = (tracks && choice).then(|| Tracks {
+            audio: tracks::selected(&state.tracks, Kind::Audio).map(|t| t.id),
+            sub: tracks::selected(&state.tracks, Kind::Sub).map(|t| t.id),
+        });
+        let time = resume.then_some((time, duration));
+        self.positions.remember(Path::new(path), time, chosen);
     }
 
     /// Look for the cover of the file playing once it is loaded, and take
@@ -536,6 +591,7 @@ impl App {
                 }
             }
             Cmd::Stop => {
+                self.remember_position();
                 if let Some(player) = &mut self.player {
                     player.stop();
                 }
@@ -1345,6 +1401,9 @@ impl eframe::App for App {
         {
             player.set_sub_style(&self.settings.sub_font, self.settings.sub_scale);
         }
+        if changed.forget_positions {
+            self.positions.clear();
+        }
         if changed.osd_font {
             let data = osd_font(&self.settings);
             if data.is_none() {
@@ -1393,6 +1452,8 @@ impl eframe::App for App {
             self.settings.window_normal = Some(r);
         }
         self.settings.save(storage);
+        self.remember_position();
+        storage.set_string(POSITIONS_KEY, self.positions.to_text());
     }
 
     /// The render context goes first, while the OpenGL context lives, then

@@ -33,6 +33,8 @@ const OSD_FONT: &str = "osd_font";
 const OSD_FONT_FILE: &str = "osd_font_file";
 const OSD_SCALE: &str = "osd_scale";
 const WINDOW_NORMAL: &str = "window_normal";
+const RESUME_PLAYBACK: &str = "resume_playback";
+const REMEMBER_TRACKS: &str = "remember_tracks";
 
 /// The longest seek step the settings accept, in seconds.
 pub const MAX_STEP: f64 = 3600.0;
@@ -145,6 +147,10 @@ pub struct Settings {
     /// The window's restored rectangle in pixels (left, top, right,
     /// bottom) while it is maximized: eframe saves the maximized size.
     pub window_normal: Option<[i32; 4]>,
+    /// A file opened again goes on from where it was left (`resume.rs`).
+    pub resume_playback: bool,
+    /// A file opened again plays the audio and subtitles it played.
+    pub remember_tracks: bool,
 }
 
 impl Default for Settings {
@@ -170,6 +176,8 @@ impl Default for Settings {
             osd_font_file: None,
             osd_scale: 100.0,
             window_normal: None,
+            resume_playback: true,
+            remember_tracks: true,
         }
     }
 }
@@ -237,6 +245,8 @@ impl Settings {
                     .ok()
                     .filter(|r| r[2] > r[0] && r[3] > r[1])
             }),
+            resume_playback: flag(RESUME_PLAYBACK, d.resume_playback),
+            remember_tracks: flag(REMEMBER_TRACKS, d.remember_tracks),
         }
     }
 
@@ -278,6 +288,8 @@ impl Settings {
             ),
             None => storage.remove_string(WINDOW_NORMAL),
         }
+        storage.set_string(RESUME_PLAYBACK, self.resume_playback.to_string());
+        storage.set_string(REMEMBER_TRACKS, self.remember_tracks.to_string());
     }
 }
 
@@ -326,6 +338,8 @@ mod tests {
             osd_font_file: Some((PathBuf::from(r"C:\Windows\Fonts\segoeui.ttf"), 0)),
             osd_scale: 80.0,
             window_normal: Some([10, 20, 1010, 720]),
+            resume_playback: false,
+            remember_tracks: false,
         };
         let mut storage = MemStorage::default();
         s.save(&mut storage);

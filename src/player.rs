@@ -11,6 +11,7 @@ use std::path::Path;
 
 use crate::chapters::{self, Chapter};
 use crate::mpv::{EndReason, Event, Mpv, Value, sys};
+use crate::resume::Tracks;
 use crate::tracks::{self, Kind, Track};
 
 /// Options of the core, set before it starts. The picture goes through the
@@ -489,11 +490,29 @@ impl Player {
             .get(FRAME_INFO, "video-frame-info", sys::MPV_FORMAT_NODE);
     }
 
-    /// Play `path` from the start, replacing the current file.
-    pub fn load(&mut self, path: &Path) {
+    /// Play `path` from `start` seconds (`None`: the beginning) with
+    /// `tracks` (`None`: mpv's choice), replacing the current file.
+    pub fn load(&mut self, path: &Path, start: Option<f64>, tracks: Option<Tracks>) {
         self.mpv.set("pause", &Value::Flag(false));
-        self.mpv
-            .command(0, &["loadfile", &path.to_string_lossy(), "replace"]);
+        let path = path.to_string_lossy();
+        // File-local options: the next file starts afresh.
+        let id = |n: Option<i64>| n.map_or("no".to_owned(), |n| n.to_string());
+        let mut options = Vec::new();
+        if let Some(t) = start {
+            options.push(format!("start={t:.3}"));
+        }
+        if let Some(t) = tracks {
+            options.push(format!("aid={}", id(t.audio)));
+            options.push(format!("sid={}", id(t.sub)));
+        }
+        if options.is_empty() {
+            self.mpv.command(0, &["loadfile", &path, "replace"]);
+        } else {
+            // The index (-1) comes before the options since mpv 0.38.
+            let options = options.join(",");
+            self.mpv
+                .command(0, &["loadfile", &path, "replace", "-1", &options]);
+        }
         self.state.paused = false;
         self.state.eof = false;
     }
