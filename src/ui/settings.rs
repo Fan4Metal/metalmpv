@@ -721,7 +721,7 @@ fn keys(ui: &mut Ui) {
         ("V", tr!("Subtitles off / on", "Субтитры выкл. / вкл.")),
         ("Ctrl+O", tr!("Open files", "Открыть файлы")),
         (
-            "L",
+            tr!("L, middle click", "L, средний щелчок"),
             tr!("Show or hide the playlist", "Показать или скрыть список"),
         ),
         (

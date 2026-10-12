@@ -610,6 +610,9 @@ impl App {
         if ui::double_clicked(&response) {
             cmds.push(Cmd::ToggleFullscreen);
         }
+        if response.middle_clicked() {
+            cmds.push(Cmd::TogglePlaylist);
+        }
         if response.hovered() {
             let notches: f32 = ui.input(|i| {
                 i.events

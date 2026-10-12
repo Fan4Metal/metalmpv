@@ -101,7 +101,7 @@ The **Keys** category lists the keyboard shortcuts for reference. The volume, th
 | `Page Up` / `Page Down` | Previous / next file of the playlist |
 | `Enter`, `F11`, double click | Fullscreen; `Esc` leaves it |
 | `Ctrl+O` | Open files |
-| `L` | Show or hide the playlist |
+| `L`, middle click on the picture | Show or hide the playlist |
 | `Delete` | Remove the selected playlist entry |
 | `F5` | Settings |
 | `F1` | About |
