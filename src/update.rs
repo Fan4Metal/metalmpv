@@ -198,12 +198,12 @@ mod tests {
     fn finds_the_tag() {
         // Shortened answer of /releases/latest, nested objects included.
         let json = r#"{
-  "url": "https://api.github.com/repos/Fan4Metal/metal_player/releases/1",
-  "html_url": "https://github.com/Fan4Metal/metal_player/releases/tag/v0.4.0",
+  "url": "https://api.github.com/repos/Fan4Metal/metalmpv/releases/1",
+  "html_url": "https://github.com/Fan4Metal/metalmpv/releases/tag/v0.4.0",
   "author": { "login": "Fan4Metal", "html_url": "https://github.com/Fan4Metal" },
   "tag_name" : "v0.4.0",
-  "name": "Metal Player 0.4.0",
-  "assets": [ { "name": "Metal_Player_0.4.0_Setup.exe" } ]
+  "name": "MetalMPV 0.4.0",
+  "assets": [ { "name": "MetalMPV_0.4.0_Setup.exe" } ]
 }"#;
         assert_eq!(tag_name(json), Some("v0.4.0"));
         assert_eq!(tag_name(r#"{"tag_name":"v1.0.0"}"#), Some("v1.0.0"));

@@ -51,13 +51,13 @@ pub fn options<'a>(hwdec: bool) -> Vec<(&'a str, &'a str)> {
     ]
 }
 
-/// The `hwdec` option for the setting; `METAL_PLAYER_HWDEC` overrides it
+/// The `hwdec` option for the setting; `METALMPV_HWDEC` overrides it
 /// for measurements ("nvdec", "d3d11va-copy", "no", …).
 fn hwdec_option(on: bool) -> &'static str {
     use std::sync::OnceLock;
     static FORCED: OnceLock<Option<&'static str>> = OnceLock::new();
     let forced = FORCED.get_or_init(|| {
-        std::env::var("METAL_PLAYER_HWDEC")
+        std::env::var("METALMPV_HWDEC")
             .ok()
             .filter(|v| !v.is_empty())
             .map(|v| &*Box::leak(v.into_boxed_str()))
@@ -71,9 +71,9 @@ fn hwdec_option(on: bool) -> &'static str {
 pub fn boot(hwdec: bool) -> Result<Mpv, String> {
     let api = sys::api().map_err(str::to_owned)?;
     let mut options = options(hwdec);
-    // METAL_PLAYER_MPV="name=value;name=value": more options, for
+    // METALMPV_MPV="name=value;name=value": more options, for
     // measurements and diagnostics; later ones win.
-    let extra = std::env::var("METAL_PLAYER_MPV").unwrap_or_default();
+    let extra = std::env::var("METALMPV_MPV").unwrap_or_default();
     let extra: Vec<(String, String)> = extra
         .split(';')
         .filter_map(|o| o.split_once('='))
@@ -268,8 +268,8 @@ impl Player {
     pub fn new(mut mpv: Mpv, ctx: &egui::Context, volume: f64, mute: bool) -> Self {
         let wake = ctx.clone();
         mpv.set_wakeup(move || wake.request_repaint());
-        // METAL_PLAYER_TRACE=2: mpv's verbose messages too.
-        if std::env::var("METAL_PLAYER_TRACE").is_ok_and(|v| v == "2") {
+        // METALMPV_TRACE=2: mpv's verbose messages too.
+        if std::env::var("METALMPV_TRACE").is_ok_and(|v| v == "2") {
             mpv.request_log_messages("v");
         } else if log::log_enabled!(log::Level::Info) {
             mpv.request_log_messages("info");
@@ -494,7 +494,7 @@ mod tests {
             assert!(!name.is_empty() && !name.starts_with('-'), "{name}");
             assert!(!value.is_empty(), "{name}");
         }
-        if std::env::var_os("METAL_PLAYER_HWDEC").is_none() {
+        if std::env::var_os("METALMPV_HWDEC").is_none() {
             assert!(options(false).contains(&("hwdec", "no")));
         }
     }
@@ -511,11 +511,11 @@ mod tests {
 
     /// Plays a real file without a window and reads its tracks:
     /// `cargo test track_list -- --ignored` (vendor\libmpv and a video in
-    /// METAL_PLAYER_SAMPLE, or the default below).
+    /// METALMPV_SAMPLE, or the default below).
     #[test]
     #[ignore = "needs vendor/libmpv and a sample video"]
     fn track_list_of_a_real_file() {
-        let sample = std::env::var("METAL_PLAYER_SAMPLE")
+        let sample = std::env::var("METALMPV_SAMPLE")
             .unwrap_or_else(|_| "D:/Projects/video_converter/samples/test.mp4".into());
         let api = sys::api().unwrap();
         let mpv = Mpv::new(
@@ -554,12 +554,12 @@ mod tests {
 
     /// Reads the chapters of a real file without a window:
     /// `cargo test chapter_list -- --ignored --nocapture` with a file that
-    /// has chapters in METAL_PLAYER_SAMPLE.
+    /// has chapters in METALMPV_SAMPLE.
     #[test]
     #[ignore = "needs vendor/libmpv and a sample video with chapters"]
     fn chapter_list_of_a_real_file() {
-        let Ok(sample) = std::env::var("METAL_PLAYER_SAMPLE") else {
-            panic!("METAL_PLAYER_SAMPLE is not set");
+        let Ok(sample) = std::env::var("METALMPV_SAMPLE") else {
+            panic!("METALMPV_SAMPLE is not set");
         };
         let api = sys::api().unwrap();
         let mpv = Mpv::new(

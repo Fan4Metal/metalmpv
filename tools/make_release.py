@@ -24,9 +24,9 @@ from pathlib import Path
 # --- What differs between the apps of this family -----------------------------
 # The display name: the installer's AppName, the Start menu entry, the folder
 # in %LOCALAPPDATA%\Programs and in the portable archive.
-APP_NAME = "Metal Player"
+APP_NAME = "MetalMPV"
 # The exe's file stem (the Cargo package name).
-EXE_STEM = "metal_player"
+EXE_STEM = "metalmpv"
 # The installer's AppId (setup.iss): a new GUID for every app, never reused.
 APP_ID = "{4ABB9378-64A4-4E8E-B41D-B43385F9D268}"
 # Files the installer takes from the repository (see [Files] in setup.iss).
@@ -35,7 +35,7 @@ BUNDLED_FILES = ["LICENSE", "THIRD_PARTY_LICENSES.md", "licenses/GPL-3.0.txt", "
 PORTABLE_FILES = ["LICENSE", "THIRD_PARTY_LICENSES.md", "licenses/GPL-3.0.txt"]
 # Must match the settings file the program looks for next to its exe
 # (settings::PORTABLE_FILE).
-PORTABLE_SETTINGS = "metal_player.ron"
+PORTABLE_SETTINGS = "metalmpv.ron"
 # The DLL the player loads from its folder (src/mpv/sys.rs), put next to the
 # exe by build.rs.
 LIBMPV = "libmpv-2.dll"

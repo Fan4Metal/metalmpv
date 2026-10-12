@@ -60,7 +60,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
-          name: metal_player-${{ steps.version.outputs.version }}
+          name: metalmpv-${{ steps.version.outputs.version }}
           path: |
             dist/*_Setup.exe
             dist/*_portable.zip
@@ -70,7 +70,7 @@ jobs:
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v3
         with:
-          name: Metal Player ${{ steps.version.outputs.version }}
+          name: MetalMPV ${{ steps.version.outputs.version }}
           files: |
             dist/*_Setup.exe
             dist/*_portable.zip

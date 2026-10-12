@@ -1,8 +1,8 @@
 [package]
 # The identifier: the exe, the Cargo package, the GitHub repository, the
-# single-instance names. The display name ("Metal Player") lives in main.rs,
+# single-instance names. The display name ("MetalMPV") lives in main.rs,
 # setup.iss, build.rs and the READMEs.
-name = "metal_player"
+name = "metalmpv"
 # Between releases: the next version with "-dev"; a release drops it.
 version = "0.1.0-dev"
 authors = ["Fan4_Metal"]
@@ -10,7 +10,7 @@ edition = "2024"
 rust-version = "1.95"
 description = "A fast video player for Windows built on libmpv"
 license = "MIT"
-repository = "https://github.com/Fan4Metal/metal_player"
+repository = "https://github.com/Fan4Metal/metalmpv"
 
 [dependencies]
 # glow, not the default wgpu: a smaller binary and a faster start (an OpenGL

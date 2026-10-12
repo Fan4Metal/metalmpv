@@ -299,10 +299,10 @@ mod tests {
     #[test]
     fn missing_dll_is_an_error() {
         let path = std::env::temp_dir()
-            .join("no_such_dir_metal_player")
+            .join("no_such_dir_metalmpv")
             .join(DLL_NAME);
         let err = load(&path).err().expect("must fail");
-        assert!(err.contains("no_such_dir_metal_player"), "{err}");
+        assert!(err.contains("no_such_dir_metalmpv"), "{err}");
     }
 
     /// Loads the fetched DLL for real: `cargo test sys -- --ignored`.

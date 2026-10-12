@@ -284,8 +284,7 @@ mod tests {
 
     #[test]
     fn folder_contents() {
-        let dir =
-            std::env::temp_dir().join(format!("metal_player_playlist_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("metalmpv_playlist_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         for name in ["ep10.mkv", "ep2.MP4", "notes.txt", "song.flac"] {
             std::fs::write(dir.join(name), b"").unwrap();

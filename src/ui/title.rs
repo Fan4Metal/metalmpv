@@ -45,7 +45,7 @@ pub fn row(
         (Cmd::Minimize, tr!("Minimize", "Свернуть")),
         (
             Cmd::About,
-            tr!("About Metal Player (F1)", "О программе Metal Player (F1)"),
+            tr!("About MetalMPV (F1)", "О программе MetalMPV (F1)"),
         ),
     ];
     let mut right = rect.right();

@@ -1,9 +1,9 @@
 r"""
 Write images/icon.png (for the READMEs) from the icon the program draws:
-runs `metal_player.exe --export-icon` and turns the 256-pixel layer of the
+runs `metalmpv.exe --export-icon` and turns the 256-pixel layer of the
 .ico into a PNG. No external dependencies.
 
-Run from any folder after a build: python tools/icon_png.py [path\to\metal_player.exe]
+Run from any folder after a build: python tools/icon_png.py [path\to\metalmpv.exe]
 """
 
 import struct
@@ -46,9 +46,9 @@ def png(side: int, rgba: bytes) -> bytes:
 
 
 def main() -> int:
-    exe = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "target" / "release" / "metal_player.exe"
+    exe = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "target" / "release" / "metalmpv.exe"
     if not exe.is_file():
-        exe = ROOT / "target" / "debug" / "metal_player.exe"
+        exe = ROOT / "target" / "debug" / "metalmpv.exe"
     with tempfile.TemporaryDirectory() as tmp:
         ico = Path(tmp) / "app.ico"
         subprocess.run([str(exe), "--export-icon", str(ico)], check=True)

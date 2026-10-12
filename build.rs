@@ -8,7 +8,7 @@ mod icon;
 fn main() {
     println!("cargo:rerun-if-changed=src/icon.rs");
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rustc-env=METAL_PLAYER_VERSION={}", version());
+    println!("cargo:rustc-env=METALMPV_VERSION={}", version());
 
     let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
     copy_libmpv(&out_dir);
@@ -31,8 +31,8 @@ fn main() {
     {
         let mut res = winresource::WindowsResource::new();
         res.set_icon(ico_path.to_str().unwrap())
-            .set("FileDescription", "Metal Player - video player")
-            .set("ProductName", "Metal Player")
+            .set("FileDescription", "MetalMPV - video player")
+            .set("ProductName", "MetalMPV")
             .set("LegalCopyright", "Copyright (C) 2026 Fan4_Metal");
         if let Err(e) = res.compile() {
             // A missing resource compiler must not break the build.

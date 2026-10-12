@@ -1,4 +1,4 @@
-//! Metal Player: a fast video player for Windows on libmpv.
+//! MetalMPV: a fast video player for Windows on libmpv.
 
 // The release build is a GUI program without a console; the debug build
 // keeps it, so `eprintln!`, logs and panics are seen while developing.
@@ -33,14 +33,14 @@ use std::time::Instant;
 
 /// The display name, as people read it: the window title, About, the
 /// panic message, the User-Agent of the update check. The identifier
-/// (`metal_player`) is the Cargo package, the exe and the repository.
-pub const APP_NAME: &str = "Metal Player";
+/// (`metalmpv`) is the Cargo package, the exe and the repository.
+pub const APP_NAME: &str = "MetalMPV";
 /// eframe app id; also names the settings folder in `%APPDATA%` (unless the
 /// copy is portable, see `settings::location`).
-pub const APP_ID: &str = "Metal Player";
+pub const APP_ID: &str = "MetalMPV";
 /// Version from Cargo.toml, shown in About; a development version
 /// ("0.1.0-dev") carries the commit it was built from (`build.rs`).
-pub const VERSION: &str = env!("METAL_PLAYER_VERSION");
+pub const VERSION: &str = env!("METALMPV_VERSION");
 /// The window's size on the first start, in points.
 pub const DEFAULT_SIZE: [f32; 2] = [960.0, 600.0];
 
@@ -49,7 +49,7 @@ pub const DEFAULT_SIZE: [f32; 2] = [960.0, 600.0];
 /// maximized before its first frame is painted).
 pub static MAXIMIZE_WHEN_SHOWN: AtomicBool = AtomicBool::new(false);
 
-/// When the process started, for the timings of `METAL_PLAYER_TRACE=1`.
+/// When the process started, for the timings of `METALMPV_TRACE=1`.
 pub fn started() -> Instant {
     static START: OnceLock<Instant> = OnceLock::new();
     *START.get_or_init(Instant::now)
@@ -94,7 +94,7 @@ fn main() -> eframe::Result {
                 win::attach_parent_console();
                 let _ = writeln!(
                     std::io::stdout(),
-                    "{APP_NAME} {VERSION}\n\nmetal_player [FILE...]\nmetal_player --version | --help | --export-icon FILE.ico"
+                    "{APP_NAME} {VERSION}\n\nmetalmpv [FILE...]\nmetalmpv --version | --help | --export-icon FILE.ico"
                 );
                 return Ok(());
             }
@@ -177,14 +177,14 @@ fn main() -> eframe::Result {
 }
 
 /// Warnings and errors to stderr (seen in a debug build or with a console);
-/// `METAL_PLAYER_TRACE=1` adds the app's debug lines (timings, mpv's info
+/// `METALMPV_TRACE=1` adds the app's debug lines (timings, mpv's info
 /// messages), `RUST_LOG` works as usual.
 fn init_logging() {
     let mut builder =
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"));
-    if std::env::var_os("METAL_PLAYER_TRACE").is_some_and(|v| v != "0") {
+    if std::env::var_os("METALMPV_TRACE").is_some_and(|v| v != "0") {
         builder
-            .filter_module("metal_player", log::LevelFilter::Debug)
+            .filter_module("metalmpv", log::LevelFilter::Debug)
             .format_timestamp_millis();
     }
     builder.init();

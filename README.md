@@ -1,13 +1,13 @@
 <p align="center">
-  <img src="images/icon.png" width="128" height="128" alt="Metal Player icon">
+  <img src="images/icon.png" width="128" height="128" alt="MetalMPV icon">
 </p>
 
-<h1 align="center">Metal Player</h1>
+<h1 align="center">MetalMPV</h1>
 
 <p align="center">A fast video player for Windows built on libmpv</p>
 
 <p align="center">
-  <a href="https://github.com/Fan4Metal/metal_player/releases/latest"><img src="https://img.shields.io/github/v/release/Fan4Metal/metal_player?label=release" alt="Latest release"></a>
+  <a href="https://github.com/Fan4Metal/metalmpv/releases/latest"><img src="https://img.shields.io/github/v/release/Fan4Metal/metalmpv?label=release" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/Windows-10%2B-0078D6" alt="Windows 10 or later">
   <img src="https://img.shields.io/badge/Rust-B7410E?logo=rust&logoColor=white" alt="Rust">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
@@ -15,9 +15,9 @@
 
 <p align="center"><b>English</b> | <a href="README.ru.md">Русский</a></p>
 
-Metal Player is a video player for Windows with a classic layout: the picture fills the window, the seek bar and the buttons sit under it with Play in the middle, and the playlist opens on the right. Playback is done by [libmpv](https://mpv.io), the library of the mpv player, so practically every video and audio format plays, with hardware decoding where the graphics card supports it. The program is built for opening files quickly and for instant seeking on keyframes.
+MetalMPV is a video player for Windows with a classic layout: the picture fills the window, the seek bar and the buttons sit under it with Play in the middle, and the playlist opens on the right. Playback is done by [libmpv](https://mpv.io), the library of the mpv player, so practically every video and audio format plays, with hardware decoding where the graphics card supports it. The program is built for opening files quickly and for instant seeking on keyframes.
 
-![Metal Player playing a video, with the control bar under the picture](images/screenshot.png)
+![MetalMPV playing a video, with the control bar under the picture](images/screenshot.png)
 
 *Screenshot of version 0.1.0.*
 
@@ -37,19 +37,19 @@ Metal Player is a video player for Windows with a classic layout: the picture fi
 
 ## Installation
 
-The installer and the portable archive are on the [Releases](https://github.com/Fan4Metal/metal_player/releases) page.
+The installer and the portable archive are on the [Releases](https://github.com/Fan4Metal/metalmpv/releases) page.
 
-The installer, `Metal_Player_<version>_Setup.exe`, needs no administrator rights: the program is placed in `%LOCALAPPDATA%\Programs\Metal Player`. The installed program keeps its settings in `%APPDATA%\Metal Player`.
+The installer, `MetalMPV_<version>_Setup.exe`, needs no administrator rights: the program is placed in `%LOCALAPPDATA%\Programs\MetalMPV`. The installed program keeps its settings in `%APPDATA%\MetalMPV`.
 
-The portable archive, `Metal_Player_<version>_portable.zip`, holds the program in a `Metal Player` folder and runs without installation. It also holds an empty `metal_player.ron`. While that file is next to `metal_player.exe` and the folder is writable, the settings are kept in it, so the program can be carried on a removable drive. Without the file, the program keeps them in `%APPDATA%\Metal Player`, as the installed program does. The About window shows where the settings are kept.
+The portable archive, `MetalMPV_<version>_portable.zip`, holds the program in a `MetalMPV` folder and runs without installation. It also holds an empty `metalmpv.ron`. While that file is next to `metalmpv.exe` and the folder is writable, the settings are kept in it, so the program can be carried on a removable drive. Without the file, the program keeps them in `%APPDATA%\MetalMPV`, as the installed program does. The About window shows where the settings are kept.
 
-Both contain `libmpv-2.dll` (about 115 MB unpacked), the playback engine, which must stay next to `metal_player.exe`.
+Both contain `libmpv-2.dll` (about 115 MB unpacked), the playback engine, which must stay next to `metalmpv.exe`.
 
 The executables are not code-signed, so Windows SmartScreen may warn about an unknown publisher on first launch.
 
 ## Usage
 
-A file is opened with the **Open** button (the eject symbol, `Ctrl+O`), by dropping it onto the window, from Explorer (**Open with**), or from the command line: `metal_player.exe file.mkv [more files]`. Several files make a playlist; at the end of a file the next one starts.
+A file is opened with the **Open** button (the eject symbol, `Ctrl+O`), by dropping it onto the window, from Explorer (**Open with**), or from the command line: `metalmpv.exe file.mkv [more files]`. Several files make a playlist; at the end of a file the next one starts.
 
 The window has its own title row: it is moved by dragging the title, the picture or the free space of the control bar, resized by its edges, and maximised by a double click on the title. A double click on the picture or `Enter` switches to fullscreen, where only the picture is left; the control bar appears over it while the mouse moves, and the pointer hides after half a second of rest.
 
@@ -117,11 +117,11 @@ The update check is optional and off by default. With **Check at start-up** enab
 Requirements: Windows 10 or later, a stable Rust toolchain (MSVC target, 2024 edition), the Visual Studio 2022 Build Tools with the C++ workload and Python 3. For `build.py`, [uv](https://docs.astral.sh/uv/).
 
 ```
-uv run build.py          # target\release\metal_player.exe with libmpv-2.dll next to it
+uv run build.py          # target\release\metalmpv.exe with libmpv-2.dll next to it
 cargo test
 ```
 
-`build.py` closes a `metal_player.exe` running from the project's `target` folder, because it would lock the file, fetches libmpv when it is missing (`tools/get_libmpv.py`) and runs `cargo build --release`. `tools/get_libmpv.py` downloads a pinned build of libmpv from [shinchiro/mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake) and the standalone `7zr.exe` of 7-Zip to unpack it, checks both against their SHA-256 and puts them into `vendor` (not in the repository); `build.rs` copies the DLL next to the executable. The executable links the C runtime statically (`.cargo/config.toml`) and loads libmpv at run time, so it needs nothing beyond Windows and `libmpv-2.dll`.
+`build.py` closes a `metalmpv.exe` running from the project's `target` folder, because it would lock the file, fetches libmpv when it is missing (`tools/get_libmpv.py`) and runs `cargo build --release`. `tools/get_libmpv.py` downloads a pinned build of libmpv from [shinchiro/mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake) and the standalone `7zr.exe` of 7-Zip to unpack it, checks both against their SHA-256 and puts them into `vendor` (not in the repository); `build.rs` copies the DLL next to the executable. The executable links the C runtime statically (`.cargo/config.toml`) and loads libmpv at run time, so it needs nothing beyond Windows and `libmpv-2.dll`.
 
 <details>
 <summary>Setting up the environment and the source layout</summary>
@@ -156,7 +156,7 @@ python tools/make_release.py --no-tests   # the same without cargo test
 python tools/make_release.py --install    # then a silent installation over the installed copy
 ```
 
-The script writes the files to `dist` and takes the version from `Cargo.toml`. The installer script is `tools/setup.iss`; `metal_player.exe --export-icon <file.ico>` writes the installer icon.
+The script writes the files to `dist` and takes the version from `Cargo.toml`. The installer script is `tools/setup.iss`; `metalmpv.exe --export-icon <file.ico>` writes the installer icon.
 
 Releases on GitHub are built by the **Release** workflow (`.github/workflows/release.yml`). After the version in `Cargo.toml` is updated and committed, pushing a matching tag publishes a release with the installer and the portable archive:
 

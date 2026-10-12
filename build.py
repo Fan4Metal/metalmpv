@@ -3,10 +3,10 @@
 # dependencies = ["psutil"]
 # ///
 r"""
-Release build: cargo build --release (target\release\metal_player.exe), with
+Release build: cargo build --release (target\release\metalmpv.exe), with
 libmpv-2.dll next to it (fetched by tools/get_libmpv.py when missing).
 
-A metal_player.exe running from this project's target folder locks the file and
+A metalmpv.exe running from this project's target folder locks the file and
 makes the link fail, so it is closed first: politely (the window gets
 WM_CLOSE and saves its settings), then by force if it has not exited within
 3 seconds. Copies of the program elsewhere are left alone.
@@ -21,7 +21,7 @@ from pathlib import Path
 import psutil
 
 # The exe's file name; the same as EXE in tools/make_release.py.
-EXE_NAME = "metal_player.exe"
+EXE_NAME = "metalmpv.exe"
 
 ROOT = Path(__file__).resolve().parent
 TARGET = ROOT / "target"

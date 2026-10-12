@@ -1,5 +1,5 @@
 //! Settings kept between runs in eframe's storage
-//! (`%APPDATA%\Metal Player\data\app.ron`, or [`PORTABLE_FILE`] next to the exe,
+//! (`%APPDATA%\MetalMPV\data\app.ron`, or [`PORTABLE_FILE`] next to the exe,
 //! see [`location`]). Window size and position and egui's own state (panel
 //! widths) are saved by eframe itself (`persist_window`).
 //!
@@ -32,7 +32,7 @@ pub const MAX_STEP: f64 = 3600.0;
 /// (even empty) and can be written, the settings are kept in it instead of
 /// the user profile. The portable zip ships an empty one
 /// (`PORTABLE_SETTINGS` in tools/make_release.py).
-pub const PORTABLE_FILE: &str = "metal_player.ron";
+pub const PORTABLE_FILE: &str = "metalmpv.ron";
 
 /// Where the settings of this run are kept.
 #[derive(Debug)]

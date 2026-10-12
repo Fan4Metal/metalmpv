@@ -42,7 +42,7 @@ struct Shared {
     wanted: [i32; 2],
     /// A frame was rendered in the previous paint: report its swap.
     swap_pending: bool,
-    /// For the timing of the first frame (`METAL_PLAYER_TRACE`).
+    /// For the timing of the first frame (`METALMPV_TRACE`).
     rendered_once: bool,
 }
 

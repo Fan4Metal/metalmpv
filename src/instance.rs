@@ -49,7 +49,7 @@ fn name() -> String {
     let exe = std::env::current_exe().unwrap_or_default();
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     exe.to_string_lossy().to_lowercase().hash(&mut hasher);
-    format!("metal_player.{:016x}", hasher.finish())
+    format!("metalmpv.{:016x}", hasher.finish())
 }
 
 /// Called at start-up. If the player is already running from this exe,

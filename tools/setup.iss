@@ -1,10 +1,10 @@
-; Metal Player installer (Inno Setup 6).
+; MetalMPV installer (Inno Setup 6).
 ; Built by tools\make_release.py, which passes the version and the icon path:
 ;   ISCC /DMyAppVersion=0.1.0 /DVersionInfoVersion=0.1.0.0 /DAppIcon=..\target\app.ico tools\setup.iss
 
-#define MyAppName "Metal Player"
-#define MyAppFileStem "Metal_Player"
-#define MyAppExeName "metal_player.exe"
+#define MyAppName "MetalMPV"
+#define MyAppFileStem "MetalMPV"
+#define MyAppExeName "metalmpv.exe"
 #define MyAppPublisher "Fan4_Metal"
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0"

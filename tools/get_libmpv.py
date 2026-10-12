@@ -50,7 +50,7 @@ def sha256(path: Path) -> str:
 def download(url: str, to: Path, expected: str) -> None:
     """Download `url` to `to` and check its SHA-256; a mismatch leaves nothing behind."""
     print(f"Downloading {url}", flush=True)
-    request = urllib.request.Request(url, headers={"User-Agent": "metal_player-get_libmpv"})
+    request = urllib.request.Request(url, headers={"User-Agent": "metalmpv-get_libmpv"})
     partial = to.with_suffix(to.suffix + ".part")
     with urllib.request.urlopen(request, timeout=60) as answer, partial.open("wb") as out:
         shutil.copyfileobj(answer, out, 1 << 20)

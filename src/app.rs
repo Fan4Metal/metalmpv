@@ -70,7 +70,7 @@ pub struct App {
     cloak: Option<(Instant, u64)>,
     /// Commands from `logic` (other starts, the player), run in `ui`.
     pending: Vec<Cmd>,
-    /// The first video frame has been logged (`METAL_PLAYER_TRACE`).
+    /// The first video frame has been logged (`METALMPV_TRACE`).
     first_frame_logged: bool,
     /// The subtitles shown before `V` turned them off.
     last_sub: Option<i64>,
@@ -673,10 +673,10 @@ impl App {
             (
                 tr!(
                     format!(
-                        "The player cannot work: {e}.\nlibmpv-2.dll must be next to metal_player.exe."
+                        "The player cannot work: {e}.\nlibmpv-2.dll must be next to metalmpv.exe."
                     ),
                     format!(
-                        "Воспроизведение невозможно: {e}.\nРядом с metal_player.exe нужна libmpv-2.dll."
+                        "Воспроизведение невозможно: {e}.\nРядом с metalmpv.exe нужна libmpv-2.dll."
                     )
                 ),
                 style::ERROR,
