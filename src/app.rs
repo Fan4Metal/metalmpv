@@ -1333,6 +1333,11 @@ impl eframe::App for App {
             .as_ref()
             .and_then(|c| c.loaded.as_ref())
             .map(|(cover, texture)| CoverView { cover, texture });
+        if self.info.open
+            && let Some(player) = &mut self.player
+        {
+            player.ask_scan();
+        }
         let info_cmds = self
             .info
             .show(&ctx, self.playlist.current_path(), &state, cover);

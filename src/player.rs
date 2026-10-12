@@ -138,6 +138,22 @@ const PROPS: [(Prop, &str, sys::mpv_format); 20] = [
     (Prop::VideoParams, "video-params", sys::MPV_FORMAT_NODE),
 ];
 
+/// The reply to [`Player::ask_scan`]'s `video-frame-info`, past the
+/// observed properties' numbers.
+const FRAME_INFO: u64 = 100;
+
+/// The scan of a `video-frame-info` value.
+fn scan_of(value: &Value) -> Option<Scan> {
+    let interlaced = value.get("interlaced")?.flag();
+    Some(if interlaced {
+        Scan::Interlaced {
+            top_first: value.get("tff").is_some_and(Value::flag),
+        }
+    } else {
+        Scan::Progressive
+    })
+}
+
 /// What the interface shows of the playback.
 #[derive(Clone, Debug, PartialEq)]
 pub struct State {
@@ -172,6 +188,9 @@ pub struct State {
     pub file_format: Option<String>,
     /// The decoded picture's format.
     pub video_params: Option<VideoParams>,
+    /// Asked for while the information window is open
+    /// ([`Player::ask_scan`]): the frame changes every moment.
+    pub scan: Option<Scan>,
 }
 
 /// What mpv says of the decoded picture (`video-params`).
@@ -183,6 +202,17 @@ pub struct VideoParams {
     pub primaries: Option<String>,
     /// The transfer function: `pq` and `hlg` are HDR.
     pub gamma: Option<String>,
+    /// The YUV matrix: `bt.709`, `bt.2020-ncl`.
+    pub matrix: Option<String>,
+    /// `limited` or `full`.
+    pub levels: Option<String>,
+    /// The display aspect ratio.
+    pub aspect: Option<f64>,
+    /// The HDR metadata in cd/m²: content light levels and the mastering
+    /// display's peak.
+    pub max_cll: Option<f64>,
+    pub max_fall: Option<f64>,
+    pub max_luma: Option<f64>,
 }
 
 impl VideoParams {
@@ -194,13 +224,30 @@ impl VideoParams {
                 .filter(|s| !s.is_empty() && *s != "auto")
                 .map(str::to_owned)
         };
+        let positive = |key| value.get(key).and_then(Value::double).filter(|v| *v > 0.0);
         let params = Self {
             pixel_format: text("hw-pixelformat").or_else(|| text("pixelformat")),
             primaries: text("primaries"),
             gamma: text("gamma"),
+            matrix: text("colormatrix"),
+            levels: text("colorlevels"),
+            aspect: positive("aspect"),
+            max_cll: positive("max-cll"),
+            max_fall: positive("max-fall"),
+            max_luma: positive("max-luma"),
         };
         (params != Self::default()).then_some(params)
     }
+}
+
+/// How the picture is scanned, from the frame on screen (`video-frame-info`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Scan {
+    Progressive,
+    /// Interlaced; whether the top field comes first.
+    Interlaced {
+        top_first: bool,
+    },
 }
 
 impl Default for State {
@@ -226,6 +273,7 @@ impl Default for State {
             file_size: None,
             file_format: None,
             video_params: None,
+            scan: None,
         }
     }
 }
@@ -324,6 +372,8 @@ impl Seek {
 pub struct Player {
     mpv: Mpv,
     pub state: State,
+    /// When `video-frame-info` was last asked for.
+    scan_asked: Option<std::time::Instant>,
 }
 
 impl Player {
@@ -350,6 +400,7 @@ impl Player {
                 mute,
                 ..State::default()
             },
+            scan_asked: None,
         };
         player
             .mpv
@@ -368,6 +419,10 @@ impl Player {
         let mut out = Vec::new();
         while let Some(event) = self.mpv.next_event() {
             match event {
+                Event::Property {
+                    id: FRAME_INFO,
+                    value,
+                } => self.state.scan = scan_of(&value),
                 Event::Property { id, value } => {
                     if let Some((prop, _, _)) = PROPS.iter().find(|(p, _, _)| *p as u64 == id) {
                         let was_eof = self.state.eof;
@@ -377,7 +432,11 @@ impl Player {
                         }
                     }
                 }
-                Event::FileLoaded => out.push(Happened::FileLoaded),
+                Event::FileLoaded => {
+                    self.state.scan = None;
+                    self.scan_asked = None;
+                    out.push(Happened::FileLoaded);
+                }
                 Event::PlaybackRestart => out.push(Happened::Restarted),
                 Event::EndFile {
                     reason: EndReason::Error,
@@ -409,6 +468,25 @@ impl Player {
             }
         }
         out
+    }
+
+    /// Ask how the picture is scanned, until it is known (the reply comes
+    /// with the events; a file without a frame yet is asked again after a
+    /// while).
+    pub fn ask_scan(&mut self) {
+        if self.state.scan.is_some() || self.state.video().is_none() {
+            return;
+        }
+        let now = std::time::Instant::now();
+        if self
+            .scan_asked
+            .is_some_and(|t| now.duration_since(t).as_millis() < 500)
+        {
+            return;
+        }
+        self.scan_asked = Some(now);
+        self.mpv
+            .get(FRAME_INFO, "video-frame-info", sys::MPV_FORMAT_NODE);
     }
 
     /// Play `path` from the start, replacing the current file.

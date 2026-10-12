@@ -22,14 +22,15 @@ pub fn is_subtitles(path: &std::path::Path) -> bool {
     })
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Kind {
+    #[default]
     Video,
     Audio,
     Sub,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Track {
     /// mpv's id (`aid`/`sid`), counted per kind from 1.
     pub id: i64,
@@ -44,9 +45,17 @@ pub struct Track {
     pub layout: Option<String>,
     /// FFmpeg's long codec name ("H.265 / HEVC (High Efficiency Video Coding)").
     pub codec_desc: Option<String>,
+    /// The codec's profile ("High", "Main 10", "LC", "DTS-HD MA").
+    pub profile: Option<String>,
     /// A picture's size in pixels as the file states it.
     pub width: Option<i64>,
     pub height: Option<i64>,
+    /// The pixels' aspect ratio, 1 for square pixels.
+    pub par: Option<f64>,
+    /// Degrees clockwise the picture is turned for display.
+    pub rotation: Option<i64>,
+    /// Dolby Vision's profile and level.
+    pub dolby_vision: Option<(i64, i64)>,
     pub fps: Option<f64>,
     /// Audio samples per second.
     pub samplerate: Option<i64>,
@@ -58,7 +67,14 @@ pub struct Track {
     pub external: bool,
     pub default: bool,
     pub forced: bool,
+    pub commentary: bool,
+    pub original: bool,
+    pub hearing_impaired: bool,
+    pub visual_impaired: bool,
     pub selected: bool,
+    /// The track's own tags, as the file names them; the language and
+    /// FFmpeg's default handler names left out.
+    pub tags: Vec<(String, String)>,
 }
 
 /// The tracks of a `track-list` value; entries that are not understood
@@ -89,8 +105,25 @@ pub fn from_value(list: &Value) -> Vec<Track> {
                 channels: t.get("demux-channel-count").and_then(Value::int),
                 layout: text("demux-channels"),
                 codec_desc: text("codec-desc"),
+                profile: text("codec-profile"),
                 width: t.get("demux-w").and_then(Value::int),
                 height: t.get("demux-h").and_then(Value::int),
+                par: t
+                    .get("demux-par")
+                    .and_then(Value::double)
+                    .filter(|p| *p > 0.0),
+                rotation: t
+                    .get("demux-rotation")
+                    .and_then(Value::int)
+                    .filter(|r| *r != 0),
+                dolby_vision: t.get("dolby-vision-profile").and_then(Value::int).map(|p| {
+                    (
+                        p,
+                        t.get("dolby-vision-level")
+                            .and_then(Value::int)
+                            .unwrap_or(0),
+                    )
+                }),
                 fps: t.get("demux-fps").and_then(Value::double),
                 samplerate: t.get("demux-samplerate").and_then(Value::int),
                 bitrate: t.get("demux-bitrate").and_then(Value::int),
@@ -98,8 +131,31 @@ pub fn from_value(list: &Value) -> Vec<Track> {
                 external: flag("external"),
                 default: flag("default"),
                 forced: flag("forced"),
+                commentary: flag("commentary"),
+                original: flag("original"),
+                hearing_impaired: flag("hearing-impaired"),
+                visual_impaired: flag("visual-impaired"),
                 selected: flag("selected"),
+                tags: t.get("metadata").map(track_tags).unwrap_or_default(),
             })
+        })
+        .collect()
+}
+
+/// A track's `metadata` map without what says nothing new: the language
+/// (the track has it), FFmpeg's default handler names ("SoundHandler") and
+/// empty values.
+fn track_tags(metadata: &Value) -> Vec<(String, String)> {
+    let Value::Map(entries) = metadata else {
+        return Vec::new();
+    };
+    entries
+        .iter()
+        .filter_map(|(k, v)| Some((k.clone(), v.string()?.trim().to_owned())))
+        .filter(|(k, v)| {
+            !v.is_empty()
+                && !k.eq_ignore_ascii_case("language")
+                && !(k.eq_ignore_ascii_case("handler_name") && v.ends_with("Handler"))
         })
         .collect()
 }

@@ -6,6 +6,7 @@
 
 use std::path::Path;
 
+use egui::collapsing_header::CollapsingState;
 use egui::{Align, Color32, Layout, Rect, RichText, Sense, TextureHandle, Ui, vec2};
 
 use super::style;
@@ -14,10 +15,10 @@ use crate::i18n::lang;
 use crate::info;
 use crate::input::Cmd;
 use crate::player::State;
-use crate::tracks::Kind;
+use crate::tracks::Track;
 
 /// The width of the labels' column.
-const LABEL_WIDTH: f32 = 130.0;
+const LABEL_WIDTH: f32 = 170.0;
 /// The side of the cover in the header.
 const THUMB: f32 = 120.0;
 
@@ -72,9 +73,9 @@ impl InfoWindow {
             .open(&mut open)
             .collapsible(false)
             .resizable(true)
-            .default_size(vec2(480.0, 560.0))
-            .min_width(340.0)
-            .default_pos(screen.right_top() + vec2(-500.0, 50.0))
+            .default_size(vec2(520.0, 620.0))
+            .min_width(380.0)
+            .default_pos(screen.right_top() + vec2(-540.0, 50.0))
             .constrain_to(screen)
             .frame(
                 egui::Frame::window(&ctx.style_of(egui::Theme::Dark))
@@ -265,31 +266,64 @@ fn body(
 
     if !state.tracks.is_empty() {
         heading(ui, tr!("Tracks", "Дорожки"));
-        let selected_video = crate::tracks::selected(&state.tracks, Kind::Video).map(|t| t.id);
         for track in &state.tracks {
-            let params = state
-                .video_params
-                .as_ref()
-                .filter(|_| track.kind == Kind::Video && Some(track.id) == selected_video);
-            let heading = info::track_heading_in(lang, track, &state.tracks);
-            let details = info::track_details_in(lang, track, params);
-            let response = ui.add(
-                egui::Label::new(RichText::new(heading).color(if track.selected {
-                    style::TEXT_BRIGHT
-                } else {
-                    style::TEXT
-                }))
-                .wrap(),
-            );
-            if let Some(desc) = &track.codec_desc {
-                response.on_hover_text(desc);
-            }
-            if !details.is_empty() {
-                ui.add(egui::Label::new(RichText::new(details).color(style::TEXT_WEAK)).wrap());
-            }
+            track_entry(ui, track, state);
             ui.add_space(4.0);
         }
     }
+}
+
+/// A track: its name and main details in one line, the playing ones
+/// brighter; a click on them or on the arrow unfolds all its rows (the open
+/// state is egui's memory, per track).
+fn track_entry(ui: &mut Ui, track: &Track, state: &State) {
+    let lang = lang();
+    let id = ui.make_persistent_id(("track_rows", track.kind, track.id));
+    let mut fold = CollapsingState::load_with_default_open(ui.ctx(), id, false);
+    let header = ui.horizontal_top(|ui| {
+        fold.show_toggle_button(ui, egui::collapsing_header::paint_default_icon);
+        ui.vertical(|ui| {
+            let heading = info::track_heading_in(lang, track, &state.tracks);
+            let color = if track.selected {
+                style::TEXT_BRIGHT
+            } else {
+                style::TEXT
+            };
+            let mut response = ui
+                .add(
+                    egui::Label::new(RichText::new(heading).color(color))
+                        .sense(Sense::click())
+                        .wrap(),
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if let Some(desc) = &track.codec_desc {
+                response = response.on_hover_text(desc);
+            }
+            let mut clicked = response.clicked();
+            let details = info::track_details_in(lang, track, state);
+            if !details.is_empty() {
+                clicked |= ui
+                    .add(
+                        egui::Label::new(RichText::new(details).color(style::TEXT_WEAK))
+                            .sense(Sense::click())
+                            .wrap(),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked();
+            }
+            clicked
+        })
+        .inner
+    });
+    if header.inner {
+        fold.toggle(ui);
+    }
+    fold.show_body_unindented(ui, |ui| {
+        ui.add_space(4.0);
+        for (label, value) in info::track_rows_in(lang, track, state) {
+            row(ui, &label, &value);
+        }
+    });
 }
 
 fn heading(ui: &mut Ui, text: &str) {
