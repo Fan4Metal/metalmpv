@@ -75,7 +75,7 @@ The cover is taken from the file's tags (MP3, FLAC, OGG, Opus, M4A, MP4, WAV, AP
 
 ### File types
 
-**File Associations…** in the picture's context menu opens a window with the formats the player registers, their extensions and whether the player opens each by default, with the buttons **Register** (**Update Registration** once registered), **Choose as Default…** and **Unregister**. The installer registers the formats too.
+The **File types** page of the settings (`F5`) shows whether the player is registered, the buttons **Register** (**Update Registration** once registered), **Choose as Default…** and **Unregister**, and the formats the player registers with their extensions and whether the player opens each by default. The installer registers the formats too.
 
 ![The icons of the registered file types](images/file_types.png)
 

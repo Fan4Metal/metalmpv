@@ -31,16 +31,18 @@ pub enum Page {
     Playback,
     Video,
     Text,
+    Files,
     Updates,
     Keys,
 }
 
 impl Page {
-    const ALL: [Page; 6] = [
+    const ALL: [Page; 7] = [
         Page::General,
         Page::Playback,
         Page::Video,
         Page::Text,
+        Page::Files,
         Page::Updates,
         Page::Keys,
     ];
@@ -51,6 +53,7 @@ impl Page {
             Page::Playback => tr!("Playback", "Воспроизведение"),
             Page::Video => tr!("Video", "Видео"),
             Page::Text => tr!("Subtitles and OSD", "Субтитры и OSD"),
+            Page::Files => tr!("File types", "Типы файлов"),
             Page::Updates => tr!("Updates", "Обновления"),
             Page::Keys => tr!("Keys", "Клавиши"),
         }
@@ -75,6 +78,10 @@ impl Page {
                 "The font and the size of subtitles and of the on-screen messages.",
                 "Шрифт и размер субтитров и экранных сообщений."
             ),
+            Page::Files => tr!(
+                "Registering MetalMPV with Windows for video and audio files.",
+                "Регистрация MetalMPV в Windows для видео- и аудиофайлов."
+            ),
             Page::Updates => tr!(
                 "Asking GitHub whether a newer version is out.",
                 "Проверка выхода новой версии на GitHub."
@@ -94,6 +101,7 @@ pub struct SettingsDialog {
     fresh: bool,
     /// The category shown; kept while the program runs.
     page: Page,
+    file_types: super::assoc::FileTypesPage,
 }
 
 /// What changed in the window this frame and has to be applied.
@@ -231,6 +239,7 @@ impl SettingsDialog {
                                 Page::Playback => playback(ui, settings),
                                 Page::Video => changed.hwdec |= video(ui, settings, hwdec_current),
                                 Page::Text => text(ui, settings, &mut changed),
+                                Page::Files => self.file_types.show(ui),
                                 Page::Keys => keys(ui),
                             });
                     });
@@ -323,7 +332,7 @@ fn card(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
 }
 
 /// A titled group of settings: the title over a card.
-fn section(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui)) {
+pub(super) fn section(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui)) {
     ui.add_space(16.0);
     ui.label(RichText::new(title).strong().color(style::TEXT_BRIGHT));
     ui.add_space(4.0);
@@ -331,13 +340,13 @@ fn section(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui)) {
 }
 
 /// A remark under a card.
-fn note(ui: &mut Ui, text: &str) {
+pub(super) fn note(ui: &mut Ui, text: &str) {
     ui.add_space(4.0);
     ui.label(RichText::new(text).size(12.5).color(style::TEXT_WEAK));
 }
 
 /// A line between the rows of a card.
-fn divider(ui: &mut Ui) {
+pub(super) fn divider(ui: &mut Ui) {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
     ui.painter().hline(
         rect.x_range(),
@@ -349,7 +358,7 @@ fn divider(ui: &mut Ui) {
 /// A row of a card: the name with an optional hint under it on the left,
 /// what `control` adds right-aligned in `control_width` points on the
 /// right, centred vertically.
-fn row<R>(
+pub(super) fn row<R>(
     ui: &mut Ui,
     title: &str,
     hint: Option<&str>,

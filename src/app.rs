@@ -27,7 +27,6 @@ use crate::playlist::{self, Playlist};
 use crate::settings::Settings;
 use crate::tracks::{self, Kind};
 use crate::ui::about::AboutDialog;
-use crate::ui::assoc::AssocDialog;
 use crate::ui::info::{CoverView, InfoWindow};
 use crate::ui::osd::OsdLine;
 use crate::ui::settings::SettingsDialog;
@@ -57,7 +56,6 @@ pub struct App {
     file_error: Option<String>,
     playlist: Playlist,
     about: AboutDialog,
-    assoc: AssocDialog,
     settings_dialog: SettingsDialog,
     info: InfoWindow,
     /// The cover of the file playing, while or once it is looked for.
@@ -170,7 +168,6 @@ impl App {
             file_error: None,
             playlist: Playlist::default(),
             about: AboutDialog::default(),
-            assoc: AssocDialog::default(),
             info: InfoWindow::default(),
             cover: None,
             settings_dialog: SettingsDialog::default(),
@@ -619,7 +616,6 @@ impl App {
             Cmd::Open => self.pick_files(frame, false),
             Cmd::TogglePlaylist => self.settings.playlist_visible = !self.settings.playlist_visible,
             Cmd::About => self.about.toggle(),
-            Cmd::Associations => self.assoc.toggle(),
             Cmd::Settings => self.settings_dialog.toggle(),
             Cmd::Delete => {
                 if self.settings.playlist_visible
@@ -1151,12 +1147,6 @@ fn context_menu(
         "F5",
         Cmd::Settings,
     );
-    item(
-        ui,
-        tr!("File Associations…", "Сопоставление файлов…").into(),
-        "",
-        Cmd::Associations,
-    );
     item(ui, tr!("About", "О программе").into(), "F1", Cmd::About);
     cmds.extend(track_cmds);
 }
@@ -1240,11 +1230,7 @@ impl eframe::App for App {
 
         // The keys are the player's: no widget keeps the focus to take
         // Space or Enter as a click. A modal takes the keys while open.
-        if !self.about.open
-            && !self.assoc.open
-            && !self.settings_dialog.open
-            && !egui::Popup::is_any_open(&ctx)
-        {
+        if !self.about.open && !self.settings_dialog.open && !egui::Popup::is_any_open(&ctx) {
             if let Some(id) = ctx.memory(|m| m.focused()) {
                 ctx.memory_mut(|m| m.surrender_focus(id));
             }
@@ -1341,7 +1327,6 @@ impl eframe::App for App {
             style::set_fonts(&ctx, data);
         }
         self.about.show(&ctx);
-        self.assoc.show(&ctx);
         self.update_cover(&ctx, &state);
         let cover = self
             .cover
