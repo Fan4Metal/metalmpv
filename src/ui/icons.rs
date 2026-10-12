@@ -202,6 +202,29 @@ pub fn info(p: &Painter, o: Pos2, s: f32, c: Color32) {
     );
 }
 
+/// A speech bubble with two lines of text: audio and subtitles.
+pub fn tracks(p: &Painter, o: Pos2, s: f32, c: Color32) {
+    let stroke = Stroke::new(s * 0.2, c);
+    let body = egui::Rect::from_center_size(o - vec2(0.0, s * 0.15), vec2(s * 2.0, s * 1.45));
+    p.rect_stroke(body, s * 0.3, stroke, egui::StrokeKind::Middle);
+    // The tail, under the bottom left.
+    let base = body.left_bottom() + vec2(s * 0.45, 0.0);
+    p.add(Shape::line(
+        vec![
+            base,
+            base + vec2(-s * 0.15, s * 0.6),
+            base + vec2(s * 0.45, 0.0),
+        ],
+        stroke,
+    ));
+    let line = Stroke::new(s * 0.17, c);
+    for (y, w) in [(-0.3, 1.1), (0.15, 0.7)] {
+        let y = body.center().y + y * s;
+        let x = body.left() + s * 0.45;
+        p.line_segment([pos2(x, y), pos2(x + w * s, y)], line);
+    }
+}
+
 /// +: add.
 pub fn plus(p: &Painter, o: Pos2, s: f32, c: Color32) {
     let stroke = Stroke::new(1.6, c);

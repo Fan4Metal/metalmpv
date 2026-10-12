@@ -26,6 +26,7 @@ Metal Player is a video player for Windows with a classic layout: the picture fi
 - **Fast start**: the playback engine starts while the window is being created; on a warm start the first frame of a 1080p file appears about 0.4 s after the program is launched.
 - **Instant seeking on keyframes** with the arrow keys, exact seeking and frame stepping on other keys (see [Keyboard shortcuts](#keyboard-shortcuts)); every seek is reported on the screen.
 - **Every common format**: MP4, MKV, AVI, MOV, WebM, TS, WMV and more, audio files included; subtitles next to the video are loaded automatically.
+- **Audio tracks and subtitles** in one window by the volume (`T`), both lists side by side; subtitles from a file of their own by **Load from a file…** or by dropping the file onto the playing video (see [Audio and subtitles](#audio-and-subtitles)).
 - **Hardware decoding** (NVDEC, D3D11VA and others, chosen by libmpv), which can be turned off in the settings.
 - **Playlist**: files opened together, dropped onto the window or added with the **+** button of the playlist; optionally the other media files of the folder of an opened file.
 - **One window**: a file opened from Explorer while the player runs is played in the window already open.
@@ -55,6 +56,10 @@ The control bar holds the seek bar (a click or a drag moves there; the time unde
 
 The playlist (`L`) lists the files with the current one highlighted; a double click plays an entry. The icon buttons above the list add files (**+**), remove the selected entry (**−**, `Delete`), sort the list by name, numbers by value (the bars with an arrow), and clear it (the bin); their names are shown in the tooltips.
 
+### Audio and subtitles
+
+The button with a speech bubble left of the volume (`T`) opens a window with the audio tracks and the subtitles of the file side by side. Each entry names the language first and the track's title after a dash ("Russian — Superbit"); under it, badges show the format, the channels and whether the track is external, forced or the file's default. A long list scrolls. A choice applies at once and the window stays open, so both can be changed in one go; a click outside or `Esc` closes it. **Load from a file…** under the subtitles adds subtitles from a file of their own (SRT, ASS, SSA, VobSub, PGS, WebVTT); a subtitle file dropped onto the playing video is added the same way. Subtitles named like the video next to it are loaded by themselves. The same lists are in the picture's context menu, and every change is reported on the screen.
+
 ### Settings
 
 The settings window (`F5` or the gear button) lists the categories on the left and shows the settings of the chosen one on the right in framed groups. **Reset** under the list puts every setting back to its default.
@@ -82,6 +87,10 @@ The **Keys** category lists the keyboard shortcuts for reference. The volume, th
 | `Home` / `End` | Start / end of the file |
 | `↑` / `↓`, mouse wheel | Volume up / down |
 | `M` | Mute |
+| `T` | The audio and subtitles window |
+| `A` | Next audio track |
+| `J` | Next subtitles; after the last, none |
+| `V` | Subtitles off, and on again |
 | `S` | Stop |
 | `Page Up` / `Page Down` | Previous / next file of the playlist |
 | `Enter`, `F11`, double click | Fullscreen; `Esc` leaves it |

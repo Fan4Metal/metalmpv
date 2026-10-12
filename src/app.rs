@@ -24,6 +24,7 @@ use crate::mpv::Mpv;
 use crate::player::{Happened, Player, Seek, State};
 use crate::playlist::{self, Playlist};
 use crate::settings::Settings;
+use crate::tracks::{self, Kind};
 use crate::ui::about::AboutDialog;
 use crate::ui::osd::OsdLine;
 use crate::ui::settings::SettingsDialog;
@@ -68,6 +69,8 @@ pub struct App {
     pending: Vec<Cmd>,
     /// The first video frame has been logged (`METAL_PLAYER_TRACE`).
     first_frame_logged: bool,
+    /// The subtitles shown before `V` turned them off.
+    last_sub: Option<i64>,
     /// In fullscreen as of the last frame (for `save`, which has no egui
     /// context).
     fullscreen: bool,
@@ -159,6 +162,7 @@ impl App {
             pending: Vec::new(),
             first_frame_logged: false,
             fullscreen: false,
+            last_sub: None,
         };
         app.open(files);
         app
@@ -241,6 +245,70 @@ impl App {
             self.add(files);
         } else {
             self.open(files);
+        }
+    }
+
+    /// Play audio track or show subtitle track `id` (`None`: no subtitles)
+    /// and say so on the OSD.
+    fn select_track(&mut self, kind: Kind, id: Option<i64>) {
+        let Some(player) = &mut self.player else {
+            return;
+        };
+        if player.state.idle {
+            return;
+        }
+        player.select_track(kind, id);
+        let all = &player.state.tracks;
+        let now = id
+            .and_then(|id| all.iter().find(|t| t.kind == kind && t.id == id))
+            .map(|t| t.summary_in(crate::i18n::lang(), all));
+        self.osd.show(Osd::Track {
+            audio: kind == Kind::Audio,
+            now,
+        });
+    }
+
+    /// The next audio track, or the next subtitles (then none, then the
+    /// first again).
+    fn cycle_track(&mut self, kind: Kind) {
+        let next = self
+            .player
+            .as_ref()
+            .and_then(|p| tracks::next(&p.state.tracks, kind));
+        if let Some(id) = next {
+            self.select_track(kind, id);
+        }
+    }
+
+    /// Ask for a subtitle file for the playing video.
+    fn pick_subtitles(&mut self, frame: &eframe::Frame) {
+        if self.state().idle {
+            return;
+        }
+        let mut dialog = rfd::FileDialog::new()
+            .set_parent(frame)
+            .set_title(tr!("Load subtitles", "Загрузить субтитры"))
+            .add_filter(tr!("Subtitles", "Субтитры"), tracks::SUBTITLE_EXTENSIONS)
+            .add_filter(tr!("All files", "Все файлы"), &["*"]);
+        if let Some(dir) = self.playlist.current_path().and_then(Path::parent) {
+            dialog = dialog.set_directory(dir);
+        }
+        if let Some(path) = dialog.pick_file() {
+            self.add_subtitles(&path);
+        }
+    }
+
+    fn add_subtitles(&mut self, path: &Path) {
+        if let Some(player) = &mut self.player {
+            player.add_subtitles(path);
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            self.osd.show(Osd::Track {
+                audio: false,
+                now: Some(name),
+            });
         }
     }
 
@@ -373,6 +441,31 @@ impl App {
             Cmd::PlaylistRemove(i) => self.playlist.remove(i),
             Cmd::PlaylistSort => self.playlist.sort(),
             Cmd::PlaylistClear => self.playlist.clear(),
+            Cmd::ToggleTracks => {
+                if !state.idle {
+                    egui::Popup::toggle_id(ctx, crate::ui::tracks::popup_id());
+                }
+            }
+            Cmd::CycleAudio => self.cycle_track(Kind::Audio),
+            Cmd::CycleSubs => self.cycle_track(Kind::Sub),
+            Cmd::ToggleSubs => {
+                let subs = tracks::of_kind(&state.tracks, Kind::Sub);
+                match tracks::selected(&state.tracks, Kind::Sub) {
+                    Some(t) => {
+                        self.last_sub = Some(t.id);
+                        self.select_track(Kind::Sub, None);
+                    }
+                    None => {
+                        let back = self.last_sub.filter(|id| subs.iter().any(|t| t.id == *id));
+                        if let Some(id) = back.or(subs.first().map(|t| t.id)) {
+                            self.select_track(Kind::Sub, Some(id));
+                        }
+                    }
+                }
+            }
+            Cmd::SelectAudio(id) => self.select_track(Kind::Audio, Some(id)),
+            Cmd::SelectSub(id) => self.select_track(Kind::Sub, id),
+            Cmd::LoadSubtitles => self.pick_subtitles(frame),
             Cmd::Minimize => ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)),
             Cmd::ToggleMaximize => {
                 if !frameless::is_fullscreen(ctx) {
@@ -605,7 +698,10 @@ impl App {
         let near_bottom = ctx
             .pointer_hover_pos()
             .is_some_and(|p| p.y > screen.bottom() - 90.0);
-        let show = rest < HIDE_AFTER || near_bottom || self.seek_drag.is_some();
+        let show = rest < HIDE_AFTER
+            || near_bottom
+            || self.seek_drag.is_some()
+            || egui::Popup::is_id_open(ctx, crate::ui::tracks::popup_id());
         if !show {
             ctx.set_cursor_icon(CursorIcon::None);
             return;
@@ -703,6 +799,10 @@ fn context_menu(ui: &mut egui::Ui, state: &State, playlist_visible: bool, cmds: 
     };
     item(ui, mute.into(), "M", Cmd::ToggleMute);
     ui.separator();
+    // Gathered apart: `item` holds `cmds` until its last use.
+    let mut track_cmds = Vec::new();
+    crate::ui::tracks::menus(ui, &state.tracks, &mut track_cmds);
+    ui.separator();
     item(
         ui,
         tr!("Settings…", "Настройки…").into(),
@@ -710,6 +810,7 @@ fn context_menu(ui: &mut egui::Ui, state: &State, playlist_visible: bool, cmds: 
         Cmd::Settings,
     );
     item(ui, tr!("About", "О программе").into(), "F1", Cmd::About);
+    cmds.extend(track_cmds);
 }
 
 impl eframe::App for App {
@@ -736,8 +837,15 @@ impl eframe::App for App {
                 .map(|f| f.path().to_path_buf())
                 .collect()
         });
-        if !dropped.is_empty() {
-            self.open(dropped);
+        // Subtitle files dropped on a playing video go with it.
+        let (subs, media): (Vec<PathBuf>, Vec<PathBuf>) = dropped
+            .into_iter()
+            .partition(|p| tracks::is_subtitles(p) && !state.idle);
+        for sub in &subs {
+            self.add_subtitles(sub);
+        }
+        if !media.is_empty() {
+            self.open(media);
         }
 
         // The keys are the player's: no widget keeps the focus to take

@@ -192,6 +192,26 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
             out.push(cmd);
         }
     }
+
+    // Audio and subtitles, left of the volume: one button, both lists
+    // side by side in the window over it.
+    let tracks_rect = Rect::from_center_size(
+        pos2(speaker.left() - 6.0 - SMALL / 2.0, row.center().y),
+        vec2(SMALL, SMALL),
+    );
+    if tracks_rect.left() > group.right() + 4.0 {
+        let any = !state.idle && !state.tracks.is_empty();
+        let tip = super::tracks::summary(&state.tracks);
+        let button = flat(ui, tracks_rect, &tip, any, |p, o, c, _| {
+            icons::tracks(p, o, s, c)
+        });
+        egui::Popup::from_toggle_button_response(&button)
+            .id(super::tracks::popup_id())
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .align(egui::RectAlign::TOP_END)
+            .gap(6.0)
+            .show(|ui| out.extend(super::tracks::panel(ui, &state.tracks)));
+    }
     out
 }
 

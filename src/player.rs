@@ -10,6 +10,7 @@
 use std::path::Path;
 
 use crate::mpv::{EndReason, Event, Mpv, Value, sys};
+use crate::tracks::{self, Kind, Track};
 
 /// Options of the core, set before it starts. The picture goes through the
 /// render API (`vo=libmpv`); mpv's own interface, key bindings, scripts and
@@ -100,9 +101,10 @@ enum Prop {
     Width,
     Height,
     Hwdec,
+    TrackList,
 }
 
-const PROPS: [(Prop, &str, sys::mpv_format); 14] = [
+const PROPS: [(Prop, &str, sys::mpv_format); 15] = [
     (Prop::Pause, "pause", sys::MPV_FORMAT_FLAG),
     (Prop::TimePos, "time-pos", sys::MPV_FORMAT_DOUBLE),
     (Prop::Duration, "duration", sys::MPV_FORMAT_DOUBLE),
@@ -121,6 +123,7 @@ const PROPS: [(Prop, &str, sys::mpv_format); 14] = [
     (Prop::Width, "dwidth", sys::MPV_FORMAT_INT64),
     (Prop::Height, "dheight", sys::MPV_FORMAT_INT64),
     (Prop::Hwdec, "hwdec-current", sys::MPV_FORMAT_STRING),
+    (Prop::TrackList, "track-list", sys::MPV_FORMAT_NODE),
 ];
 
 /// What the interface shows of the playback.
@@ -146,6 +149,8 @@ pub struct State {
     pub height: Option<i64>,
     /// The hardware decoder in use ("d3d11va-copy"), `None` for software.
     pub hwdec: Option<String>,
+    /// The file's video, audio and subtitle tracks.
+    pub tracks: Vec<Track>,
 }
 
 impl Default for State {
@@ -165,6 +170,7 @@ impl Default for State {
             width: None,
             height: None,
             hwdec: None,
+            tracks: Vec::new(),
         }
     }
 }
@@ -199,6 +205,7 @@ impl State {
                     .filter(|s| !s.is_empty() && *s != "no")
                     .map(str::to_owned)
             }
+            Prop::TrackList => self.tracks = tracks::from_value(value),
         }
     }
 
@@ -423,6 +430,30 @@ impl Player {
     pub fn set_hwdec(&mut self, on: bool) {
         self.mpv.set("hwdec", &Value::Str(hwdec_option(on).into()));
     }
+
+    /// Play audio track `id`, or show subtitle track `id` (`None`: none).
+    /// Shown selected at once; `track-list` confirms it.
+    pub fn select_track(&mut self, kind: Kind, id: Option<i64>) {
+        let property = match kind {
+            Kind::Audio => "aid",
+            Kind::Sub => "sid",
+            Kind::Video => "vid",
+        };
+        let value = match id {
+            Some(id) => Value::Int(id),
+            None => Value::Str("no".into()),
+        };
+        self.mpv.set(property, &value);
+        for t in self.state.tracks.iter_mut().filter(|t| t.kind == kind) {
+            t.selected = Some(t.id) == id;
+        }
+    }
+
+    /// Load the subtitles of file `path` and show them.
+    pub fn add_subtitles(&mut self, path: &Path) {
+        self.mpv
+            .command(0, &["sub-add", &path.to_string_lossy(), "select"]);
+    }
 }
 
 #[cfg(test)]
@@ -469,5 +500,48 @@ mod tests {
             Ok(_) => {}
             Err(e) => assert!(e.contains(sys::DLL_NAME), "{e}"),
         }
+    }
+
+    /// Plays a real file without a window and reads its tracks:
+    /// `cargo test track_list -- --ignored` (vendor\libmpv and a video in
+    /// METAL_PLAYER_SAMPLE, or the default below).
+    #[test]
+    #[ignore = "needs vendor/libmpv and a sample video"]
+    fn track_list_of_a_real_file() {
+        let sample = std::env::var("METAL_PLAYER_SAMPLE")
+            .unwrap_or_else(|_| "D:/Projects/video_converter/samples/test.mp4".into());
+        let api = sys::api().unwrap();
+        let mpv = Mpv::new(
+            api,
+            &[
+                ("vo", "null"),
+                ("ao", "null"),
+                ("idle", "yes"),
+                ("terminal", "no"),
+            ],
+        )
+        .unwrap();
+        mpv.observe(1, "track-list", sys::MPV_FORMAT_NODE);
+        mpv.command(0, &["loadfile", &sample]);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut found = Vec::new();
+        while found.is_empty() && std::time::Instant::now() < deadline {
+            while let Some(event) = mpv.next_event() {
+                if let Event::Property { id: 1, value } = event {
+                    found = tracks::from_value(&value);
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        for t in &found {
+            eprintln!(
+                "{:?} {} {} [{}]",
+                t.kind,
+                t.id,
+                t.name_in(crate::i18n::Lang::Ru, 1),
+                t.details_in(crate::i18n::Lang::Ru)
+            );
+        }
+        assert!(found.iter().any(|t| t.kind == Kind::Video));
     }
 }

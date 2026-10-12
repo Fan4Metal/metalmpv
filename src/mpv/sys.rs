@@ -24,6 +24,9 @@ pub const MPV_FORMAT_STRING: mpv_format = 1;
 pub const MPV_FORMAT_FLAG: mpv_format = 3;
 pub const MPV_FORMAT_INT64: mpv_format = 4;
 pub const MPV_FORMAT_DOUBLE: mpv_format = 5;
+pub const MPV_FORMAT_NODE: mpv_format = 6;
+pub const MPV_FORMAT_NODE_ARRAY: mpv_format = 7;
+pub const MPV_FORMAT_NODE_MAP: mpv_format = 8;
 
 pub type mpv_event_id = c_int;
 pub const MPV_EVENT_NONE: mpv_event_id = 0;
@@ -62,6 +65,31 @@ pub struct mpv_event {
     pub error: c_int,
     pub reply_userdata: u64,
     pub data: *mut c_void,
+}
+
+/// A value of any format; maps and arrays hold more of them.
+#[repr(C)]
+pub struct mpv_node {
+    pub u: mpv_node_u,
+    pub format: mpv_format,
+}
+
+#[repr(C)]
+pub union mpv_node_u {
+    pub string: *mut c_char,
+    pub flag: c_int,
+    pub int64: i64,
+    pub double_: f64,
+    pub list: *mut mpv_node_list,
+    pub ba: *mut c_void,
+}
+
+/// The entries of an array or a map (`keys` is null for an array).
+#[repr(C)]
+pub struct mpv_node_list {
+    pub num: c_int,
+    pub values: *mut mpv_node,
+    pub keys: *mut *mut c_char,
 }
 
 #[repr(C)]
@@ -264,6 +292,8 @@ mod tests {
         assert_eq!(size_of::<mpv_render_param>(), 16);
         assert_eq!(size_of::<mpv_opengl_init_params>(), 16);
         assert_eq!(size_of::<mpv_opengl_fbo>(), 16);
+        assert_eq!(size_of::<mpv_node>(), 16);
+        assert_eq!(size_of::<mpv_node_list>(), 24);
     }
 
     #[test]

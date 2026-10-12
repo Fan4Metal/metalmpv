@@ -18,6 +18,7 @@ mod mpv;
 mod player;
 mod playlist;
 mod settings;
+mod tracks;
 mod ui;
 mod update;
 mod video;

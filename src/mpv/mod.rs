@@ -25,6 +25,10 @@ pub enum Value {
     Int(i64),
     Double(f64),
     Str(String),
+    /// An array (`MPV_FORMAT_NODE_ARRAY`).
+    List(Vec<Value>),
+    /// A map with its keys in mpv's order (`MPV_FORMAT_NODE_MAP`).
+    Map(Vec<(String, Value)>),
 }
 
 impl Value {
@@ -51,6 +55,21 @@ impl Value {
     pub fn string(&self) -> Option<&str> {
         match self {
             Value::Str(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn list(&self) -> &[Value] {
+        match self {
+            Value::List(v) => v,
+            _ => &[],
+        }
+    }
+
+    /// The value of `key` in a map.
+    pub fn get(&self, key: &str) -> Option<&Value> {
+        match self {
+            Value::Map(entries) => entries.iter().find(|(k, _)| k == key).map(|(_, v)| v),
             _ => None,
         }
     }
@@ -174,14 +193,16 @@ impl Mpv {
         }
     }
 
-    /// Set a property without waiting; the value is copied at once.
+    /// Set a property without waiting; the value is copied at once. Lists
+    /// and maps are not set.
     pub fn set(&self, name: &str, value: &Value) {
         let n = cstring(name);
         let set = |format: sys::mpv_format, data: *mut c_void| unsafe {
             (self.api.mpv_set_property_async)(self.handle, 0, n.as_ptr(), format, data)
         };
         let code = match value {
-            Value::None => return,
+            // Nodes are only read (track-list), never set.
+            Value::None | Value::List(_) | Value::Map(_) => return,
             Value::Flag(v) => {
                 let mut flag = c_int::from(*v);
                 set(sys::MPV_FORMAT_FLAG, (&raw mut flag).cast())
@@ -470,6 +491,43 @@ unsafe fn value(p: &sys::mpv_event_property) -> Value {
             sys::MPV_FORMAT_INT64 => Value::Int(*(p.data as *const i64)),
             sys::MPV_FORMAT_DOUBLE => Value::Double(*(p.data as *const f64)),
             sys::MPV_FORMAT_STRING => Value::Str(text(*(p.data as *const *const c_char))),
+            sys::MPV_FORMAT_NODE => node(&*(p.data as *const sys::mpv_node)),
+            _ => Value::None,
+        }
+    }
+}
+
+/// A node and what it holds, copied out of libmpv's memory.
+unsafe fn node(n: &sys::mpv_node) -> Value {
+    unsafe {
+        match n.format {
+            sys::MPV_FORMAT_STRING => Value::Str(text(n.u.string)),
+            sys::MPV_FORMAT_FLAG => Value::Flag(n.u.flag != 0),
+            sys::MPV_FORMAT_INT64 => Value::Int(n.u.int64),
+            sys::MPV_FORMAT_DOUBLE => Value::Double(n.u.double_),
+            sys::MPV_FORMAT_NODE_ARRAY | sys::MPV_FORMAT_NODE_MAP => {
+                let list = n.u.list;
+                if list.is_null() || (*list).num <= 0 || (*list).values.is_null() {
+                    return if n.format == sys::MPV_FORMAT_NODE_MAP {
+                        Value::Map(Vec::new())
+                    } else {
+                        Value::List(Vec::new())
+                    };
+                }
+                let count = (*list).num as usize;
+                let values = std::slice::from_raw_parts((*list).values, count);
+                if n.format == sys::MPV_FORMAT_NODE_MAP && !(*list).keys.is_null() {
+                    let keys = std::slice::from_raw_parts((*list).keys, count);
+                    Value::Map(
+                        keys.iter()
+                            .zip(values)
+                            .map(|(k, v)| (text(*k), node(v)))
+                            .collect(),
+                    )
+                } else {
+                    Value::List(values.iter().map(|v| node(v)).collect())
+                }
+            }
             _ => Value::None,
         }
     }

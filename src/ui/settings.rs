@@ -386,7 +386,7 @@ fn updates_page(ui: &mut Ui, updates: &mut Updates) {
 
 /// The keys, as in the README.
 fn keys(ui: &mut Ui) {
-    let rows: [(&str, &str); 16] = [
+    let rows: [(&str, &str); 20] = [
         (
             tr!("Space", "Пробел"),
             tr!("Play / pause", "Воспроизведение / пауза"),
@@ -435,6 +435,19 @@ fn keys(ui: &mut Ui) {
             "Esc",
             tr!("Leave fullscreen", "Выйти из полноэкранного режима"),
         ),
+        (
+            "T",
+            tr!("Audio and subtitles window", "Окно звука и субтитров"),
+        ),
+        ("A", tr!("Next audio track", "Следующая звуковая дорожка")),
+        (
+            "J",
+            tr!(
+                "Next subtitles (then off)",
+                "Следующие субтитры (затем выкл.)"
+            ),
+        ),
+        ("V", tr!("Subtitles off / on", "Субтитры выкл. / вкл.")),
         ("Ctrl+O", tr!("Open files", "Открыть файлы")),
         (
             "L",

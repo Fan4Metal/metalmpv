@@ -44,6 +44,17 @@ pub enum Cmd {
     PlaylistRemove(usize),
     PlaylistSort,
     PlaylistClear,
+    /// Open or close the tracks window (`T`).
+    ToggleTracks,
+    /// The next audio track (`A`), the next subtitles or none (`J`),
+    /// subtitles off and on again (`V`).
+    CycleAudio,
+    CycleSubs,
+    ToggleSubs,
+    SelectAudio(i64),
+    SelectSub(Option<i64>),
+    /// Subtitles from a file of their own.
+    LoadSubtitles,
     Minimize,
     ToggleMaximize,
     Close,
@@ -82,6 +93,10 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
         Key::F5 => Cmd::Settings,
         Key::Delete => Cmd::Delete,
         Key::S if !ctrl => Cmd::Stop,
+        Key::T if !ctrl => Cmd::ToggleTracks,
+        Key::A if !ctrl => Cmd::CycleAudio,
+        Key::J if !ctrl => Cmd::CycleSubs,
+        Key::V if !ctrl => Cmd::ToggleSubs,
         _ => return None,
     };
     let repeats = matches!(
@@ -166,5 +181,10 @@ mod tests {
             command(Key::Comma, Modifiers::COMMAND, false),
             Some(Cmd::Settings)
         );
+        assert_eq!(
+            command(Key::A, Modifiers::NONE, false),
+            Some(Cmd::CycleAudio)
+        );
+        assert_eq!(command(Key::J, Modifiers::NONE, true), None);
     }
 }

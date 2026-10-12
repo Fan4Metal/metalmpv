@@ -10,6 +10,7 @@ pub mod playlist;
 pub mod settings;
 pub mod style;
 pub mod title;
+pub mod tracks;
 
 use egui::{Response, TextureHandle, TextureOptions, Ui};
 

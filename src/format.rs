@@ -100,6 +100,12 @@ pub enum Osd {
     Volume(f64),
     Mute(bool),
     Pause(bool),
+    /// The audio track or the subtitles now ("2/3: English (AAC · 2.0)";
+    /// `None`: no subtitles).
+    Track {
+        audio: bool,
+        now: Option<String>,
+    },
     /// Free text: a file name, an error.
     Text(String),
 }
@@ -165,6 +171,16 @@ impl Osd {
                 (false, false) => "[ Play ]".into(),
                 (true, true) => "[ Пауза ]".into(),
                 (false, true) => "[ Воспроизведение ]".into(),
+            },
+            Osd::Track { audio, now } => match (audio, now, ru) {
+                (true, Some(t), false) => format!("[ Audio {t} ]"),
+                (true, Some(t), true) => format!("[ Звук {t} ]"),
+                (true, None, false) => "[ No audio ]".into(),
+                (true, None, true) => "[ Звук выключен ]".into(),
+                (false, Some(t), false) => format!("[ Subtitles {t} ]"),
+                (false, Some(t), true) => format!("[ Субтитры {t} ]"),
+                (false, None, false) => "[ Subtitles off ]".into(),
+                (false, None, true) => "[ Субтитры выключены ]".into(),
             },
             Osd::Text(t) => t.clone(),
         }
@@ -232,6 +248,19 @@ mod tests {
         assert_eq!(
             Osd::Frame { forward: false }.text_in(Lang::En),
             "[ Previous frame ]"
+        );
+        let sub = Osd::Track {
+            audio: false,
+            now: Some("1/2: Русский (SRT)".into()),
+        };
+        assert_eq!(sub.text_in(Lang::Ru), "[ Субтитры 1/2: Русский (SRT) ]");
+        assert_eq!(
+            Osd::Track {
+                audio: false,
+                now: None
+            }
+            .text_in(Lang::En),
+            "[ Subtitles off ]"
         );
     }
 }
