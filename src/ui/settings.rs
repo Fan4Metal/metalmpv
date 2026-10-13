@@ -594,7 +594,10 @@ fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                     "Remembered positions and tracks",
                     "Запомненные позиции и дорожки"
                 ),
-                None,
+                Some(tr!(
+                    "Also the recent files of the start screen.",
+                    "А также недавние файлы стартового экрана."
+                )),
                 160.0,
                 |ui| ui.button(tr!("Forget all", "Забыть все")).clicked(),
             );

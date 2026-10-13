@@ -807,6 +807,20 @@ impl App {
             Cmd::ToggleInfo => self.info.toggle(),
             Cmd::ToggleVideoPanel => self.video_panel.toggle(),
             Cmd::SaveFrame => self.save_frame(&state),
+            Cmd::OpenRecent(i) => {
+                if let Some(path) = self.settings.recent.get(i).cloned() {
+                    if path.is_file() {
+                        self.open(vec![path]);
+                    } else {
+                        self.settings.recent.remove(i);
+                        self.osd.show(Osd::Text(tr!(
+                            format!("Not found: {}", path.display()),
+                            format!("Не найден: {}", path.display())
+                        )));
+                    }
+                }
+            }
+            Cmd::ClearRecent => self.settings.recent.clear(),
             Cmd::ShowFrames => {
                 if let Some(dir) = frames_dir() {
                     let _ = std::fs::create_dir_all(&dir);
@@ -1113,6 +1127,9 @@ impl App {
             match event {
                 Happened::FileLoaded => {
                     log::debug!("file loaded at {:.0} ms", crate::since_start());
+                    if let Some(path) = self.playlist.current_path().filter(|p| p.is_file()) {
+                        self.settings.played(path);
+                    }
                     self.file_error = None;
                     self.pick_ready = self.pick_tracks;
                 }
@@ -1235,7 +1252,9 @@ impl App {
                 log::debug!("video size known at {:.0} ms", crate::since_start());
             }
         } else {
-            self.placeholder(ui, rect, state);
+            if let Some(cmd) = self.placeholder(ui, rect, state) {
+                cmds.push(cmd);
+            }
         }
         if ui::double_clicked(&response) {
             cmds.push(Cmd::ToggleFullscreen);
@@ -1298,14 +1317,13 @@ impl App {
 
     /// The black area without a picture: the start screen, the title of an
     /// audio file, or why nothing plays.
-    fn placeholder(&mut self, ui: &egui::Ui, rect: Rect, state: &State) {
+    fn placeholder(&mut self, ui: &egui::Ui, rect: Rect, state: &State) -> Option<Cmd> {
         let failed = self.engine_error.is_some() || (state.idle && self.file_error.is_some());
         if state.idle && !failed {
-            self.start_screen(ui, rect);
-            return;
+            return self.start_screen(ui, rect);
         }
         if !failed && self.audio_cover(ui, rect, state) {
-            return;
+            return None;
         }
         let size = start_icon_size(rect);
         let icon = ui::app_icon(ui.ctx(), size, &mut self.start_icon);
@@ -1349,11 +1367,12 @@ impl App {
             FontId::proportional(14.0),
             color,
         );
+        None
     }
 
     /// Nothing plays: the icon, the name, the version and what to do, as
     /// in qview; centred, a little above the middle.
-    fn start_screen(&mut self, ui: &egui::Ui, rect: Rect) {
+    fn start_screen(&mut self, ui: &egui::Ui, rect: Rect) -> Option<Cmd> {
         let size = start_icon_size(rect);
         let big = size > 64.0;
         let icon = ui::app_icon(ui.ctx(), size, &mut self.start_icon);
@@ -1384,8 +1403,18 @@ impl App {
             style::TEXT,
         );
         const GAPS: [f32; 3] = [14.0, 2.0, 18.0];
-        let height =
+        let base =
             size + GAPS.iter().sum::<f32>() + name.size().y + version.size().y + hint.size().y;
+        // The recent files under the hint, as many as fit.
+        const RECENT_ROW: f32 = 36.0;
+        const RECENT_EXTRA: f32 = 32.0 + 20.0 + 8.0 + 22.0;
+        let fit = ((rect.height() - 16.0 - base - RECENT_EXTRA) / RECENT_ROW).floor();
+        let shown = self.settings.recent.len().min(fit.max(0.0) as usize).min(8);
+        let height = if shown > 0 {
+            base + RECENT_EXTRA + shown as f32 * RECENT_ROW
+        } else {
+            base
+        };
         let top = (rect.center().y - height * 0.55).max(rect.top() + 8.0);
         let icon_rect = ui::paint_icon(
             &painter,
@@ -1400,6 +1429,70 @@ impl App {
             painter.galley(egui::pos2(x, y), galley, style::TEXT);
             y += h + gap;
         }
+        if shown == 0 {
+            return None;
+        }
+        let mut out = None;
+        y += 32.0;
+        let width = (rect.width() - 48.0).clamp(120.0, 520.0);
+        let left = rect.center().x - width / 2.0;
+        let header = layout(tr!("RECENT", "НЕДАВНИЕ").to_owned(), 11.0, style::TEXT_WEAK);
+        painter.galley(egui::pos2(left, y), header, style::TEXT_WEAK);
+        y += 20.0 + 8.0;
+        let truncated = |text: String, points: f32, color: Color32| {
+            let mut job =
+                egui::text::LayoutJob::simple_singleline(text, FontId::proportional(points), color);
+            job.wrap = egui::text::TextWrapping::truncate_at_width(width);
+            painter.layout_job(job)
+        };
+        for (i, path) in self.settings.recent.iter().take(shown).enumerate() {
+            let row = Rect::from_min_size(egui::pos2(left, y), egui::vec2(width, RECENT_ROW - 4.0));
+            let response = ui
+                .interact(row, ui.id().with(("recent", i)), Sense::CLICK)
+                .on_hover_text(path.display().to_string());
+            let hovered = response.hovered();
+            if hovered {
+                ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+            }
+            let name = path.file_name().map_or_else(
+                || path.display().to_string(),
+                |n| n.to_string_lossy().into_owned(),
+            );
+            let folder = path
+                .parent()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            let color = if hovered { style::ACCENT } else { style::TEXT };
+            let name = truncated(name, 14.0, color);
+            let name_height = name.size().y;
+            painter.galley(row.min, name, color);
+            painter.galley(
+                row.min + egui::vec2(0.0, name_height + 1.0),
+                truncated(folder, 11.0, style::TEXT_WEAK),
+                style::TEXT_WEAK,
+            );
+            if response.clicked() {
+                out = Some(Cmd::OpenRecent(i));
+            }
+            y += RECENT_ROW;
+        }
+        let clear = layout(
+            tr!("Clear the list", "Очистить список").to_owned(),
+            12.0,
+            style::TEXT_WEAK,
+        );
+        let clear_rect = Rect::from_min_size(egui::pos2(left, y + 4.0), clear.size());
+        let response = ui.interact(clear_rect, ui.id().with("recent_clear"), Sense::CLICK);
+        let color = if response.hovered() {
+            style::ACCENT
+        } else {
+            style::TEXT_WEAK
+        };
+        painter.galley(clear_rect.min, clear, color);
+        if response.clicked() {
+            out = Some(Cmd::ClearRecent);
+        }
+        out
     }
 
     /// How long the mouse has rested.
@@ -2001,6 +2094,7 @@ impl eframe::App for App {
         }
         if changed.forget_positions {
             self.positions.clear();
+            self.settings.recent.clear();
             self.settings.last_audio = None;
             self.settings.last_sub = None;
         }

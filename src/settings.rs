@@ -94,6 +94,10 @@ const REMEMBER_TRACKS: &str = "remember_tracks";
 const PREFER_LAST_TRACKS: &str = "prefer_last_tracks";
 const LAST_AUDIO: &str = "last_audio";
 const LAST_SUB: &str = "last_sub";
+const RECENT: &str = "recent_files";
+
+/// How many recent files are kept.
+pub const RECENT_COUNT: usize = 10;
 
 /// The longest seek step the settings accept, in seconds.
 pub const MAX_STEP: f64 = 3600.0;
@@ -235,6 +239,9 @@ pub struct Settings {
     /// `Some(None)` for none). Not settings, so Reset keeps them.
     pub last_audio: Option<Likeness>,
     pub last_sub: Option<Option<Likeness>>,
+    /// The files played last, the latest first (the start screen). Not a
+    /// setting, so Reset keeps them; Forget all clears them.
+    pub recent: Vec<PathBuf>,
 }
 
 impl Default for Settings {
@@ -274,6 +281,7 @@ impl Default for Settings {
             prefer_last_tracks: true,
             last_audio: None,
             last_sub: None,
+            recent: Vec::new(),
         }
     }
 }
@@ -385,7 +393,23 @@ impl Settings {
                 "off" => Some(None),
                 v => Likeness::parse(v).map(Some),
             }),
+            recent: get(RECENT)
+                .map(|v| {
+                    v.lines()
+                        .filter(|l| !l.trim().is_empty())
+                        .take(RECENT_COUNT)
+                        .map(PathBuf::from)
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
+    }
+
+    /// `path` played: first in the recent files.
+    pub fn played(&mut self, path: &Path) {
+        self.recent.retain(|p| p != path);
+        self.recent.insert(0, path.to_path_buf());
+        self.recent.truncate(RECENT_COUNT);
     }
 
     pub fn save(&self, storage: &mut dyn eframe::Storage) {
@@ -447,6 +471,12 @@ impl Settings {
             Some(None) => storage.set_string(LAST_SUB, "off".into()),
             None => storage.remove_string(LAST_SUB),
         }
+        let recent: Vec<String> = self
+            .recent
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect();
+        storage.set_string(RECENT, recent.join("\n"));
     }
 }
 
@@ -512,6 +542,7 @@ mod tests {
                 title: Some("многоголосый".into()),
             }),
             last_sub: Some(None),
+            recent: vec![PathBuf::from(r"D:\Films\a.mkv"), PathBuf::from(r"E:\b.mp4")],
         };
         let mut storage = MemStorage::default();
         s.save(&mut storage);

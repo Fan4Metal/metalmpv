@@ -91,6 +91,9 @@ pub enum Cmd {
     ShowFrames,
     /// Save the file's cover as a picture file.
     SaveCover,
+    /// Play recent file `n` of the start screen.
+    OpenRecent(usize),
+    ClearRecent,
     /// Show the file in Explorer.
     ShowInFolder,
     /// The time in the control bar: both, elapsed, remaining (a click on it).
