@@ -87,7 +87,8 @@ pub enum Cmd {
     ToggleChapterMarks,
     /// Open or close the file's information window (`I`).
     ToggleInfo,
-    /// Open or close the Video panel (`F7`).
+    /// Open or close the Video and sound panel (`U`, next to the
+    /// information's `I`; `F7` as in GOM Player).
     ToggleVideoPanel,
     /// Open the panel on its Sound tab (the context menu).
     ShowEqualizer,
@@ -167,7 +168,7 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
         Key::L if !ctrl => Cmd::TogglePlaylist,
         Key::F1 => Cmd::About,
         Key::F5 => Cmd::Settings,
-        Key::F7 => Cmd::ToggleVideoPanel,
+        Key::U | Key::F7 => Cmd::ToggleVideoPanel,
         Key::E if ctrl => Cmd::SaveFrame,
         Key::Delete => Cmd::Delete,
         Key::T if ctrl => Cmd::CycleOnTop,
@@ -333,6 +334,14 @@ mod tests {
         assert_eq!(
             command(Key::F7, Modifiers::NONE, false),
             Some(Cmd::ToggleVideoPanel)
+        );
+        assert_eq!(
+            command(Key::U, Modifiers::NONE, false),
+            Some(Cmd::ToggleVideoPanel)
+        );
+        assert_eq!(
+            command(Key::U, Modifiers::COMMAND, false),
+            Some(Cmd::OpenUrl)
         );
         assert_eq!(
             command(Key::E, Modifiers::COMMAND, false),

@@ -243,7 +243,7 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
         let panel = flat(
             ui,
             panel_rect,
-            tr!("Video and sound (F7)", "Видео и звук (F7)"),
+            tr!("Video and sound (U)", "Видео и звук (U)"),
             true,
             |p, o, c, _| icons::sliders(p, o, s, c),
         );

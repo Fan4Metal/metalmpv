@@ -1,4 +1,4 @@
-//! The Video and sound panel (`F7`, the sliders button of the control
+//! The Video and sound panel (`U` or `F7`, the sliders button of the control
 //! bar): a floating window over the player, so that playback and the keys
 //! go on, pinned like the information window (left of it when both are
 //! open), with two tabs. Video: the picture's adjustments (`adjust.rs`):

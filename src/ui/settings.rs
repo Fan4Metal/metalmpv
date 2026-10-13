@@ -1215,7 +1215,7 @@ fn keys(ui: &mut Ui) {
         ("A", tr!("Next audio track", "Следующая звуковая дорожка")),
         ("I", tr!("File information", "Сведения о файле")),
         (
-            "F7",
+            "U, F7",
             tr!(
                 "Video and sound panel: colour, rotation, equalizer",
                 "Панель видео и звука: цвет, поворот, эквалайзер"
