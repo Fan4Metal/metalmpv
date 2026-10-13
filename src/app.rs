@@ -137,6 +137,9 @@ pub struct App {
     /// The right button went down on the picture: the context menu opens
     /// when it is let go.
     menu_press: bool,
+    /// The middle button went down on the picture: the playlist shows or
+    /// hides when it is let go.
+    middle_press: bool,
     /// The video area of the last frame, in points.
     picture_area: Rect,
     /// The title row, the control bar and the playlist around the video
@@ -291,6 +294,7 @@ impl App {
             regrow: false,
             ending_session: false,
             menu_press: false,
+            middle_press: false,
             picture_area: Rect::NOTHING,
             chrome: egui::Vec2::ZERO,
             pending_picture: None,
@@ -1720,7 +1724,20 @@ impl App {
         if ui::double_clicked(&response) {
             cmds.push(Cmd::ToggleFullscreen);
         }
-        if response.middle_clicked() {
+        // The middle button shows or hides the playlist when let go, however
+        // the pointer moves meanwhile, as the right one opens the menu
+        // (egui's click allows 6 points: a click on the move was lost).
+        let (middle_pressed, middle_down) = ui.input(|i| {
+            (
+                i.pointer.button_pressed(egui::PointerButton::Middle),
+                i.pointer.button_down(egui::PointerButton::Middle),
+            )
+        });
+        if middle_pressed {
+            self.middle_press = response.contains_pointer();
+        }
+        if self.middle_press && !middle_down {
+            self.middle_press = false;
             cmds.push(Cmd::TogglePlaylist);
         }
         if response.hovered() {
@@ -2459,10 +2476,7 @@ fn zoom_menu(ui: &mut egui::Ui, state: &State, fill: bool, out: &mut Vec<Cmd>) {
         ui.separator();
         item(
             ui,
-            tr!(
-                "Window to the screen",
-                "Окно по экрану"
-            ),
+            tr!("Window to the screen", "Окно по экрану"),
             false,
             Cmd::FitScreen,
         );
