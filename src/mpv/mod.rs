@@ -123,12 +123,16 @@ pub enum Event {
 pub struct Mpv {
     api: &'static Api,
     handle: *mut sys::mpv_handle,
-    /// The data of the wakeup callback, kept alive while it may be called.
-    wakeup: Option<Box<Box<dyn Fn() + Send + Sync>>>,
+    /// The data of the wakeup callbacks set, kept alive while they may be
+    /// called: a replaced one may still be running on a core thread. Boxed
+    /// twice: mpv holds a pointer to the inner box, which must not move.
+    #[allow(clippy::vec_box)]
+    wakeup: Vec<Box<Box<dyn Fn() + Send + Sync>>>,
 }
 
 // SAFETY: the client API is thread-safe; the handle is a pointer to a
-// core that synchronises its own state.
+// core that synchronises its own state. Events are taken with `&mut self`
+// (an event lives until the next `mpv_wait_event` on the handle).
 unsafe impl Send for Mpv {}
 unsafe impl Sync for Mpv {}
 
@@ -144,7 +148,7 @@ impl Mpv {
         let mpv = Self {
             api,
             handle,
-            wakeup: None,
+            wakeup: Vec::new(),
         };
         for (name, value) in options {
             let (n, v) = (cstring(name), cstring(value));
@@ -176,9 +180,8 @@ impl Mpv {
         let data: Box<Box<dyn Fn() + Send + Sync>> = Box::new(Box::new(wake));
         let ptr = (&raw const *data) as *mut c_void;
         unsafe { (self.api.mpv_set_wakeup_callback)(self.handle, Some(call_boxed), ptr) };
-        // Replaced after the new callback is set: the old one is not
-        // called any more.
-        self.wakeup = Some(data);
+        // A replaced callback is kept too: a core thread may be inside it.
+        self.wakeup.push(data);
     }
 
     /// Run a command (`["seek", "10", "relative+keyframes"]`) without
@@ -248,8 +251,9 @@ impl Mpv {
         unsafe { (self.api.mpv_request_log_messages)(self.handle, l.as_ptr()) };
     }
 
-    /// The next waiting event, without waiting for one.
-    pub fn next_event(&self) -> Option<Event> {
+    /// The next waiting event, without waiting for one. `&mut`: the
+    /// event mpv gives is valid only until the next call on the handle.
+    pub fn next_event(&mut self) -> Option<Event> {
         // SAFETY: the event stays valid until the next mpv_wait_event on
         // this handle; it is copied before returning.
         let event = unsafe { &*(self.api.mpv_wait_event)(self.handle, 0.0) };
@@ -329,7 +333,10 @@ impl Drop for Mpv {
 pub struct RenderContext {
     api: &'static Api,
     ctx: *mut sys::mpv_render_context,
-    update: Option<Box<Box<dyn Fn() + Send + Sync>>>,
+    /// The data of the update callbacks set (a replaced one may still be
+    /// running on one of mpv's threads); boxed twice as [`Mpv`]'s.
+    #[allow(clippy::vec_box)]
+    update: Vec<Box<Box<dyn Fn() + Send + Sync>>>,
 }
 
 // SAFETY: used only on the UI thread, where the OpenGL context is current;
@@ -372,7 +379,7 @@ impl RenderContext {
         Ok(Self {
             api,
             ctx,
-            update: None,
+            update: Vec::new(),
         })
     }
 
@@ -385,7 +392,7 @@ impl RenderContext {
         unsafe {
             (self.api.mpv_render_context_set_update_callback)(self.ctx, Some(call_boxed), ptr)
         };
-        self.update = Some(data);
+        self.update.push(data);
     }
 
     /// Whether a new video frame should be rendered.
@@ -431,6 +438,35 @@ impl RenderContext {
         }
     }
 
+    /// Take the current frame without drawing it (a minimised window):
+    /// mpv counts it as rendered and goes on to the next one, instead of
+    /// waiting 200 ms for each. The OpenGL context must still be current.
+    pub fn skip(&self) {
+        let mut skip: c_int = 1;
+        let mut block: c_int = 0;
+        let mut params = [
+            sys::mpv_render_param {
+                type_: sys::MPV_RENDER_PARAM_SKIP_RENDERING,
+                data: (&raw mut skip).cast(),
+            },
+            sys::mpv_render_param {
+                type_: sys::MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME,
+                data: (&raw mut block).cast(),
+            },
+            sys::mpv_render_param {
+                type_: sys::MPV_RENDER_PARAM_INVALID,
+                data: std::ptr::null_mut(),
+            },
+        ];
+        let code = unsafe { (self.api.mpv_render_context_render)(self.ctx, params.as_mut_ptr()) };
+        if code < 0 {
+            log::warn!(
+                "mpv_render_context_render (skipped): {}",
+                error_string(self.api, code)
+            );
+        }
+    }
+
     /// The frame rendered last has been put on the screen.
     pub fn report_swap(&self) {
         unsafe { (self.api.mpv_render_context_report_swap)(self.ctx) };
@@ -448,12 +484,22 @@ impl RenderContext {
                 (self.api.mpv_render_context_free)(self.ctx);
             }
             self.ctx = std::ptr::null_mut();
-            self.update = None;
+            self.update.clear();
         }
     }
 
     pub fn is_freed(&self) -> bool {
         self.ctx.is_null()
+    }
+}
+
+/// A context not freed by its owner (an error before it was put to use)
+/// is freed here: render.h makes destroying the core with a live render
+/// context undefined behaviour. Dropped on the UI thread, where the
+/// OpenGL context is current.
+impl Drop for RenderContext {
+    fn drop(&mut self) {
+        self.free();
     }
 }
 

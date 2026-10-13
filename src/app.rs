@@ -283,6 +283,11 @@ impl App {
         app
     }
 
+    /// Nothing is loaded (or there is no player).
+    fn state_idle(&self) -> bool {
+        self.player.as_ref().is_none_or(|p| p.state.idle)
+    }
+
     fn state(&self) -> State {
         self.player
             .as_ref()
@@ -2379,6 +2384,12 @@ impl eframe::App for App {
             for cmd in std::mem::take(&mut self.pending) {
                 self.run(ctx, frame, cmd);
             }
+        }
+        // No picture is painted: mpv's frames are taken unseen.
+        if (minimized || self.state_idle())
+            && let Some(video) = &self.video
+        {
+            video.skip_unseen();
         }
         self.keep_awake(minimized);
         win::set_playlist_follow(!self.fullscreen);

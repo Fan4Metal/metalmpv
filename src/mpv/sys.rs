@@ -15,6 +15,9 @@ use std::sync::OnceLock;
 pub const DLL_NAME: &str = "libmpv-2.dll";
 /// The major version of the client API this file is written for.
 pub const API_MAJOR: c_ulong = 2;
+/// The least minor version: 2.3 is mpv 0.38, whose `loadfile` takes an
+/// index before the options (a resumed file failed on an older DLL).
+pub const API_MINOR: c_ulong = 3;
 
 pub enum mpv_handle {}
 pub enum mpv_render_context {}
@@ -56,6 +59,7 @@ pub const MPV_RENDER_PARAM_API_TYPE: mpv_render_param_type = 1;
 pub const MPV_RENDER_PARAM_OPENGL_INIT_PARAMS: mpv_render_param_type = 2;
 pub const MPV_RENDER_PARAM_OPENGL_FBO: mpv_render_param_type = 3;
 pub const MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME: mpv_render_param_type = 12;
+pub const MPV_RENDER_PARAM_SKIP_RENDERING: mpv_render_param_type = 13;
 pub const MPV_RENDER_API_TYPE_OPENGL: &std::ffi::CStr = c"opengl";
 pub const MPV_RENDER_UPDATE_FRAME: u64 = 1;
 
@@ -260,12 +264,14 @@ pub fn load(path: &Path) -> Result<Api, String> {
     // The module stays loaded for the life of the process.
     let api = unsafe { Api::resolve(module)? };
     let version = unsafe { (api.mpv_client_api_version)() };
-    if version >> 16 != API_MAJOR {
+    if version >> 16 != API_MAJOR || version & 0xffff < API_MINOR {
         return Err(format!(
-            "{} has client API {}.{}, {}.x is needed",
+            "{} has client API {}.{}, {}.{} or a later {}.x (mpv 0.38 or later) is needed",
             path.display(),
             version >> 16,
             version & 0xffff,
+            API_MAJOR,
+            API_MINOR,
             API_MAJOR
         ));
     }

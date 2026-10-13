@@ -134,20 +134,18 @@ fn main() -> eframe::Result {
                 );
                 return Ok(());
             }
-            _ => files.push(normalize(&arg.to_string_lossy())),
+            _ => {
+                let path = normalize(&arg.to_string_lossy());
+                if !path.as_os_str().is_empty() {
+                    files.push(path);
+                }
+            }
         }
     }
 
     // A copy already running from this exe takes the files and comes
     // forward; this one ends.
-    if let Some((first, rest)) = files.split_first() {
-        if instance::forward(Some(first)) {
-            for file in rest {
-                instance::forward(Some(file));
-            }
-            return Ok(());
-        }
-    } else if instance::forward(None) {
+    if instance::forward(&files) {
         return Ok(());
     }
 
@@ -236,6 +234,8 @@ fn normalize(arg: &str) -> PathBuf {
         return PathBuf::from(arg);
     }
     let arg = match arg.strip_suffix('"') {
+        // A lone quote is not a drive's root (it became the current one).
+        Some(stripped) if stripped.trim_end_matches('\\').is_empty() => return PathBuf::new(),
         Some(stripped) => format!("{}\\", stripped.trim_end_matches('\\')),
         None => arg.to_string(),
     };
@@ -308,5 +308,8 @@ mod tests {
             PathBuf::from("D:\\Films\\a.mkv")
         );
         assert!(normalize("a.mkv").is_absolute());
+        // A lone quote is nothing, not the current drive's root.
+        assert_eq!(normalize("\""), PathBuf::new());
+        assert_eq!(normalize("\\\""), PathBuf::new());
     }
 }

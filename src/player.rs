@@ -162,6 +162,8 @@ const PROPS: [(Prop, &str, sys::mpv_format); 21] = [
 /// The reply to [`Player::ask_scan`]'s `video-frame-info`, past the
 /// observed properties' numbers.
 const FRAME_INFO: u64 = 100;
+/// The reply to [`Player::load`]'s `loadfile`.
+const LOAD: u64 = 101;
 
 /// The scan of a `video-frame-info` value.
 fn scan_of(value: &Value) -> Option<Scan> {
@@ -411,6 +413,10 @@ pub struct Player {
     pub state: State,
     /// When `video-frame-info` was last asked for.
     scan_asked: Option<std::time::Instant>,
+    /// A file was asked for and has not loaded or failed yet: the end of
+    /// the one before, reported late, is not this one's (it would skip
+    /// the file just chosen).
+    loading: bool,
     /// Hardware decoding is on (the setting).
     hwdec: bool,
     /// Filters on the processor: hardware decoding copies the frames.
@@ -440,6 +446,7 @@ impl Player {
             mpv,
             state: State::default(),
             scan_asked: None,
+            loading: false,
             hwdec: true,
             hwdec_copy: false,
         };
@@ -473,11 +480,17 @@ impl Player {
                         let was_eof = self.state.eof;
                         self.state.apply(*prop, &value);
                         if *prop == Prop::EofReached && self.state.eof && !was_eof {
-                            out.push(Happened::Eof);
+                            if self.loading {
+                                log::debug!("end of the file before the one loading: ignored");
+                                self.state.eof = false;
+                            } else {
+                                out.push(Happened::Eof);
+                            }
                         }
                     }
                 }
                 Event::FileLoaded => {
+                    self.loading = false;
                     self.state.scan = None;
                     self.scan_asked = None;
                     out.push(Happened::FileLoaded);
@@ -487,6 +500,7 @@ impl Player {
                     reason: EndReason::Error,
                     error,
                 } => {
+                    self.loading = false;
                     out.push(Happened::Failed(
                         error.unwrap_or_else(|| "unknown error".into()),
                     ));
@@ -503,9 +517,20 @@ impl Player {
                 },
                 Event::QueueOverflow => {
                     log::warn!("mpv event queue overflowed; asking for the properties again");
+                    self.state.scan = None;
+                    self.scan_asked = None;
                     for (prop, name, format) in PROPS {
                         self.mpv.get(prop as u64, name, format);
                     }
+                }
+                Event::CommandReply {
+                    id: LOAD,
+                    error: Some(e),
+                } => {
+                    // Refused before anything was opened: no end-file comes.
+                    log::warn!("mpv loadfile failed: {e}");
+                    self.loading = false;
+                    out.push(Happened::Failed(e));
                 }
                 Event::CommandReply { error: Some(e), .. } => log::warn!("mpv command failed: {e}"),
                 Event::Shutdown => out.push(Happened::Shutdown),
@@ -550,15 +575,16 @@ impl Player {
             options.push(format!("sid={}", id(t.sub)));
         }
         if options.is_empty() {
-            self.mpv.command(0, &["loadfile", &path, "replace"]);
+            self.mpv.command(LOAD, &["loadfile", &path, "replace"]);
         } else {
             // The index (-1) comes before the options since mpv 0.38.
             let options = options.join(",");
             self.mpv
-                .command(0, &["loadfile", &path, "replace", "-1", &options]);
+                .command(LOAD, &["loadfile", &path, "replace", "-1", &options]);
         }
         self.state.paused = false;
         self.state.eof = false;
+        self.loading = true;
     }
 
     /// Pause or go on; at the end of the file, play it again from the start.
@@ -583,6 +609,7 @@ impl Player {
     /// Unload the file: the picture goes black.
     pub fn stop(&mut self) {
         self.mpv.command(0, &["stop"]);
+        self.loading = false;
     }
 
     /// Move by `seconds` (negative: back).
@@ -847,7 +874,7 @@ mod tests {
         let sample = std::env::var("METALMPV_SAMPLE")
             .unwrap_or_else(|_| "D:/Projects/video_converter/samples/test.mp4".into());
         let api = sys::api().unwrap();
-        let mpv = Mpv::new(
+        let mut mpv = Mpv::new(
             api,
             &[
                 ("vo", "null"),
@@ -892,7 +919,7 @@ mod tests {
         let sample = std::env::var("METALMPV_SAMPLE")
             .unwrap_or_else(|_| "D:/Projects/video_converter/samples/test.mp4".into());
         let api = sys::api().unwrap();
-        let mpv = Mpv::new(
+        let mut mpv = Mpv::new(
             api,
             &[
                 ("vo", "null"),
@@ -985,6 +1012,7 @@ mod tests {
             mpv,
             state: State::default(),
             scan_asked: None,
+            loading: false,
             hwdec: true,
             hwdec_copy: false,
         };
@@ -1070,6 +1098,7 @@ mod tests {
             mpv,
             state: State::default(),
             scan_asked: None,
+            loading: false,
             hwdec: true,
             hwdec_copy: false,
         };
@@ -1139,7 +1168,7 @@ mod tests {
             panic!("METALMPV_SAMPLE is not set");
         };
         let api = sys::api().unwrap();
-        let mpv = Mpv::new(
+        let mut mpv = Mpv::new(
             api,
             &[
                 ("vo", "null"),

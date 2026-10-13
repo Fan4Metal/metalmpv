@@ -69,7 +69,10 @@ impl Video {
             }
             allocate(gl, 1, 1);
             gl.bind_texture(glow::TEXTURE_2D, None);
-            let fbo = gl.create_framebuffer()?;
+            // On an error `render` is dropped, which frees it.
+            let fbo = gl
+                .create_framebuffer()
+                .inspect_err(|_| gl.delete_texture(texture))?;
             gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
             gl.framebuffer_texture_2d(
                 glow::FRAMEBUFFER,
@@ -134,6 +137,20 @@ impl Video {
         if visible {
             let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
             painter.image(id, rect, uv, egui::Color32::WHITE);
+        }
+    }
+
+    /// While nothing is painted (a minimised window, or after Stop): take
+    /// mpv's new frames without drawing them. eframe calls no `ui` for a
+    /// minimised window, and without a render mpv waited 200 ms for each
+    /// frame ("mpv_render_context_render() not being called or stuck").
+    /// Called from `App::logic`, where eframe's OpenGL context is still
+    /// current on the UI thread.
+    pub fn skip_unseen(&self) {
+        let shared = self.shared.lock().unwrap_or_else(|e| e.into_inner());
+        if !shared.render.is_freed() && shared.render.update() {
+            shared.render.skip();
+            shared.render.report_swap();
         }
     }
 

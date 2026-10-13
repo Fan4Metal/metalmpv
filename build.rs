@@ -142,16 +142,23 @@ fn git(args: &[&str]) -> Option<String> {
 /// starts and says what is missing.
 fn copy_libmpv(out_dir: &std::path::Path) {
     let source = std::path::Path::new("vendor/libmpv/libmpv-2.dll");
-    println!("cargo:rerun-if-changed={}", source.display());
     // OUT_DIR is target\<profile>\build\<package>-<hash>\out.
     let Some(target) = out_dir.ancestors().nth(3) else {
         return;
     };
     let Ok(meta) = source.metadata() else {
+        // A missing path would rerun the script at every build (drawing
+        // every icon again); the folder tells when the DLL arrives.
+        let vendor = std::path::Path::new("vendor");
+        let watched = if vendor.exists() { vendor } else { source };
+        println!("cargo:rerun-if-changed={}", watched.display());
         println!("cargo:warning=libmpv-2.dll not found: run `python tools/get_libmpv.py`");
         return;
     };
+    println!("cargo:rerun-if-changed={}", source.display());
     let dest = target.join("libmpv-2.dll");
+    // A copy deleted from the exe's folder is made again.
+    println!("cargo:rerun-if-changed={}", dest.display());
     let same = dest
         .metadata()
         .is_ok_and(|d| d.len() == meta.len() && d.modified().ok() == meta.modified().ok());

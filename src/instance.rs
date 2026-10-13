@@ -4,15 +4,15 @@
 //!
 //! The first start owns a named mutex; once its window exists it also has a
 //! message-only window of a class with the same name, which receives the
-//! path in a `WM_COPYDATA`. Both names are derived from the path of the exe,
+//! paths in one `WM_COPYDATA` (separated by NULs). Both names are derived from the path of the exe,
 //! so an installed copy and a development build do not take each other's
 //! files. Explorer starts one process per file of a multiple selection:
 //! paths that arrive close together make one playlist (`App`).
 
 use std::ffi::OsString;
 use std::hash::{Hash, Hasher};
-use std::os::windows::ffi::OsStringExt;
-use std::path::{Path, PathBuf};
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -53,10 +53,10 @@ fn name() -> String {
 }
 
 /// Called at start-up. If the player is already running from this exe,
-/// hand it `path` (none: only bring its window forward) and return true:
+/// hand it `paths` (none: only bring its window forward) and return true:
 /// this process has nothing more to do. Otherwise this process is the first
 /// one and stays so until it exits.
-pub fn forward(path: Option<&Path>) -> bool {
+pub fn forward(paths: &[PathBuf]) -> bool {
     let name = name();
     let mutex_name = wide(format!("Local\\{name}"));
     let class = wide(&name);
@@ -83,7 +83,7 @@ pub fn forward(path: Option<&Path>) -> bool {
         if !window.is_null() {
             // A first start that does not answer (hung) is left alone and
             // this one runs on its own.
-            return send(window, path);
+            return send(window, paths);
         }
         // The first start has not made its window yet, or is closing.
         if Instant::now() >= deadline {
@@ -94,13 +94,12 @@ pub fn forward(path: Option<&Path>) -> bool {
     }
 }
 
-/// Send `path` to the message window `to`, then bring the main window it
-/// answers with to the foreground: this process was started by the user,
-/// so it may.
-fn send(to: HWND, path: Option<&Path>) -> bool {
-    let text: Vec<u16> = path.map(wide).unwrap_or_default();
-    // Without the terminating NUL; none at all for no path.
-    let bytes = text.len().saturating_sub(1) * 2;
+/// Send `paths` to the message window `to` in one message (all taken or
+/// none), then bring the main window it answers with to the foreground:
+/// this process was started by the user, so it may.
+fn send(to: HWND, paths: &[PathBuf]) -> bool {
+    let text = joined(paths);
+    let bytes = text.len() * 2;
     let data = COPYDATASTRUCT {
         dwData: MAGIC,
         cbData: bytes as u32,
@@ -124,6 +123,27 @@ fn send(to: HWND, path: Option<&Path>) -> bool {
     }
     unsafe { SetForegroundWindow(answer as HWND) };
     true
+}
+
+/// `paths` as UTF-16, separated by NULs, without a terminating one.
+fn joined(paths: &[PathBuf]) -> Vec<u16> {
+    let mut text = Vec::new();
+    for path in paths {
+        if !text.is_empty() {
+            text.push(0);
+        }
+        text.extend(path.as_os_str().encode_wide());
+    }
+    text
+}
+
+/// The paths of a message's UTF-16 text (empty parts skipped).
+fn split(units: &[u16]) -> Vec<PathBuf> {
+    units
+        .split(|&u| u == 0)
+        .filter(|part| !part.is_empty())
+        .map(|part| PathBuf::from(OsString::from_wide(part)))
+        .collect()
 }
 
 /// Make this process the one later starts hand their files to: a
@@ -212,15 +232,31 @@ unsafe extern "system" fn window_proc(
             .iter()
             .map(|b| u16::from_le_bytes(*b))
             .collect();
-        let path = PathBuf::from(OsString::from_wide(&units));
+        let now = Instant::now();
         RECEIVED
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .push((path, Instant::now()));
+            .extend(split(&units).into_iter().map(|p| (p, now)));
     }
     if unsafe { IsIconic(*main as HWND) } != 0 {
         unsafe { ShowWindow(*main as HWND, SW_RESTORE) };
     }
     ctx.request_repaint();
     *main as LRESULT
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paths_go_in_one_message() {
+        let paths = vec![
+            PathBuf::from(r"C:\a b\один.mkv"),
+            PathBuf::from(r"D:\x.mp4"),
+        ];
+        assert_eq!(split(&joined(&paths)), paths);
+        assert!(joined(&[]).is_empty());
+        assert!(split(&[]).is_empty());
+    }
 }
