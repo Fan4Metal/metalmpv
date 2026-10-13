@@ -14,9 +14,7 @@ use super::style;
 use crate::audio::{BOOSTS, Channels, Device, Passthrough, boost_label};
 use crate::fonts::Family;
 use crate::i18n::LangChoice;
-use crate::settings::{
-    MAX_STEP, MAX_TRANSPARENCY, OSD_SCALE_RANGE, OnTop, SUB_SCALE_RANGE, Settings,
-};
+use crate::settings::{MAX_STEP, MAX_TRANSPARENCY, OSD_SCALE_RANGE, OnTop, Settings};
 use crate::update::{Status, Updates, release_url, version_of};
 
 /// The size of the window's content in points.
@@ -920,10 +918,10 @@ fn text(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                 "Для текстовых субтитров (SRT и подобных); у субтитров ASS свои шрифты."
             )),
             230.0,
-            |ui| font_choice(ui, "sub_font", &settings.sub_font),
+            |ui| font_choice(ui, "sub_font", &settings.sub.font, 220.0),
         );
         if let Some(family) = chosen {
-            settings.sub_font = family.map(|f| f.name.clone()).unwrap_or_default();
+            settings.sub.font = family.map(|f| f.name.clone()).unwrap_or_default();
             changed.subs = true;
         }
         divider(ui);
@@ -935,7 +933,7 @@ fn text(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                 "Всех субтитров, включая ASS."
             )),
             230.0,
-            |ui| percent(ui, &mut settings.sub_scale, SUB_SCALE_RANGE),
+            |ui| percent(ui, &mut settings.sub.scale, crate::sub_style::SCALE_RANGE),
         )
         .changed();
     });
@@ -951,7 +949,7 @@ fn text(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                     "Жёлтая строка в левом верхнем углу после перемотки, смены громкости и т. п."
                 )),
                 230.0,
-                |ui| font_choice(ui, "osd_font", &settings.osd_font),
+                |ui| font_choice(ui, "osd_font", &settings.osd_font, 220.0),
             );
             if let Some(family) = chosen {
                 settings.osd_font = family.map(|f| f.name.clone()).unwrap_or_default();
@@ -986,15 +984,20 @@ fn percent(ui: &mut Ui, value: &mut f64, range: std::ops::RangeInclusive<f64>) -
 
 /// A font family out of the system's, with a filter over the list; `current`
 /// is the chosen one's name, empty for the default. What was picked this
-/// frame: `Some(None)` is the default.
-fn font_choice(ui: &mut Ui, id: &str, current: &str) -> Option<Option<&'static Family>> {
+/// frame: `Some(None)` is the default. Also the panel's Subtitles tab.
+pub(super) fn font_choice(
+    ui: &mut Ui,
+    id: &str,
+    current: &str,
+    width: f32,
+) -> Option<Option<&'static Family>> {
     let default = tr!("Default", "По умолчанию");
     let shown = if current.is_empty() { default } else { current };
     let filter_id = ui.id().with((id, "filter"));
     let mut picked = None;
     egui::ComboBox::from_id_salt(id)
         .selected_text(shown)
-        .width(220.0)
+        .width(width)
         .height(320.0)
         .show_ui(ui, |ui| {
             let mut filter: String = ui.data(|d| d.get_temp(filter_id)).unwrap_or_default();
@@ -1350,7 +1353,7 @@ fn step(ui: &mut Ui, value: &mut f64) {
 fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) {
     let d = Settings::default();
     changed.hwdec |= settings.hwdec != d.hwdec;
-    changed.subs |= settings.sub_font != d.sub_font || settings.sub_scale != d.sub_scale;
+    changed.subs |= settings.sub != d.sub;
     changed.osd_font |= settings.osd_font != d.osd_font;
     if settings.language != d.language {
         crate::i18n::set_lang(d.language.resolve());
@@ -1379,8 +1382,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.volume_max = d.volume_max;
     settings.normalize = d.normalize;
     settings.passthrough = d.passthrough;
-    settings.sub_font = d.sub_font;
-    settings.sub_scale = d.sub_scale;
+    settings.sub = d.sub;
     settings.osd_font = d.osd_font;
     settings.osd_font_file = d.osd_font_file;
     settings.osd_scale = d.osd_scale;

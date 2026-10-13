@@ -28,6 +28,7 @@ mod playlist;
 mod resume;
 mod settings;
 mod sizing;
+mod sub_style;
 mod taskbar;
 mod tracks;
 mod type_icon;

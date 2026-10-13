@@ -1,12 +1,13 @@
 //! The Video and sound panel (`U` or `F7`, the sliders button of the control
 //! bar): a floating window over the player, so that playback and the keys
 //! go on, pinned like the information window (left of it when both are
-//! open), with two tabs. Video: the picture's adjustments (`adjust.rs`):
+//! open), with three tabs. Video: the picture's adjustments (`adjust.rs`):
 //! the colour's sliders (a double click or the round arrow beside one puts
 //! it back to 0), the sharpness, the noise reduction and the debanding,
 //! the aspect ratio, the rotation and the flips, saving the frame, and
 //! Reset all. Sound: the ten-band equalizer with its presets and the
-//! normalization (`audio.rs`).
+//! normalization (`audio.rs`). Subtitles: how they look (`sub_style.rs`;
+//! the font and the size also on the settings' page).
 
 use egui::{RichText, Ui, vec2};
 
@@ -14,6 +15,7 @@ use super::{icons, info, style};
 use crate::adjust::{Adjust, Aspect, Color};
 use crate::audio::{EQ_BANDS, EQ_RANGE, Equalizer, Preset, band_label};
 use crate::input::Cmd;
+use crate::sub_style::{self, SubStyle};
 
 /// The width of the window's content (egui's `min_width`/`max_width` are
 /// the window's, with its frame: content wider than that pushed the frame
@@ -32,6 +34,7 @@ pub enum Tab {
     #[default]
     Video,
     Sound,
+    Subtitles,
 }
 
 #[derive(Default)]
@@ -40,10 +43,11 @@ pub struct VideoPanel {
     tab: Tab,
 }
 
-/// What the Sound tab edits: the settings' equalizer and normalization.
-pub struct Sound<'a> {
+/// What the Sound and Subtitles tabs edit: settings, kept between runs.
+pub struct Kept<'a> {
     pub equalizer: &'a mut Equalizer,
     pub normalize: &'a mut bool,
+    pub subs: &'a mut SubStyle,
 }
 
 impl VideoPanel {
@@ -57,7 +61,7 @@ impl VideoPanel {
         self.tab = tab;
     }
 
-    /// Draw the panel while it is open, editing `adjust` and `sound` in
+    /// Draw the panel while it is open, editing `adjust` and `kept` in
     /// place; the commands of its buttons. `has_video`: a frame can be
     /// saved. A `pinned` panel stays at the player's top right corner, as
     /// the information window does, and left of it while `beside_info`
@@ -67,7 +71,7 @@ impl VideoPanel {
         &mut self,
         ctx: &egui::Context,
         adjust: &mut Adjust,
-        sound: Sound<'_>,
+        kept: Kept<'_>,
         has_video: bool,
         pinned: bool,
         beside_info: bool,
@@ -110,11 +114,17 @@ impl VideoPanel {
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut self.tab, Tab::Video, tr!("Video", "Видео"));
                     ui.selectable_value(&mut self.tab, Tab::Sound, tr!("Sound", "Звук"));
+                    ui.selectable_value(
+                        &mut self.tab,
+                        Tab::Subtitles,
+                        tr!("Subtitles", "Субтитры"),
+                    );
                 });
                 ui.separator();
                 match self.tab {
                     Tab::Video => video_tab(ui, adjust, has_video, &mut out),
-                    Tab::Sound => sound_tab(ui, sound),
+                    Tab::Sound => sound_tab(ui, kept.equalizer, kept.normalize),
+                    Tab::Subtitles => subtitles_tab(ui, kept.subs),
                 }
             });
         if !open {
@@ -260,8 +270,7 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, has_video: bool, out: &mut Vec<Cm
     );
 }
 
-fn sound_tab(ui: &mut Ui, sound: Sound<'_>) {
-    let eq = sound.equalizer;
+fn sound_tab(ui: &mut Ui, eq: &mut Equalizer, normalize: &mut bool) {
     heading(ui, tr!("Equalizer", "Эквалайзер"));
     ui.horizontal(|ui| {
         ui.checkbox(&mut eq.on, tr!("On", "Включён"));
@@ -338,7 +347,7 @@ fn sound_tab(ui: &mut Ui, sound: Sound<'_>) {
     });
 
     heading(ui, tr!("Volume", "Громкость"));
-    ui.checkbox(sound.normalize, tr!("Normalization", "Нормализация"))
+    ui.checkbox(normalize, tr!("Normalization", "Нормализация"))
         .on_hover_text(tr!(
             "Evens out the volume as the film plays: quiet dialogue louder, loud scenes quieter.",
             "Выравнивает громкость по ходу фильма: тихие диалоги громче, громкие сцены тише."
@@ -352,6 +361,121 @@ fn sound_tab(ui: &mut Ui, sound: Sound<'_>) {
         .size(12.0)
         .color(style::TEXT_WEAK),
     );
+}
+
+fn subtitles_tab(ui: &mut Ui, style: &mut SubStyle) {
+    let d = SubStyle::default();
+    let spacing = ui.spacing().item_spacing.x;
+    ui.spacing_mut().slider_width = WIDTH - LABEL - VALUE - RESET - 3.0 * spacing;
+    ui.spacing_mut().interact_size.x = VALUE;
+    heading(ui, tr!("Text", "Текст"));
+    labelled(ui, tr!("Font", "Шрифт"), |ui| {
+        let width = WIDTH - LABEL - RESET - 3.0 * spacing;
+        if let Some(family) = super::settings::font_choice(ui, "panel_sub_font", &style.font, width)
+        {
+            style.font = family.map(|f| f.name.clone()).unwrap_or_default();
+        }
+        if reset(ui, style.font != d.font, tr!("Default", "По умолчанию")) {
+            style.font.clear();
+        }
+    });
+    slider_row(
+        ui,
+        tr!("Size", "Размер"),
+        &mut style.scale,
+        sub_style::SCALE_RANGE,
+        (5.0, 0, " %"),
+        d.scale,
+    );
+
+    heading(ui, tr!("Colour", "Цвет"));
+    color_row(ui, tr!("Letters", "Буквы"), &mut style.color, d.color);
+    color_row(
+        ui,
+        tr!("Outline", "Обводка"),
+        &mut style.outline_color,
+        d.outline_color,
+    );
+    slider_row(
+        ui,
+        tr!("Thickness", "Толщина"),
+        &mut style.outline,
+        sub_style::OUTLINE_RANGE,
+        (0.05, 2, ""),
+        d.outline,
+    );
+
+    heading(ui, tr!("Place", "Положение"));
+    slider_row(
+        ui,
+        tr!("Height", "Высота"),
+        &mut style.pos,
+        sub_style::POS_RANGE,
+        (1.0, 0, ""),
+        d.pos,
+    );
+
+    ui.add_space(10.0);
+    if ui
+        .add_enabled(
+            *style != d,
+            egui::Button::new(tr!("Reset all", "Сбросить всё")),
+        )
+        .clicked()
+    {
+        *style = d;
+    }
+    ui.add_space(2.0);
+    ui.label(
+        RichText::new(tr!(
+            "The size and the height apply to all subtitles; the font and the colours to text ones (SRT and the like), as ASS subtitles keep their own styles. Kept between runs.",
+            "Размер и высота действуют на все субтитры; шрифт и цвета — на текстовые (SRT и подобные): у субтитров ASS свои стили. Запоминается."
+        ))
+        .size(12.0)
+        .color(style::TEXT_WEAK),
+    );
+}
+
+/// A slider row with its reset: `format` is the step, the decimals shown
+/// and the suffix.
+fn slider_row(
+    ui: &mut Ui,
+    label: &str,
+    value: &mut f64,
+    range: std::ops::RangeInclusive<f64>,
+    format: (f64, usize, &str),
+    default: f64,
+) {
+    let (step, decimals, suffix) = format;
+    labelled(ui, label, |ui| {
+        let response = ui
+            .add(
+                egui::Slider::new(value, range)
+                    .step_by(step)
+                    .fixed_decimals(decimals)
+                    .suffix(suffix),
+            )
+            .on_hover_text(tr!(
+                "A double click puts it back",
+                "Двойной щелчок возвращает исходное"
+            ));
+        let changed = (*value - default).abs() > 1e-9;
+        if response.double_clicked() || reset(ui, changed, tr!("Default", "По умолчанию"))
+        {
+            *value = default;
+        }
+    });
+}
+
+/// A colour row: the swatch that opens a picker, the reset at the end.
+fn color_row(ui: &mut Ui, label: &str, color: &mut [u8; 3], default: [u8; 3]) {
+    labelled(ui, label, |ui| {
+        egui::widgets::color_picker::color_edit_button_srgb(ui, color);
+        ui.add_space((ui.available_width() - RESET).max(0.0));
+        if reset(ui, *color != default, tr!("Default", "По умолчанию")) {
+            *color = default;
+        }
+    });
 }
 
 /// The width of [`reset`].

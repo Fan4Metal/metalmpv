@@ -14,6 +14,7 @@ use crate::audio::{self, Channels, Passthrough};
 use crate::format::TimeMode;
 use crate::i18n::LangChoice;
 use crate::playlist::Repeat;
+use crate::sub_style::{self, SubStyle};
 use crate::tracks::Likeness;
 
 const LANGUAGE: &str = "language";
@@ -89,6 +90,10 @@ const EQ_GAINS: &str = "eq_gains";
 const PASSTHROUGH: &str = "audio_passthrough";
 const SUB_FONT: &str = "sub_font";
 const SUB_SCALE: &str = "sub_scale";
+const SUB_COLOR: &str = "sub_color";
+const SUB_OUTLINE_COLOR: &str = "sub_outline_color";
+const SUB_OUTLINE: &str = "sub_outline";
+const SUB_POS: &str = "sub_pos";
 const OSD_FONT: &str = "osd_font";
 const OSD_FONT_FILE: &str = "osd_font_file";
 const OSD_SCALE: &str = "osd_scale";
@@ -109,8 +114,6 @@ pub const MAX_STEP: f64 = 3600.0;
 /// The most transparent the fullscreen panels may be, in percent: beyond it
 /// their text is lost on a light picture.
 pub const MAX_TRANSPARENCY: f64 = 80.0;
-/// The range of the subtitle size, in percent of mpv's.
-pub const SUB_SCALE_RANGE: std::ops::RangeInclusive<f64> = 50.0..=300.0;
 /// The range of the OSD size, in percent.
 pub const OSD_SCALE_RANGE: std::ops::RangeInclusive<f64> = 50.0..=200.0;
 
@@ -223,10 +226,8 @@ pub struct Settings {
     pub equalizer: audio::Equalizer,
     /// Compressed sound sent to a receiver as it is.
     pub passthrough: Passthrough,
-    /// The font family of text subtitles, empty for mpv's.
-    pub sub_font: String,
-    /// The size of subtitles, in percent (mpv's `sub-scale`).
-    pub sub_scale: f64,
+    /// How subtitles look (`sub_style.rs`).
+    pub sub: SubStyle,
     /// The font family of the OSD line, empty for the interface's.
     pub osd_font: String,
     /// The file and the face number of `osd_font`.
@@ -282,8 +283,7 @@ impl Default for Settings {
             normalize: false,
             equalizer: audio::Equalizer::default(),
             passthrough: Passthrough::Off,
-            sub_font: String::new(),
-            sub_scale: 100.0,
+            sub: SubStyle::default(),
             osd_font: String::new(),
             osd_font_file: None,
             osd_scale: 100.0,
@@ -398,8 +398,20 @@ impl Settings {
                 .as_deref()
                 .and_then(Passthrough::from_name)
                 .unwrap_or(d.passthrough),
-            sub_font: get(SUB_FONT).unwrap_or_default(),
-            sub_scale: number(SUB_SCALE, SUB_SCALE_RANGE, d.sub_scale),
+            sub: SubStyle {
+                font: get(SUB_FONT).unwrap_or_default(),
+                scale: number(SUB_SCALE, sub_style::SCALE_RANGE, d.sub.scale),
+                color: get(SUB_COLOR)
+                    .as_deref()
+                    .and_then(sub_style::parse_hex)
+                    .unwrap_or(d.sub.color),
+                outline_color: get(SUB_OUTLINE_COLOR)
+                    .as_deref()
+                    .and_then(sub_style::parse_hex)
+                    .unwrap_or(d.sub.outline_color),
+                outline: number(SUB_OUTLINE, sub_style::OUTLINE_RANGE, d.sub.outline),
+                pos: number(SUB_POS, sub_style::POS_RANGE, d.sub.pos),
+            },
             osd_font: osd_font
                 .as_ref()
                 .map(|(name, _)| name.clone())
@@ -474,8 +486,12 @@ impl Settings {
         let gains: Vec<String> = self.equalizer.gains.iter().map(i64::to_string).collect();
         storage.set_string(EQ_GAINS, gains.join(","));
         storage.set_string(PASSTHROUGH, self.passthrough.name().into());
-        storage.set_string(SUB_FONT, self.sub_font.clone());
-        storage.set_string(SUB_SCALE, format!("{:.0}", self.sub_scale));
+        storage.set_string(SUB_FONT, self.sub.font.clone());
+        storage.set_string(SUB_SCALE, format!("{:.0}", self.sub.scale));
+        storage.set_string(SUB_COLOR, sub_style::hex(self.sub.color));
+        storage.set_string(SUB_OUTLINE_COLOR, sub_style::hex(self.sub.outline_color));
+        storage.set_string(SUB_OUTLINE, format!("{:.2}", self.sub.outline));
+        storage.set_string(SUB_POS, format!("{:.0}", self.sub.pos));
         match &self.osd_font_file {
             Some((path, index)) if !self.osd_font.is_empty() => {
                 storage.set_string(OSD_FONT, self.osd_font.clone());
@@ -568,8 +584,14 @@ mod tests {
                 gains: [5, 4, 3, 1, -1, -1, 1, 3, 4, -12],
             },
             passthrough: Passthrough::Hdmi,
-            sub_font: "Arial".into(),
-            sub_scale: 150.0,
+            sub: SubStyle {
+                font: "Arial".into(),
+                scale: 150.0,
+                color: [255, 230, 0],
+                outline_color: [20, 20, 60],
+                outline: 2.5,
+                pos: 90.0,
+            },
             osd_font: "Segoe UI".into(),
             osd_font_file: Some((PathBuf::from(r"C:\Windows\Fonts\segoeui.ttf"), 0)),
             osd_scale: 80.0,

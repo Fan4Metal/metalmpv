@@ -185,8 +185,8 @@ impl App {
                 if settings.repeat == Repeat::One {
                     player.set_loop_file(true);
                 }
-                if !settings.sub_font.is_empty() || settings.sub_scale != 100.0 {
-                    player.set_sub_style(&settings.sub_font, settings.sub_scale);
+                if settings.sub != crate::sub_style::SubStyle::default() {
+                    player.set_sub_style(&settings.sub);
                 }
                 log::debug!("player made at {:.0} ms", crate::since_start());
                 let video = match cc.gl.as_ref() {
@@ -2241,7 +2241,7 @@ impl eframe::App for App {
         if changed.subs
             && let Some(player) = &mut self.player
         {
-            player.set_sub_style(&self.settings.sub_font, self.settings.sub_scale);
+            player.set_sub_style(&self.settings.sub);
         }
         if changed.forget_positions {
             self.positions.clear();
@@ -2283,15 +2283,17 @@ impl eframe::App for App {
         cmds.extend(info_cmds);
         let before = self.adjust.clone();
         let sound_before = (self.settings.equalizer.clone(), self.settings.normalize);
-        let sound = ui::picture::Sound {
+        let subs_before = self.settings.sub.clone();
+        let kept = ui::picture::Kept {
             equalizer: &mut self.settings.equalizer,
             normalize: &mut self.settings.normalize,
+            subs: &mut self.settings.sub,
         };
         let pinned = self.settings.panels_pinned;
         let panel_cmds = self.video_panel.show(
             &ctx,
             &mut self.adjust,
-            sound,
+            kept,
             video_size(&state).is_some(),
             pinned,
             pinned && self.info.open,
@@ -2303,6 +2305,9 @@ impl eframe::App for App {
             }
             if (self.settings.equalizer.clone(), self.settings.normalize) != sound_before {
                 player.set_audio_filters(self.settings.normalize, &self.settings.equalizer);
+            }
+            if self.settings.sub != subs_before {
+                player.set_sub_style(&self.settings.sub);
             }
         }
 

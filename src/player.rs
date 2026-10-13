@@ -14,6 +14,7 @@ use crate::audio::{self, Channels, Device, Passthrough};
 use crate::chapters::{self, Chapter};
 use crate::mpv::{EndReason, Event, Mpv, Value, sys};
 use crate::resume::Tracks;
+use crate::sub_style::SubStyle;
 use crate::tracks::{self, Kind, Track};
 
 /// Options of the core, set before it starts. The picture goes through the
@@ -758,13 +759,12 @@ impl Player {
             .set("panscan", &Value::Double(if on { 1.0 } else { 0.0 }));
     }
 
-    /// The font family of text subtitles (empty: mpv's, `sans-serif`) and
-    /// the size of all subtitles in percent. ASS subtitles keep their
-    /// own fonts.
-    pub fn set_sub_style(&mut self, font: &str, scale: f64) {
-        let font = if font.is_empty() { "sans-serif" } else { font };
-        self.mpv.set("sub-font", &Value::Str(font.into()));
-        self.mpv.set("sub-scale", &Value::Double(scale / 100.0));
+    /// How subtitles look (`sub_style.rs`); ASS subtitles keep their own
+    /// fonts and colours.
+    pub fn set_sub_style(&mut self, style: &SubStyle) {
+        for (name, value) in style.options() {
+            self.mpv.set(name, &Value::Str(value));
+        }
     }
 
     /// Play audio track `id`, or show subtitle track `id` (`None`: none).
@@ -963,6 +963,75 @@ mod tests {
                 .any(|e| e.contains("dynaudnorm") || e.contains("filter")),
             "{errors:?}"
         );
+    }
+
+    /// mpv knows the subtitles' properties and takes their values:
+    /// `cargo test sub_style_options -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "needs vendor/libmpv"]
+    fn sub_style_options_of_mpv() {
+        let api = sys::api().unwrap();
+        let mpv = Mpv::new(
+            api,
+            &[
+                ("vo", "null"),
+                ("ao", "null"),
+                ("idle", "yes"),
+                ("terminal", "no"),
+            ],
+        )
+        .unwrap();
+        let mut player = Player {
+            mpv,
+            state: State::default(),
+            scan_asked: None,
+            hwdec: true,
+            hwdec_copy: false,
+        };
+        let style = SubStyle {
+            font: "Arial".into(),
+            scale: 150.0,
+            color: [255, 255, 0],
+            outline_color: [0, 0, 255],
+            outline: 3.0,
+            pos: 90.0,
+        };
+        player.set_sub_style(&style);
+        let options = style.options();
+        for (i, (name, _)) in options.iter().enumerate() {
+            player
+                .mpv
+                .observe(i as u64 + 1, name, sys::MPV_FORMAT_STRING);
+        }
+        let mut seen = vec![None; options.len()];
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while seen.iter().any(Option::is_none) && std::time::Instant::now() < deadline {
+            while let Some(event) = player.mpv.next_event() {
+                if let Event::Property { id, value } = event
+                    && let Some(slot) = seen.get_mut(id as usize - 1)
+                {
+                    *slot = Some(value);
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        for ((name, wanted), got) in options.iter().zip(&seen) {
+            eprintln!("{name} = {got:?} (set {wanted})");
+            assert!(
+                matches!(got, Some(Value::Str(_))),
+                "{name} is not a property: {got:?}"
+            );
+        }
+        let text = |i: usize| match &seen[i] {
+            Some(Value::Str(s)) => s.clone(),
+            _ => String::new(),
+        };
+        assert_eq!(text(0), "Arial");
+        assert!(text(1).starts_with("1.5"), "{}", text(1));
+        assert!(text(4).starts_with("3."), "{}", text(4));
+        assert!(text(5).starts_with("90"), "{}", text(5));
+        // Colours come back with their alpha first.
+        assert_eq!(text(2), "#FFFFFF00");
     }
 
     /// The picture's adjustments on a real file without a window: mpv
