@@ -1,5 +1,5 @@
 //! The playlist panel on the right: a row of icon buttons (add, remove,
-//! sort, shuffle, clear, and on the right the repeat mode; their names in
+//! sort, clear, save as M3U8, shuffle, and on the right the repeat mode; their names in
 //! the tooltips) and the list; a click selects
 //! an entry, a double click plays it. Under it, when the playing file has
 //! chapters, a section of them that folds: a click goes to a chapter.
@@ -59,6 +59,14 @@ pub fn panel(
         .clicked()
         {
             out.push(Cmd::PlaylistClear);
+        }
+        let save = tr!("Save the list as M3U8…", "Сохранить список в M3U8…");
+        if tool(ui, save, !playlist.is_empty(), |p, o, c| {
+            icons::save(p, o, s, c)
+        })
+        .clicked()
+        {
+            out.push(Cmd::PlaylistSave);
         }
         let shuffle = tr!("Shuffle the list", "Перемешать список");
         if tool(ui, shuffle, playlist.len() > 1, |p, o, c| {

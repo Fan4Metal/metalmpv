@@ -15,6 +15,71 @@ pub const MEDIA_EXTENSIONS: &[&str] = &[
     "dts",
 ];
 
+/// Playlist files, opened as their entries and written by Save the list.
+pub const PLAYLIST_EXTENSIONS: &[&str] = &["m3u", "m3u8"];
+
+/// Whether `path` is a playlist file (M3U).
+pub fn is_playlist_file(path: &Path) -> bool {
+    !is_url(path)
+        && path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+            PLAYLIST_EXTENSIONS
+                .iter()
+                .any(|m| m.eq_ignore_ascii_case(e))
+        })
+}
+
+/// The entries of an M3U playlist's `text`: every line but blank ones and
+/// `#` comments (`#EXTINF` and the like); a relative path is from `dir`,
+/// an address is kept as it is.
+pub fn m3u_entries(text: &str, dir: &Path) -> Vec<PathBuf> {
+    text.trim_start_matches('\u{feff}')
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|l| {
+            let path = PathBuf::from(l);
+            if is_url(&path) || path.is_absolute() {
+                path
+            } else {
+                dir.join(path)
+            }
+        })
+        .collect()
+}
+
+/// `paths` with each playlist file replaced by its entries (UTF-8, else
+/// read as it comes); one that cannot be read is dropped.
+pub fn expand_lists(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    paths
+        .into_iter()
+        .flat_map(|p| {
+            if !is_playlist_file(&p) {
+                return vec![p];
+            }
+            match std::fs::read(&p) {
+                Ok(bytes) => {
+                    let text = String::from_utf8_lossy(&bytes);
+                    m3u_entries(&text, p.parent().unwrap_or(Path::new("")))
+                }
+                Err(e) => {
+                    log::warn!("cannot read the playlist {}: {e}", p.display());
+                    Vec::new()
+                }
+            }
+        })
+        .collect()
+}
+
+/// An M3U8 playlist of `items` (UTF-8, full paths, CRLF).
+pub fn m3u_text(items: &[PathBuf]) -> String {
+    let mut text = String::from("#EXTM3U\r\n");
+    for item in items {
+        text.push_str(&item.display().to_string());
+        text.push_str("\r\n");
+    }
+    text
+}
+
 /// Whether `path` is an address (`https://…`, `rtsp://…`) rather than a
 /// file: a scheme of letters, digits, `+`, `-` or `.` before `://`.
 pub fn is_url(path: &Path) -> bool {
@@ -326,6 +391,28 @@ mod tests {
         let mut p = Playlist::default();
         p.replace(names.iter().map(PathBuf::from).collect());
         p
+    }
+
+    #[test]
+    fn m3u_read_and_written() {
+        let text = "\u{feff}#EXTM3U\r\n#EXTINF:120,One\r\none.mkv\r\n\r\nsub\\two.mp4\r\nD:\\Films\\three.avi\r\nhttps://example.com/s.m3u8\r\n";
+        let dir = Path::new(r"C:\Lists");
+        assert_eq!(
+            m3u_entries(text, dir),
+            vec![
+                PathBuf::from(r"C:\Lists\one.mkv"),
+                PathBuf::from(r"C:\Lists\sub\two.mp4"),
+                PathBuf::from(r"D:\Films\three.avi"),
+                PathBuf::from("https://example.com/s.m3u8"),
+            ]
+        );
+        let items = [PathBuf::from(r"D:\a.mkv"), PathBuf::from("https://x/y")];
+        assert_eq!(m3u_text(&items), "#EXTM3U\r\nD:\\a.mkv\r\nhttps://x/y\r\n");
+        assert_eq!(m3u_entries(&m3u_text(&items), dir), items);
+        assert!(is_playlist_file(Path::new(r"C:\a.M3U8")));
+        assert!(!is_playlist_file(Path::new(
+            "https://example.com/live.m3u8"
+        )));
     }
 
     #[test]

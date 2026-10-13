@@ -60,6 +60,8 @@ pub enum Cmd {
     PlaylistRemove(usize),
     PlaylistSort,
     PlaylistClear,
+    /// Write the playlist to an M3U8 file.
+    PlaylistSave,
     /// Put the playlist in a random order.
     PlaylistShuffle,
     /// Repeat off, the file, the list (`R`).

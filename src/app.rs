@@ -261,14 +261,18 @@ impl App {
     /// Replace the playlist with `paths` and play the first. One file
     /// brings the media files of its folder along when the setting says so.
     fn open(&mut self, paths: Vec<PathBuf>) {
+        // A playlist file is its entries, not one of a folder's files.
+        let from_list = paths.iter().any(|p| playlist::is_playlist_file(p));
+        let paths = playlist::expand_lists(paths);
         let Some(target) = paths.first().cloned() else {
             return;
         };
-        let list = if paths.len() == 1 && self.settings.fill_playlist && target.is_file() {
-            playlist::folder_of(&target)
-        } else {
-            paths
-        };
+        let list =
+            if paths.len() == 1 && !from_list && self.settings.fill_playlist && target.is_file() {
+                playlist::folder_of(&target)
+            } else {
+                paths
+            };
         self.playlist.replace(list);
         let index = self
             .playlist
@@ -282,7 +286,7 @@ impl App {
     /// Append `paths` to the playlist; play the first of them if nothing
     /// is playing.
     fn add(&mut self, paths: Vec<PathBuf>) {
-        let first = self.playlist.add(paths);
+        let first = self.playlist.add(playlist::expand_lists(paths));
         if let Some(first) = first
             && self.state().idle
         {
@@ -435,6 +439,35 @@ impl App {
         )));
     }
 
+    /// Write the playlist to an M3U8 file the user names.
+    fn save_playlist(&mut self, frame: &eframe::Frame) {
+        if self.playlist.is_empty() {
+            return;
+        }
+        let mut dialog = rfd::FileDialog::new()
+            .set_parent(frame)
+            .set_title(tr!("Save the playlist", "Сохранить список"))
+            .set_file_name(tr!("Playlist.m3u8", "Список.m3u8"))
+            .add_filter(tr!("M3U8 playlist", "Плейлист M3U8"), &["m3u8"]);
+        if let Some(dir) = self
+            .playlist
+            .current_path()
+            .filter(|p| !playlist::is_url(p))
+            .and_then(Path::parent)
+        {
+            dialog = dialog.set_directory(dir);
+        }
+        if let Some(target) = dialog.save_file()
+            && let Err(e) = std::fs::write(&target, playlist::m3u_text(self.playlist.items()))
+        {
+            log::warn!("cannot save the playlist to {}: {e}", target.display());
+            self.osd.show(Osd::Text(tr!(
+                format!("Cannot save the playlist: {e}"),
+                format!("Не удалось сохранить список: {e}")
+            )));
+        }
+    }
+
     fn save_cover(&mut self, frame: &eframe::Frame) {
         let Some((cover, _)) = self.cover.as_ref().and_then(|c| c.loaded.as_ref()) else {
             return;
@@ -539,7 +572,10 @@ impl App {
             } else {
                 tr!("Open", "Открыть")
             })
-            .add_filter(tr!("Media files", "Медиафайлы"), playlist::MEDIA_EXTENSIONS)
+            .add_filter(
+                tr!("Media files and playlists", "Медиафайлы и плейлисты"),
+                &[playlist::MEDIA_EXTENSIONS, playlist::PLAYLIST_EXTENSIONS].concat(),
+            )
             .add_filter(tr!("All files", "Все файлы"), &["*"]);
         if let Some(dir) = self.playlist.current_path().and_then(Path::parent) {
             dialog = dialog.set_directory(dir);
@@ -867,6 +903,7 @@ impl App {
             Cmd::PlaylistRemove(i) => self.playlist.remove(i),
             Cmd::PlaylistSort => self.playlist.sort(),
             Cmd::PlaylistClear => self.playlist.clear(),
+            Cmd::PlaylistSave => self.save_playlist(frame),
             Cmd::PlaylistShuffle => {
                 let seed = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
