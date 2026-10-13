@@ -22,6 +22,10 @@ pub enum Cmd {
     End,
     Volume(f64),
     ToggleMute,
+    /// Move the sound by this many steps of `audio::DELAY_STEP` against
+    /// the picture (`Ctrl+=` later, `Ctrl+-` earlier); 0 puts it back
+    /// (`Ctrl+0`).
+    AudioDelay(f64),
     ToggleFullscreen,
     /// Close the information window, else leave fullscreen, else close
     /// the program.
@@ -104,6 +108,10 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
         Key::ArrowLeft => Cmd::SeekShort(-1.0),
         Key::ArrowRight => Cmd::SeekShort(1.0),
         Key::Comma if ctrl => Cmd::Settings,
+        // As in mpv: Ctrl with + and -.
+        Key::Plus | Key::Equals if ctrl => Cmd::AudioDelay(1.0),
+        Key::Minus if ctrl => Cmd::AudioDelay(-1.0),
+        Key::Num0 if ctrl => Cmd::AudioDelay(0.0),
         Key::Comma | Key::D => Cmd::Frame { forward: false },
         Key::Period | Key::F => Cmd::Frame { forward: true },
         Key::ArrowUp => Cmd::Volume(VOLUME_STEP),
@@ -145,6 +153,7 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
             | Cmd::SeekExact(_)
             | Cmd::Frame { .. }
             | Cmd::Volume(_)
+            | Cmd::AudioDelay(_)
     );
     (!repeat || repeats).then_some(cmd)
 }
@@ -206,6 +215,22 @@ mod tests {
             command(Key::Period, Modifiers::NONE, true),
             Some(Cmd::Frame { forward: true })
         );
+    }
+
+    #[test]
+    fn ctrl_plus_minus_move_the_sound() {
+        let ctrl = Modifiers::COMMAND;
+        assert_eq!(
+            command(Key::Equals, ctrl, false),
+            Some(Cmd::AudioDelay(1.0))
+        );
+        assert_eq!(command(Key::Plus, ctrl, true), Some(Cmd::AudioDelay(1.0)));
+        assert_eq!(
+            command(Key::Minus, ctrl, false),
+            Some(Cmd::AudioDelay(-1.0))
+        );
+        assert_eq!(command(Key::Num0, ctrl, false), Some(Cmd::AudioDelay(0.0)));
+        assert_eq!(command(Key::Minus, Modifiers::NONE, false), None);
     }
 
     #[test]

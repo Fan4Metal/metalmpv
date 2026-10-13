@@ -10,6 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use crate::audio::{self, Channels};
 use crate::format::TimeMode;
 use crate::i18n::LangChoice;
 use crate::tracks::Likeness;
@@ -29,6 +30,10 @@ const TIME_DISPLAY: &str = "time_display";
 const FULLSCREEN_TRANSPARENCY: &str = "fullscreen_transparency";
 const FULLSCREEN_TITLE: &str = "fullscreen_title";
 const INFO_PINNED: &str = "info_pinned";
+const AUDIO_DEVICE: &str = "audio_device";
+const AUDIO_CHANNELS: &str = "audio_channels";
+const VOLUME_MAX: &str = "volume_max";
+const NORMALIZE: &str = "normalize";
 const SUB_FONT: &str = "sub_font";
 const SUB_SCALE: &str = "sub_scale";
 const OSD_FONT: &str = "osd_font";
@@ -142,6 +147,13 @@ pub struct Settings {
     /// The information window stays at the player's top right corner;
     /// else it is moved by its title and egui keeps its place.
     pub info_pinned: bool,
+    /// The output device as mpv names it; empty for Windows' default.
+    pub audio_device: String,
+    pub audio_channels: Channels,
+    /// The volume's ceiling in percent (one of [`audio::BOOSTS`]).
+    pub volume_max: f64,
+    /// The volume evened out (`audio::NORMALIZE_FILTER`).
+    pub normalize: bool,
     /// The font family of text subtitles, empty for mpv's.
     pub sub_font: String,
     /// The size of subtitles, in percent (mpv's `sub-scale`).
@@ -186,6 +198,10 @@ impl Default for Settings {
             fullscreen_transparency: 12.0,
             fullscreen_title: true,
             info_pinned: true,
+            audio_device: String::new(),
+            audio_channels: Channels::Auto,
+            volume_max: 100.0,
+            normalize: false,
             sub_font: String::new(),
             sub_scale: 100.0,
             osd_font: String::new(),
@@ -202,6 +218,17 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// What the player starts with.
+    pub fn audio_setup(&self) -> audio::Setup {
+        audio::Setup {
+            volume: self.volume,
+            mute: self.mute,
+            volume_max: self.volume_max,
+            channels: self.audio_channels,
+            normalize: self.normalize,
+        }
+    }
+
     /// Read settings; missing or unknown values keep their defaults.
     pub fn load(storage: &dyn eframe::Storage) -> Self {
         let d = Self::default();
@@ -232,7 +259,7 @@ impl Settings {
             last_update_check: get(LAST_UPDATE_CHECK)
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(d.last_update_check),
-            volume: number(VOLUME, 0.0..=100.0, d.volume),
+            volume: number(VOLUME, 0.0..=audio::MAX_VOLUME, d.volume),
             mute: flag(MUTE, d.mute),
             seek_short: number(SEEK_SHORT, 0.1..=MAX_STEP, d.seek_short),
             seek_long: number(SEEK_LONG, 0.1..=MAX_STEP, d.seek_long),
@@ -251,6 +278,16 @@ impl Settings {
             ),
             fullscreen_title: flag(FULLSCREEN_TITLE, d.fullscreen_title),
             info_pinned: flag(INFO_PINNED, d.info_pinned),
+            audio_device: get(AUDIO_DEVICE).unwrap_or_default(),
+            audio_channels: get(AUDIO_CHANNELS)
+                .as_deref()
+                .and_then(Channels::from_name)
+                .unwrap_or(d.audio_channels),
+            volume_max: get(VOLUME_MAX)
+                .and_then(|v| v.parse::<f64>().ok())
+                .filter(|v| audio::BOOSTS.contains(v))
+                .unwrap_or(d.volume_max),
+            normalize: flag(NORMALIZE, d.normalize),
             sub_font: get(SUB_FONT).unwrap_or_default(),
             sub_scale: number(SUB_SCALE, SUB_SCALE_RANGE, d.sub_scale),
             osd_font: osd_font
@@ -295,6 +332,10 @@ impl Settings {
         );
         storage.set_string(FULLSCREEN_TITLE, self.fullscreen_title.to_string());
         storage.set_string(INFO_PINNED, self.info_pinned.to_string());
+        storage.set_string(AUDIO_DEVICE, self.audio_device.clone());
+        storage.set_string(AUDIO_CHANNELS, self.audio_channels.name().into());
+        storage.set_string(VOLUME_MAX, format!("{:.0}", self.volume_max));
+        storage.set_string(NORMALIZE, self.normalize.to_string());
         storage.set_string(SUB_FONT, self.sub_font.clone());
         storage.set_string(SUB_SCALE, format!("{:.0}", self.sub_scale));
         match &self.osd_font_file {
@@ -370,6 +411,10 @@ mod tests {
             fullscreen_transparency: 40.0,
             fullscreen_title: false,
             info_pinned: false,
+            audio_device: "wasapi/{0.0.0.00000000}.{abc}".into(),
+            audio_channels: Channels::Surround51,
+            volume_max: 150.0,
+            normalize: true,
             sub_font: "Arial".into(),
             sub_scale: 150.0,
             osd_font: "Segoe UI".into(),
@@ -397,7 +442,9 @@ mod tests {
         storage.set_string(LANGUAGE, "de".into());
         storage.set_string(CHECK_UPDATES, "yes".into());
         storage.set_string(LAST_UPDATE_CHECK, "soon".into());
-        storage.set_string(VOLUME, "150".into());
+        storage.set_string(VOLUME, "250".into());
+        storage.set_string(VOLUME_MAX, "120".into());
+        storage.set_string(AUDIO_CHANNELS, "9.1".into());
         storage.set_string(SEEK_SHORT, "0".into());
         storage.set_string(SEEK_LONG, "NaN".into());
         storage.set_string(HWDEC, "maybe".into());

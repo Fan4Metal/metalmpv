@@ -204,7 +204,7 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
         let level = if state.mute {
             0.0
         } else {
-            state.volume / 100.0
+            (state.volume / 100.0).min(1.0)
         };
         let tip = if state.mute {
             tr!("Sound on (M)", "Включить звук (M)")
@@ -405,16 +405,18 @@ fn seek_bar(
     cmd
 }
 
-/// The volume: a short bar set by a click or a drag, or by the wheel.
+/// The volume: a short bar set by a click or a drag, or by the wheel; it
+/// reaches `volume_max`, with a tick at 100 % when that is boosted.
 fn volume_slider(ui: &mut Ui, rect: Rect, state: &State) -> Option<Cmd> {
     let response = ui.interact(rect, ui.id().with("volume"), Sense::click_and_drag());
     let track = Rect::from_center_size(rect.center(), vec2(rect.width(), 4.0));
     let painter = ui.painter();
     painter.rect_filled(track, 2.0, style::TRACK);
+    let max = state.volume_max.max(100.0);
     let level = if state.mute {
         0.0
     } else {
-        (state.volume / 100.0) as f32
+        (state.volume / max) as f32
     };
     let done = Rect::from_min_max(
         track.left_top(),
@@ -429,6 +431,13 @@ fn volume_slider(ui: &mut Ui, rect: Rect, state: &State) -> Option<Cmd> {
             style::ACCENT
         },
     );
+    if max > 100.0 {
+        let x = track.left() + track.width() * (100.0 / max) as f32;
+        painter.line_segment(
+            [pos2(x, track.top() - 2.0), pos2(x, track.bottom() + 2.0)],
+            egui::Stroke::new(1.0, style::TEXT_WEAK),
+        );
+    }
     if response.hovered() || response.dragged() {
         painter.circle_filled(
             pos2(done.right(), track.center().y),
@@ -440,7 +449,7 @@ fn volume_slider(ui: &mut Ui, rect: Rect, state: &State) -> Option<Cmd> {
     if (response.dragged() || response.clicked())
         && let Some(p) = response.interact_pointer_pos()
     {
-        let v = (((p.x - track.left()) / track.width()).clamp(0.0, 1.0) * 100.0).round() as f64;
+        let v = (((p.x - track.left()) / track.width()).clamp(0.0, 1.0) as f64 * max).round();
         cmd = Some(Cmd::SetVolume(v));
     }
     if response.hovered() {
@@ -455,7 +464,7 @@ fn volume_slider(ui: &mut Ui, rect: Rect, state: &State) -> Option<Cmd> {
         });
         if notches != 0.0 {
             cmd = Some(Cmd::SetVolume(
-                (state.volume + notches as f64 * crate::input::VOLUME_STEP).clamp(0.0, 100.0),
+                (state.volume + notches as f64 * crate::input::VOLUME_STEP).clamp(0.0, max),
             ));
         }
     }

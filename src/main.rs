@@ -10,6 +10,7 @@ mod i18n;
 
 mod app;
 mod assoc;
+mod audio;
 mod chapters;
 mod cover;
 mod filetypes;

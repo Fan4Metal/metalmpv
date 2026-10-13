@@ -31,6 +31,7 @@ MetalMPV is a video player for Windows with a classic layout: the picture fills 
 - **Window for the picture**: 50 %, 100 %, 150 % or 200 % of the video's size, the largest window without black bars, the window fitted to the picture, or fullscreen without black bars (`1`–`6`, `` ` ``).
 - **Chapters**: marks on the seek bar, which can be turned off, and a list under the playlist to go to a chapter (see [Chapters](#chapters)).
 - **Hardware decoding** (NVDEC, D3D11VA and others, chosen by libmpv), which can be turned off in the settings.
+- **Sound settings**: the output device, the channels (automatic or a layout chosen by hand), a volume boost up to 200 % and normalization that evens the volume out; the sound can be moved against the picture with `Ctrl+=` and `Ctrl+-`.
 - **Resume**: a film opened again goes on from where it was stopped (see [Settings](#settings)).
 - **Playlist**: files opened together, dropped onto the window or added with the **+** button of the playlist; optionally the other media files of the folder of an opened file.
 - **One window**: a file opened from Explorer while the player runs is played in the window already open.
@@ -108,6 +109,10 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | Video | Hardware decoding (GPU) | on | Decoding on the graphics card where possible; the decoder in use is shown below |
 | Video | File name at the top | on | A strip with the file's name across the top in fullscreen, shown while the pointer is near the top edge |
 | Video | Panel transparency | 12 % | Transparency of the control bar and the file's name over the picture in fullscreen, 0–80 % |
+| Sound | Device | Windows' default | The output device; while the chosen one is unplugged, the sound goes to Windows' default |
+| Sound | Channels | Auto | Auto follows the device's setup in Windows; mono, stereo, 5.1 or 7.1 mixes the sound to that layout |
+| Sound | Volume boost | none | Lets the volume go up to 130, 150 or 200 %; loud passages may then distort |
+| Sound | Normalization | off | Evens the volume out as the film plays: quiet dialogue louder, loud scenes quieter (FFmpeg's `dynaudnorm`) |
 | Subtitles and OSD | Subtitles: font | default | A font installed in Windows, for text subtitles (SRT and the like); ASS subtitles keep their own fonts |
 | Subtitles and OSD | Subtitles: size | 100 % | The size of all subtitles, 50–300 % |
 | Subtitles and OSD | On-screen messages: font | default | A font installed in Windows, for the yellow line in the top left corner |
@@ -133,6 +138,8 @@ The list of fonts has a search field at its top. The **Keys** category lists the
 | `A` | Next audio track |
 | `S`, `J` | Next subtitles; after the last, none |
 | `V` | Subtitles off, and on again |
+| `Ctrl+=` / `Ctrl+-` | Sound later / earlier by 100 ms against the picture |
+| `Ctrl+0` | Sound back in sync |
 | `Page Up` / `Page Down` | Previous / next file of the playlist |
 | `Enter`, `F11`, double click | Fullscreen |
 | `1` / `2` / `3` / `4` | Window for the picture at 50 % / 100 % / 150 % / 200 % of the video's size |

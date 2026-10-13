@@ -183,6 +183,8 @@ pub enum Osd {
     /// Fullscreen with the picture filling the screen, cropped, or the
     /// picture whole again.
     Fill(bool),
+    /// The sound against the picture, in seconds (later when positive).
+    AudioDelay(f64),
     /// Free text: a file name, an error.
     Text(String),
 }
@@ -310,6 +312,19 @@ impl Osd {
                 (true, true) => "[ Полный экран без чёрных полос ]".into(),
                 (false, true) => "[ Картинка целиком ]".into(),
             },
+            Osd::AudioDelay(seconds) => {
+                let ms = (seconds * 1000.0).round();
+                let ms = if ms == 0.0 {
+                    "0".to_owned()
+                } else {
+                    format!("{ms:+.0}")
+                };
+                if ru {
+                    format!("[ Задержка звука {ms} мс ]")
+                } else {
+                    format!("[ Audio delay {ms} ms ]")
+                }
+            }
             Osd::Text(t) => t.clone(),
         }
     }
@@ -444,5 +459,17 @@ mod tests {
             "[ Полный экран без чёрных полос ]"
         );
         assert_eq!(Osd::Fill(false).text_in(Lang::En), "[ Whole picture ]");
+        assert_eq!(
+            Osd::AudioDelay(0.3).text_in(Lang::Ru),
+            "[ Задержка звука +300 мс ]"
+        );
+        assert_eq!(
+            Osd::AudioDelay(-0.1).text_in(Lang::En),
+            "[ Audio delay -100 ms ]"
+        );
+        assert_eq!(
+            Osd::AudioDelay(-0.0).text_in(Lang::En),
+            "[ Audio delay 0 ms ]"
+        );
     }
 }

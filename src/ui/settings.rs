@@ -11,6 +11,7 @@ use egui::{
 };
 
 use super::style;
+use crate::audio::{BOOSTS, Channels, Device, boost_label};
 use crate::fonts::Family;
 use crate::i18n::LangChoice;
 use crate::settings::{MAX_STEP, MAX_TRANSPARENCY, OSD_SCALE_RANGE, SUB_SCALE_RANGE, Settings};
@@ -30,6 +31,7 @@ pub enum Page {
     General,
     Playback,
     Video,
+    Audio,
     Text,
     Files,
     Updates,
@@ -37,10 +39,11 @@ pub enum Page {
 }
 
 impl Page {
-    const ALL: [Page; 7] = [
+    const ALL: [Page; 8] = [
         Page::General,
         Page::Playback,
         Page::Video,
+        Page::Audio,
         Page::Text,
         Page::Files,
         Page::Updates,
@@ -52,6 +55,7 @@ impl Page {
             Page::General => tr!("General", "Общие"),
             Page::Playback => tr!("Playback", "Воспроизведение"),
             Page::Video => tr!("Video", "Видео"),
+            Page::Audio => tr!("Sound", "Звук"),
             Page::Text => tr!("Subtitles and OSD", "Субтитры и OSD"),
             Page::Files => tr!("File types", "Типы файлов"),
             Page::Updates => tr!("Updates", "Обновления"),
@@ -73,6 +77,10 @@ impl Page {
             Page::Video => tr!(
                 "How video is decoded; the panels in fullscreen.",
                 "Как декодируется видео; панели в полноэкранном режиме."
+            ),
+            Page::Audio => tr!(
+                "Where the sound goes and with how many channels; the volume's boost and normalization.",
+                "Куда выводится звук и сколько в нём каналов; усиление и нормализация громкости."
             ),
             Page::Text => tr!(
                 "The font and the size of subtitles and of the on-screen messages.",
@@ -113,6 +121,9 @@ pub struct Changed {
     pub osd_font: bool,
     /// Forget where the files were left.
     pub forget_positions: bool,
+    pub audio_channels: bool,
+    pub volume_max: bool,
+    pub normalize: bool,
 }
 
 impl SettingsDialog {
@@ -123,13 +134,14 @@ impl SettingsDialog {
 
     /// Draw the window while it is open, editing `settings` and `updates`
     /// in place (the language is applied at once); `hwdec_current` is the
-    /// decoder mpv uses now.
+    /// decoder mpv uses now, `audio_devices` the output devices there are.
     pub fn show(
         &mut self,
         ctx: &egui::Context,
         settings: &mut Settings,
         updates: &mut Updates,
         hwdec_current: Option<&str>,
+        audio_devices: &[Device],
     ) -> Changed {
         let mut changed = Changed::default();
         if !self.open {
@@ -240,6 +252,9 @@ impl SettingsDialog {
                                 Page::Updates => updates_page(ui, updates),
                                 Page::Playback => playback(ui, settings, &mut changed),
                                 Page::Video => changed.hwdec |= video(ui, settings, hwdec_current),
+                                Page::Audio => {
+                                    audio_page(ui, settings, audio_devices, &mut changed)
+                                }
                                 Page::Text => text(ui, settings, &mut changed),
                                 Page::Files => self.file_types.show(ui),
                                 Page::Keys => keys(ui),
@@ -691,6 +706,139 @@ fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>) -> b
     changed
 }
 
+/// The output device and channels, the volume's boost and normalization.
+fn audio_page(ui: &mut Ui, settings: &mut Settings, devices: &[Device], changed: &mut Changed) {
+    section(ui, tr!("Output", "Вывод"), |ui| {
+        let chosen = &settings.audio_device;
+        let present = chosen.is_empty() || devices.iter().any(|d| &d.name == chosen);
+        let system = tr!("Windows' default", "Устройство Windows по умолчанию");
+        let name_of = |name: &str| -> String {
+            if name.is_empty() {
+                return system.to_owned();
+            }
+            devices
+                .iter()
+                .find(|d| d.name == name)
+                .map_or_else(|| name.to_owned(), |d| d.description.clone())
+        };
+        let hint = if present {
+            tr!(
+                "The sound moves to it at once. A device that is unplugged gives way to Windows' default until it is back.",
+                "Звук переходит на него сразу. Пока выбранное устройство отключено, звук идёт через устройство Windows по умолчанию."
+            )
+        } else {
+            tr!(
+                "The chosen device is not connected: the sound goes to Windows' default until it is back.",
+                "Выбранное устройство не подключено: звук идёт через устройство Windows по умолчанию, пока оно не вернётся."
+            )
+        };
+        row(
+            ui,
+            tr!("Device", "Устройство"),
+            Some(hint),
+            290.0,
+            |ui| {
+                let mut choice = settings.audio_device.clone();
+                egui::ComboBox::from_id_salt("settings_audio_device")
+                    .selected_text(shorten(&name_of(&choice), 34))
+                    .width(280.0)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut choice, String::new(), system);
+                        for d in devices {
+                            ui.selectable_value(&mut choice, d.name.clone(), &d.description);
+                        }
+                    });
+                // The app gives mpv the device (`App::follow_audio_device`).
+                settings.audio_device = choice;
+            },
+        );
+        divider(ui);
+        row(
+            ui,
+            tr!("Channels", "Каналы"),
+            Some(tr!(
+                "Auto: as the device is set up in Windows, more channels mixed down to it. A layout chosen by hand is what the sound is mixed to.",
+                "«Авто» — как устройство настроено в Windows, лишние каналы сводятся под него. Раскладка, выбранная вручную, — то, под что сводится звук."
+            )),
+            160.0,
+            |ui| {
+                let mut choice = settings.audio_channels;
+                egui::ComboBox::from_id_salt("settings_audio_channels")
+                    .selected_text(choice.label())
+                    .width(150.0)
+                    .show_ui(ui, |ui| {
+                        for c in Channels::ALL {
+                            ui.selectable_value(&mut choice, c, c.label());
+                        }
+                    });
+                if choice != settings.audio_channels {
+                    settings.audio_channels = choice;
+                    changed.audio_channels = true;
+                }
+            },
+        );
+    });
+    section(ui, tr!("Volume", "Громкость"), |ui| {
+        row(
+            ui,
+            tr!("Volume boost", "Усиление громкости"),
+            Some(tr!(
+                "Lets the volume go past 100%; a loud passage may then distort.",
+                "Позволяет поднять громкость выше 100%; на громких местах возможны искажения."
+            )),
+            160.0,
+            |ui| {
+                let mut choice = settings.volume_max;
+                egui::ComboBox::from_id_salt("settings_volume_max")
+                    .selected_text(boost_label(choice))
+                    .width(150.0)
+                    .show_ui(ui, |ui| {
+                        for b in BOOSTS {
+                            ui.selectable_value(&mut choice, b, boost_label(b));
+                        }
+                    });
+                if choice != settings.volume_max {
+                    settings.volume_max = choice;
+                    changed.volume_max = true;
+                }
+            },
+        );
+        divider(ui);
+        if row(
+            ui,
+            tr!("Normalization", "Нормализация"),
+            Some(tr!(
+                "Evens out the volume as the film plays: quiet dialogue louder, loud scenes quieter.",
+                "Выравнивает громкость по ходу фильма: тихие диалоги громче, громкие сцены тише."
+            )),
+            50.0,
+            |ui| switch(ui, &mut settings.normalize),
+        )
+        .changed()
+        {
+            changed.normalize = true;
+        }
+    });
+    note(
+        ui,
+        tr!(
+            "Ctrl+= and Ctrl+- move the sound against the picture by 100 ms, Ctrl+0 puts it back.",
+            "Ctrl+= и Ctrl+- сдвигают звук относительно изображения на 100 мс, Ctrl+0 возвращает его на место."
+        ),
+    );
+}
+
+/// `text` cut to `chars` characters with an ellipsis.
+fn shorten(text: &str, chars: usize) -> String {
+    if text.chars().count() <= chars {
+        text.to_owned()
+    } else {
+        let mut cut: String = text.chars().take(chars - 1).collect();
+        cut.push('…');
+        cut
+    }
+}
+
 /// The fonts and sizes of the subtitles and of the OSD line.
 fn text(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
     section(ui, tr!("Subtitles", "Субтитры"), |ui| {
@@ -914,7 +1062,7 @@ fn update_status(ui: &mut Ui, updates: &Updates) {
 
 /// The keys, as in the README.
 fn keys(ui: &mut Ui) {
-    let rows: [(&str, &str); 25] = [
+    let rows: [(&str, &str); 26] = [
         (
             tr!("Space", "Пробел"),
             tr!("Play / pause", "Воспроизведение / пауза"),
@@ -1011,6 +1159,13 @@ fn keys(ui: &mut Ui) {
             ),
         ),
         ("V", tr!("Subtitles off / on", "Субтитры выкл. / вкл.")),
+        (
+            "Ctrl+= / Ctrl+- / Ctrl+0",
+            tr!(
+                "Sound later / earlier by 100 ms / in sync",
+                "Звук позже / раньше на 100 мс / как было"
+            ),
+        ),
         ("Ctrl+O", tr!("Open files", "Открыть файлы")),
         (
             tr!("L, middle click", "L, средний щелчок"),
@@ -1102,6 +1257,13 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.fullscreen_transparency = d.fullscreen_transparency;
     settings.fullscreen_title = d.fullscreen_title;
     settings.info_pinned = d.info_pinned;
+    changed.audio_channels |= settings.audio_channels != d.audio_channels;
+    changed.volume_max |= settings.volume_max != d.volume_max;
+    changed.normalize |= settings.normalize != d.normalize;
+    settings.audio_device = d.audio_device;
+    settings.audio_channels = d.audio_channels;
+    settings.volume_max = d.volume_max;
+    settings.normalize = d.normalize;
     settings.sub_font = d.sub_font;
     settings.sub_scale = d.sub_scale;
     settings.osd_font = d.osd_font;

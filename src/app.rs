@@ -108,6 +108,9 @@ pub struct App {
     /// The picture's size in pixels the window is to be made for once
     /// fullscreen has ended (`1`, `2`, `3` in fullscreen).
     pending_picture: Option<[f64; 2]>,
+    /// The output device given to mpv (empty: Windows' default, as mpv
+    /// starts), kept in step with the setting and the devices there are.
+    audio_device_used: String,
 }
 
 impl App {
@@ -156,7 +159,7 @@ impl App {
         let mut engine_error = None;
         let (player, video) = match boot.join() {
             Ok(Ok(mpv)) => {
-                let mut player = Player::new(mpv, ctx, settings.volume, settings.mute);
+                let mut player = Player::new(mpv, ctx, &settings.audio_setup());
                 if !settings.hwdec {
                     player.set_hwdec(false);
                 }
@@ -220,6 +223,7 @@ impl App {
             picture_area: Rect::NOTHING,
             chrome: egui::Vec2::ZERO,
             pending_picture: None,
+            audio_device_used: String::new(),
         };
         app.open(files);
         app
@@ -699,6 +703,17 @@ impl App {
             Cmd::ToggleFullscreen => {
                 self.set_fullscreen(ctx, frame, !frameless::is_fullscreen(ctx))
             }
+            Cmd::AudioDelay(steps) => {
+                if let Some(player) = &mut self.player {
+                    let delay = if steps == 0.0 {
+                        0.0
+                    } else {
+                        player.state.audio_delay + steps * crate::audio::DELAY_STEP
+                    };
+                    player.set_audio_delay(delay);
+                    self.osd.show(Osd::AudioDelay(player.state.audio_delay));
+                }
+            }
             Cmd::Escape => {
                 // The big cover and the information window first, then
                 // fullscreen, then the program (as its close button: the
@@ -815,6 +830,28 @@ impl App {
     }
 
     /// The picture filling the screen, cropped, or whole (`fill`).
+    /// Give mpv the chosen output device while Windows has it, else the
+    /// default one; also when a device comes or goes, or the setting
+    /// changes.
+    fn follow_audio_device(&mut self) {
+        let Some(player) = &mut self.player else {
+            return;
+        };
+        let Some(device) =
+            crate::audio::device_to_use(&self.settings.audio_device, &player.state.audio_devices)
+        else {
+            return;
+        };
+        if device != self.audio_device_used {
+            log::debug!(
+                "audio device: {:?}",
+                if device.is_empty() { "auto" } else { device }
+            );
+            player.set_audio_device(device);
+            self.audio_device_used = device.to_owned();
+        }
+    }
+
     fn set_fill(&mut self, on: bool) {
         self.fill = on;
         if let Some(player) = &mut self.player {
@@ -1512,6 +1549,7 @@ impl eframe::App for App {
     fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.updates.poll();
         self.take_events();
+        self.follow_audio_device();
     }
 
     fn ui(&mut self, root_ui: &mut egui::Ui, frame: &mut eframe::Frame) {
@@ -1633,11 +1671,23 @@ impl eframe::App for App {
             &mut self.settings,
             &mut self.updates,
             state.hwdec.as_deref(),
+            &state.audio_devices,
         );
         if changed.hwdec
             && let Some(player) = &mut self.player
         {
             player.set_hwdec(self.settings.hwdec);
+        }
+        if let Some(player) = &mut self.player {
+            if changed.audio_channels {
+                player.set_channels(self.settings.audio_channels);
+            }
+            if changed.volume_max {
+                player.set_volume_max(self.settings.volume_max);
+            }
+            if changed.normalize {
+                player.set_normalize(self.settings.normalize);
+            }
         }
         if changed.subs
             && let Some(player) = &mut self.player

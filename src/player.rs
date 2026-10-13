@@ -9,6 +9,7 @@
 
 use std::path::Path;
 
+use crate::audio::{self, Channels, Device};
 use crate::chapters::{self, Chapter};
 use crate::mpv::{EndReason, Event, Mpv, Value, sys};
 use crate::resume::Tracks;
@@ -109,9 +110,10 @@ enum Prop {
     FileSize,
     FileFormat,
     VideoParams,
+    AudioDevices,
 }
 
-const PROPS: [(Prop, &str, sys::mpv_format); 20] = [
+const PROPS: [(Prop, &str, sys::mpv_format); 21] = [
     (Prop::Pause, "pause", sys::MPV_FORMAT_FLAG),
     (Prop::TimePos, "time-pos", sys::MPV_FORMAT_DOUBLE),
     (Prop::Duration, "duration", sys::MPV_FORMAT_DOUBLE),
@@ -137,6 +139,12 @@ const PROPS: [(Prop, &str, sys::mpv_format); 20] = [
     (Prop::FileSize, "file-size", sys::MPV_FORMAT_INT64),
     (Prop::FileFormat, "file-format", sys::MPV_FORMAT_STRING),
     (Prop::VideoParams, "video-params", sys::MPV_FORMAT_NODE),
+    // The output devices; mpv tells again when Windows' devices change.
+    (
+        Prop::AudioDevices,
+        "audio-device-list",
+        sys::MPV_FORMAT_NODE,
+    ),
 ];
 
 /// The reply to [`Player::ask_scan`]'s `video-frame-info`, past the
@@ -162,8 +170,14 @@ pub struct State {
     /// Position in seconds, `None` without a file.
     pub time: Option<f64>,
     pub duration: Option<f64>,
-    /// 0 to 100.
+    /// 0 to `volume_max`.
     pub volume: f64,
+    /// The volume's ceiling in percent: above 100 it is boosted.
+    pub volume_max: f64,
+    /// The sound against the picture, in seconds (later when positive).
+    pub audio_delay: f64,
+    /// The output devices there are.
+    pub audio_devices: Vec<Device>,
     pub mute: bool,
     pub title: Option<String>,
     pub path: Option<String>,
@@ -258,6 +272,9 @@ impl Default for State {
             time: None,
             duration: None,
             volume: 100.0,
+            volume_max: 100.0,
+            audio_delay: 0.0,
+            audio_devices: Vec::new(),
             mute: false,
             title: None,
             path: None,
@@ -326,6 +343,7 @@ impl State {
                 self.file_format = value.string().filter(|s| !s.is_empty()).map(str::to_owned)
             }
             Prop::VideoParams => self.video_params = VideoParams::from_value(value),
+            Prop::AudioDevices => self.audio_devices = audio::devices_from_value(value),
         }
     }
 
@@ -379,8 +397,10 @@ pub struct Player {
 
 impl Player {
     /// Take a started core: observe what the interface shows and wake the
-    /// UI when events wait. `volume` and `mute` come from the settings.
-    pub fn new(mut mpv: Mpv, ctx: &egui::Context, volume: f64, mute: bool) -> Self {
+    /// UI when events wait. The sound's settings are set before any file
+    /// is loaded, so the first one plays with them; the device is
+    /// Windows' default until the app picks one ([`audio::device_to_use`]).
+    pub fn new(mut mpv: Mpv, ctx: &egui::Context, setup: &audio::Setup) -> Self {
         let wake = ctx.clone();
         mpv.set_wakeup(move || wake.request_repaint());
         // METALMPV_TRACE=2: mpv's verbose messages too.
@@ -394,19 +414,18 @@ impl Player {
         for (prop, name, format) in PROPS {
             mpv.observe(prop as u64, name, format);
         }
-        let player = Self {
+        let mut player = Self {
             mpv,
-            state: State {
-                volume,
-                mute,
-                ..State::default()
-            },
+            state: State::default(),
             scan_asked: None,
         };
-        player
-            .mpv
-            .set("volume", &Value::Double(volume.clamp(0.0, 100.0)));
-        player.mpv.set("mute", &Value::Flag(mute));
+        player.set_channels(setup.channels);
+        player.set_normalize(setup.normalize);
+        player.set_volume_max(setup.volume_max);
+        let volume = setup.volume.clamp(0.0, player.state.volume_max);
+        player.mpv.set("volume", &Value::Double(volume));
+        player.state.volume = volume;
+        player.set_mute(setup.mute);
         player
     }
 
@@ -578,9 +597,9 @@ impl Player {
         self.state.paused = true;
     }
 
-    /// Volume, 0 to 100; unmutes.
+    /// Volume, 0 to `volume_max`; unmutes.
     pub fn set_volume(&mut self, volume: f64) {
-        let volume = volume.clamp(0.0, 100.0);
+        let volume = volume.clamp(0.0, self.state.volume_max);
         self.mpv.set("volume", &Value::Double(volume));
         self.state.volume = volume;
         if self.state.mute {
@@ -591,6 +610,44 @@ impl Player {
     pub fn set_mute(&mut self, mute: bool) {
         self.mpv.set("mute", &Value::Flag(mute));
         self.state.mute = mute;
+    }
+
+    /// The volume's ceiling (100 to [`audio::MAX_VOLUME`]); a volume above
+    /// it comes down to it.
+    pub fn set_volume_max(&mut self, max: f64) {
+        let max = max.clamp(100.0, audio::MAX_VOLUME);
+        self.mpv.set("volume-max", &Value::Double(max));
+        self.state.volume_max = max;
+        if self.state.volume > max {
+            self.mpv.set("volume", &Value::Double(max));
+            self.state.volume = max;
+        }
+    }
+
+    /// The output device (`audio-device`; empty: Windows' default); mpv
+    /// moves the sound at once. It must be one mpv lists: mpv does not
+    /// fall back from a device that is not there.
+    pub fn set_audio_device(&mut self, name: &str) {
+        let name = if name.is_empty() { "auto" } else { name };
+        self.mpv.set("audio-device", &Value::Str(name.into()));
+    }
+
+    pub fn set_channels(&mut self, channels: Channels) {
+        self.mpv
+            .set("audio-channels", &Value::Str(channels.option().into()));
+    }
+
+    /// The normalization filter on or off (the only audio filter).
+    pub fn set_normalize(&mut self, on: bool) {
+        let filter = if on { audio::NORMALIZE_FILTER } else { "" };
+        self.mpv.set("af", &Value::Str(filter.into()));
+    }
+
+    /// The sound against the picture, in seconds; kept between files.
+    pub fn set_audio_delay(&mut self, seconds: f64) {
+        let seconds = (seconds * 1000.0).round() / 1000.0;
+        self.mpv.set("audio-delay", &Value::Double(seconds));
+        self.state.audio_delay = seconds;
     }
 
     /// Hardware decoding on (`auto-safe`) or off; mpv applies it to the
@@ -727,6 +784,81 @@ mod tests {
             );
         }
         assert!(found.iter().any(|t| t.kind == Kind::Video));
+    }
+
+    /// The sound's settings on a real file without a window or a sound
+    /// card (`ao=null`): the normalization filter is taken, the volume
+    /// goes past 100, the channels are mixed as asked, and mpv lists the
+    /// devices. `cargo test audio_settings -- --ignored --nocapture` with
+    /// METALMPV_SAMPLE.
+    #[test]
+    #[ignore = "needs vendor/libmpv and a sample video"]
+    fn audio_settings_of_a_real_file() {
+        let sample = std::env::var("METALMPV_SAMPLE")
+            .unwrap_or_else(|_| "D:/Projects/video_converter/samples/test.mp4".into());
+        let api = sys::api().unwrap();
+        let mpv = Mpv::new(
+            api,
+            &[
+                ("vo", "null"),
+                ("ao", "null"),
+                ("idle", "yes"),
+                ("terminal", "no"),
+            ],
+        )
+        .unwrap();
+        mpv.request_log_messages("warn");
+        mpv.set("af", &Value::Str(audio::NORMALIZE_FILTER.into()));
+        mpv.set(
+            "audio-channels",
+            &Value::Str(Channels::Stereo.option().into()),
+        );
+        mpv.set("volume-max", &Value::Double(200.0));
+        mpv.set("volume", &Value::Double(150.0));
+        mpv.observe(1, "audio-out-params", sys::MPV_FORMAT_NODE);
+        mpv.observe(2, "volume", sys::MPV_FORMAT_DOUBLE);
+        mpv.observe(3, "audio-device-list", sys::MPV_FORMAT_NODE);
+        mpv.observe(4, "af", sys::MPV_FORMAT_NODE);
+        mpv.command(0, &["loadfile", &sample]);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let (mut channels, mut volume, mut devices, mut errors) = (None, None, None, Vec::new());
+        while channels.is_none() && std::time::Instant::now() < deadline {
+            while let Some(event) = mpv.next_event() {
+                match event {
+                    Event::Property { id: 1, value } => {
+                        channels = value
+                            .get("hr-channels")
+                            .and_then(Value::string)
+                            .map(str::to_owned);
+                    }
+                    Event::Property { id: 2, value } => volume = value.double(),
+                    Event::Property { id: 3, value } => {
+                        devices = Some(audio::devices_from_value(&value))
+                    }
+                    Event::Property { id: 4, value } => eprintln!("af: {value:?}"),
+                    Event::Log { prefix, text, .. } => {
+                        eprint!("[{prefix}] {text}");
+                        errors.push(text);
+                    }
+                    _ => {}
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let devices = devices.unwrap_or_default();
+        for d in &devices {
+            eprintln!("device {} = {}", d.name, d.description);
+        }
+        eprintln!("channels {channels:?}, volume {volume:?}");
+        assert_eq!(channels.as_deref(), Some("stereo"));
+        assert_eq!(volume, Some(150.0));
+        assert!(!devices.is_empty());
+        assert!(
+            !errors
+                .iter()
+                .any(|e| e.contains("dynaudnorm") || e.contains("filter")),
+            "{errors:?}"
+        );
     }
 
     /// Reads the chapters of a real file without a window:
