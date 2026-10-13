@@ -1,4 +1,4 @@
-//! The Video and sound panel (`U` or `F7`, the sliders button of the control
+//! The Video, sound and subtitles panel (`U` or `F7`, the sliders button of the control
 //! bar): a floating window over the player, so that playback and the keys
 //! go on, pinned like the information window (left of it when both are
 //! open), with three tabs. Video: the picture's adjustments (`adjust.rs`):
@@ -91,7 +91,7 @@ impl VideoPanel {
         if beside_info {
             corner.x -= info::WIDTH + GAP;
         }
-        let window = egui::Window::new(tr!("Video and sound", "Видео и звук"))
+        let window = egui::Window::new(tr!("Video, sound and subtitles", "Видео, звук и субтитры"))
             .id(egui::Id::new("video_panel"))
             .open(&mut open)
             .collapsible(false);

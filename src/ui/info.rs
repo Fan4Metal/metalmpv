@@ -25,7 +25,7 @@ const THUMB: f32 = 120.0;
 /// The window's width (egui's, with the frame).
 pub const WIDTH: f32 = 520.0;
 /// The window's top right corner from the player's: under the title row,
-/// a little in from the edge. The Video and sound panel's too.
+/// a little in from the edge. The Video, sound and subtitles panel's too.
 pub const CORNER: egui::Vec2 = vec2(-23.0, 46.0);
 
 /// How long Copy all shows a tick after a click.

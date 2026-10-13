@@ -32,7 +32,7 @@ const TIME_DISPLAY: &str = "time_display";
 const FULLSCREEN_TRANSPARENCY: &str = "fullscreen_transparency";
 const FULLSCREEN_TITLE: &str = "fullscreen_title";
 const PANELS_PINNED: &str = "panels_pinned";
-/// The key before the Video and sound panel was pinned too.
+/// The key before the Video, sound and subtitles panel was pinned too.
 const OLD_INFO_PINNED: &str = "info_pinned";
 const SNAP_TO_CENTRE: &str = "snap_to_centre";
 const REPEAT: &str = "repeat";
@@ -205,7 +205,7 @@ pub struct Settings {
     pub fullscreen_transparency: f64,
     /// A strip with the file's name at the top in fullscreen.
     pub fullscreen_title: bool,
-    /// The information window and the Video and sound panel stay at the
+    /// The information window and the Video, sound and subtitles panel stay at the
     /// player's top right corner (the panel left of the information);
     /// else they are moved by their titles and egui keeps their places.
     pub panels_pinned: bool,

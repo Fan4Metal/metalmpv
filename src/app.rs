@@ -69,7 +69,7 @@ pub struct App {
     info: InfoWindow,
     /// The address to play (`Ctrl+U`).
     url_dialog: ui::url::UrlDialog,
-    /// The Video and sound panel (`U`, `F7`) and the picture's adjustments it edits.
+    /// The Video, sound and subtitles panel (`U`, `F7`) and the picture's adjustments it edits.
     video_panel: VideoPanel,
     adjust: Adjust,
     /// The cover of the file playing, while or once it is looked for.
@@ -1819,7 +1819,7 @@ fn context_menu(
     );
     item(
         ui,
-        tr!("Video and sound…", "Видео и звук…").into(),
+        tr!("Video, sound and subtitles…", "Видео, звук и субтитры…").into(),
         "U",
         Cmd::ToggleVideoPanel,
     );

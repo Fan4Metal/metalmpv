@@ -1,4 +1,4 @@
-//! The picture's adjustments of the Video and sound panel: the colour
+//! The picture's adjustments of the Video, sound and subtitles panel: the colour
 //! (mpv's video equalizer, done by the renderer on the GPU), the rotation
 //! (`video-rotate`, also on the GPU), the flips, the sharpness and the
 //! noise reduction (FFmpeg filters in `vf`, on the processor) and the

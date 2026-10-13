@@ -12,7 +12,7 @@ use crate::player::State;
 pub struct Bar<'a> {
     pub state: &'a State,
     pub playlist_visible: bool,
-    /// The Video and sound panel is open (its button underlined).
+    /// The Video, sound and subtitles panel is open (its button underlined).
     pub video_panel_open: bool,
     pub fullscreen: bool,
     pub has_prev: bool,
@@ -219,7 +219,7 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
     }
 
     // Audio and subtitles, left of the volume: one button, both lists
-    // side by side in the window over it. The Video and sound panel's
+    // side by side in the window over it. The Video, sound and subtitles panel's
     // button left of it.
     let tracks_rect = Rect::from_center_size(
         pos2(speaker.left() - 6.0 - SMALL / 2.0, row.center().y),
@@ -243,7 +243,10 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
         let panel = flat(
             ui,
             panel_rect,
-            tr!("Video and sound (U)", "Видео и звук (U)"),
+            tr!(
+                "Video, sound and subtitles (U)",
+                "Видео, звук и субтитры (U)"
+            ),
             true,
             |p, o, c, _| icons::sliders(p, o, s, c),
         );

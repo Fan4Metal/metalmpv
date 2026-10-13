@@ -87,7 +87,7 @@ pub enum Cmd {
     ToggleChapterMarks,
     /// Open or close the file's information window (`I`).
     ToggleInfo,
-    /// Open or close the Video and sound panel (`U`, next to the
+    /// Open or close the Video, sound and subtitles panel (`U`, next to the
     /// information's `I`; `F7` as in GOM Player).
     ToggleVideoPanel,
     /// Open the panel on its Sound tab (the context menu).

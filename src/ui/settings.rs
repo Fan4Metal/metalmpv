@@ -489,8 +489,8 @@ fn general(ui: &mut Ui, settings: &mut Settings) {
             ui,
             tr!("Pin the panels", "Закрепить панели"),
             Some(tr!(
-                "The file information and the Video and sound panel. On, they stay at the player's top right corner, the panel left of the information when both are open; off, they are moved by their titles and keep their places.",
-                "Сведения о файле и панель «Видео и звук». Включено — они стоят в правом верхнем углу плеера, панель левее сведений, если открыты обе; выключено — перетаскиваются за заголовок и остаются там, где их оставили."
+                "The file information and the Video, sound and subtitles panel. On, they stay at the player's top right corner, the panel left of the information when both are open; off, they are moved by their titles and keep their places.",
+                "Сведения о файле и панель «Видео, звук и субтитры». Включено — они стоят в правом верхнем углу плеера, панель левее сведений, если открыты обе; выключено — перетаскиваются за заголовок и остаются там, где их оставили."
             )),
             50.0,
             |ui| switch(ui, &mut settings.panels_pinned),
@@ -1220,8 +1220,8 @@ fn keys(ui: &mut Ui) {
         (
             "U, F7",
             tr!(
-                "Video and sound panel: colour, rotation, equalizer",
-                "Панель видео и звука: цвет, поворот, эквалайзер"
+                "Video, sound and subtitles panel: colour, rotation, equalizer, subtitles",
+                "Панель видео, звука и субтитров: цвет, поворот, эквалайзер, субтитры"
             ),
         ),
         ("Ctrl+E", tr!("Save the frame", "Сохранить кадр")),
