@@ -40,8 +40,6 @@ struct Shared {
     allocated: [i32; 2],
     /// The size of the video area in pixels this frame.
     wanted: [i32; 2],
-    /// A frame was rendered in the previous paint: report its swap.
-    swap_pending: bool,
     /// For the timing of the first frame (`METALMPV_TRACE`).
     rendered_once: bool,
 }
@@ -89,7 +87,6 @@ impl Video {
             texture,
             allocated: [1, 1],
             wanted: [0, 0],
-            swap_pending: false,
             rendered_once: false,
         };
         Ok(Self {
@@ -157,9 +154,6 @@ impl Shared {
         if self.render.is_freed() {
             return;
         }
-        if std::mem::take(&mut self.swap_pending) {
-            self.render.report_swap();
-        }
         let resized = self.wanted != self.allocated;
         if resized {
             unsafe {
@@ -185,7 +179,11 @@ impl Shared {
                     started.elapsed().as_secs_f64() * 1e3
                 );
             }
-            self.swap_pending = true;
+            // Reported at once: eframe has no hook after its swap, and
+            // mpv makes no next frame before the report, so reporting in
+            // the next paint took two paints a frame (half the display's
+            // rate at most: 240 fps video ran at 121 on a 239 Hz screen).
+            self.render.report_swap();
         }
     }
 }
