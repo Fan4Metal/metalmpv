@@ -76,11 +76,11 @@ The cover is taken from the file's tags (MP3, FLAC, OGG, Opus, M4A, MP4, WAV, AP
 
 ### File types
 
-The **File types** page of the settings (`F5`) shows whether the player is registered, the buttons **Register** (**Update Registration** once registered), **Choose as Default…** and **Unregister**, and the formats the player registers with their extensions and whether the player opens each by default. The installer registers the formats too.
+The **File types** page of the settings (`F5`) shows whether the player is registered, a row per action with its button on the right — **Register** (**Update** once registered), **Choose…** for the default program and **Unregister** — and the formats the player registers with their extensions and whether the player opens each by default. The installer registers the formats too.
 
 ![The icons of the registered file types](images/file_types.png)
 
-The registration is per user and needs no administrator rights. Each format gets a type of its own with an icon (colours after GOM Player's: one hue per family of formats, Play on video, a note on audio) and a name in Explorer's Type column; the player appears in **Open with** for these files and in **Settings → Apps → Default apps**. Windows lets only the user choose the default program: **Choose as Default…** opens that page of Settings, and Windows also offers the player the next time such a file is opened. A format no program opens yet gets the player as its default at once. **Unregister** removes everything the registration wrote; the choice of another program stays as it is.
+The registration is per user and needs no administrator rights. Each format gets a type of its own with an icon (colours after GOM Player's: one hue per family of formats, Play on video, a note on audio) and a name in Explorer's Type column; the player appears in **Open with** for these files and in **Settings → Apps → Default apps**. Windows lets only the user choose the default program: **Choose…** opens that page of Settings, and Windows also offers the player the next time such a file is opened. A format no program opens yet gets the player as its default at once. **Unregister** removes everything the registration wrote; the choice of another program stays as it is.
 
 Registered formats: video MP4 (`.mp4`, `.m4v`), MKV, WebM, AVI (`.avi`, `.divx`), MOV (`.mov`, `.qt`), WMV (`.wmv`, `.asf`), FLV (`.flv`, `.f4v`), MPEG (`.mpg`, `.mpeg`, `.m2v`, `.vob`), TS (`.ts`, `.m2ts`, `.mts`), 3GP (`.3gp`, `.3g2`), OGV and RM (`.rm`, `.rmvb`); audio MP3, FLAC, AAC (`.m4a`, `.aac`), Ogg (`.ogg`, `.oga`), Opus, WAV, WMA, APE, WavPack (`.wv`), MKA, AC3 and DTS.
 

@@ -6,7 +6,7 @@
 
 use egui::{RichText, TextureHandle, Ui};
 
-use super::settings::{note, section};
+use super::settings::{divider, note, row, section};
 use super::style;
 use crate::assoc::{self, Opener, Status};
 use crate::filetypes::FILE_TYPES;
@@ -14,6 +14,8 @@ use crate::i18n::Lang;
 
 /// The side of a type's icon in points.
 const ICON: f32 = 24.0;
+/// The width of the registration's buttons.
+const BUTTON: f32 = 150.0;
 
 #[derive(Default)]
 pub struct FileTypesPage {
@@ -42,61 +44,88 @@ impl FileTypesPage {
 
         let mut action = None;
         section(ui, tr!("Registration", "Регистрация"), |ui| {
-            ui.add_space(8.0);
-            ui.label(match &status {
+            // A row per action, the buttons of one width in a column.
+            let button = |ui: &mut Ui, enabled: bool, text: &str| {
+                let size = egui::vec2(BUTTON, ui.spacing().interact_size.y);
+                ui.add_enabled_ui(enabled, |ui| ui.add_sized(size, egui::Button::new(text)))
+                    .inner
+                    .clicked()
+            };
+            let state = match &status {
                 Status::NotRegistered => tr!(
-                    "MetalMPV is not registered with Windows yet.".to_string(),
-                    "MetalMPV ещё не зарегистрирован в Windows.".to_string()
+                    "Not registered yet.".to_string(),
+                    "Ещё не зарегистрирован.".to_string()
                 ),
                 Status::Registered => tr!(
-                    "MetalMPV is registered for the types below.".to_string(),
-                    "MetalMPV зарегистрирован для типов файлов ниже.".to_string()
+                    "Registered for the types below.".to_string(),
+                    "Зарегистрирован для типов файлов ниже.".to_string()
                 ),
                 Status::OtherCopy(path) => tr!(
-                    format!("Another copy of MetalMPV is registered: {path}"),
-                    format!("Зарегистрирована другая копия MetalMPV: {path}")
+                    format!("Another copy is registered: {path}"),
+                    format!("Зарегистрирована другая копия: {path}")
                 ),
-            });
-            ui.add_space(6.0);
-            ui.horizontal_wrapped(|ui| {
-                let register = match status {
-                    Status::Registered => tr!("Update Registration", "Обновить регистрацию"),
-                    _ => tr!("Register", "Зарегистрировать"),
-                };
-                if ui.button(register).clicked() {
-                    action = Some(Action::Register);
-                }
-                let choose = egui::Button::new(tr!("Choose as Default…", "Выбрать по умолчанию…"));
-                if ui
-                    .add_enabled(status == Status::Registered, choose)
-                    .clicked()
-                {
-                    action = Some(Action::Choose);
-                }
-                let remove = egui::Button::new(tr!("Unregister", "Удалить регистрацию"));
-                if ui
-                    .add_enabled(status != Status::NotRegistered, remove)
-                    .clicked()
-                {
-                    action = Some(Action::Unregister);
-                }
-            });
-            if let Some(message) = &self.message {
-                ui.add_space(4.0);
-                ui.label(RichText::new(message).color(style::TEXT_WEAK));
+            };
+            let register = match status {
+                Status::Registered => tr!("Update", "Обновить"),
+                _ => tr!("Register", "Зарегистрировать"),
+            };
+            if row(
+                ui,
+                tr!("MetalMPV in Windows", "MetalMPV в Windows"),
+                Some(&state),
+                BUTTON,
+                |ui| button(ui, true, register),
+            ) {
+                action = Some(Action::Register);
             }
-            ui.add_space(8.0);
+            divider(ui);
+            if row(
+                ui,
+                tr!("Default program", "Программа по умолчанию"),
+                Some(tr!(
+                    "Opens Default apps in Windows' Settings.",
+                    "Открывает приложения по умолчанию в параметрах Windows."
+                )),
+                BUTTON,
+                |ui| button(ui, status == Status::Registered, tr!("Choose…", "Выбрать…")),
+            ) {
+                action = Some(Action::Choose);
+            }
+            divider(ui);
+            if row(
+                ui,
+                tr!("Remove the registration", "Удаление регистрации"),
+                Some(tr!(
+                    "Everything the registration wrote is removed.",
+                    "Удаляется всё, что записала регистрация."
+                )),
+                BUTTON,
+                |ui| {
+                    button(
+                        ui,
+                        status != Status::NotRegistered,
+                        tr!("Unregister", "Удалить"),
+                    )
+                },
+            ) {
+                action = Some(Action::Unregister);
+            }
+            if let Some(message) = &self.message {
+                divider(ui);
+                ui.add_space(8.0);
+                ui.label(RichText::new(message).color(style::TEXT_WEAK));
+                ui.add_space(8.0);
+            }
         });
         note(
             ui,
             tr!(
-                "Windows lets only the user choose the default program. After registering, \
-                 \"Choose as Default\" opens Settings: there, MetalMPV and the types it should \
-                 open are picked. Windows also offers MetalMPV the next time a video is opened.",
-                "Программу по умолчанию Windows разрешает выбирать только пользователю. После \
-                 регистрации кнопка «Выбрать по умолчанию» открывает параметры Windows: там \
-                 выбираются MetalMPV и типы файлов, которые он будет открывать. Кроме того, \
-                 Windows сама предложит MetalMPV при следующем открытии видео."
+                "Windows lets only the user choose the default program: MetalMPV and the types \
+                 it should open are picked in Settings. Windows also offers MetalMPV the next \
+                 time a video is opened.",
+                "Программу по умолчанию Windows разрешает выбирать только пользователю: \
+                 MetalMPV и типы файлов, которые он будет открывать, выбираются в параметрах \
+                 Windows. Кроме того, Windows сама предложит MetalMPV при следующем открытии видео."
             ),
         );
 
