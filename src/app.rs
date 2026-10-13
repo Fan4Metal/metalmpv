@@ -97,7 +97,8 @@ pub struct App {
     /// (`prefer_last_tracks`), once it is loaded (`pick_ready`).
     pick_tracks: bool,
     pick_ready: bool,
-    /// The picture fills the window, cropped (`4`, mpv's `panscan`).
+    /// Fullscreen with the picture filling the screen, cropped (`6`,
+    /// mpv's `panscan`); ends with fullscreen.
     fill: bool,
     /// The video area of the last frame, in points.
     picture_area: Rect,
@@ -782,6 +783,14 @@ impl App {
                     self.osd.show(Osd::Scale(scale * 100.0));
                 }
             }
+            Cmd::FitScreen => {
+                if let Some(video) = video_size(&state) {
+                    // Far bigger than any screen: `size_window` scales it
+                    // down to the work area, keeping its shape.
+                    self.size_window(ctx, frame, video.map(|v| v * 1e4));
+                    self.osd.show(Osd::FitScreen);
+                }
+            }
             Cmd::FitWindow => {
                 if let Some(video) = video_size(&state) {
                     let ppp = f64::from(ctx.pixels_per_point());
@@ -792,14 +801,24 @@ impl App {
                 }
             }
             Cmd::ToggleFill => {
-                if video_size(&state).is_some()
-                    && let Some(player) = &mut self.player
-                {
-                    self.fill = !self.fill;
-                    player.set_fill(self.fill);
-                    self.osd.show(Osd::Fill(self.fill));
+                if self.fill {
+                    // Fullscreen stays, with the black bars.
+                    self.set_fill(false);
+                    self.osd.show(Osd::Fill(false));
+                } else if video_size(&state).is_some() {
+                    self.set_fullscreen(ctx, frame, true);
+                    self.set_fill(true);
+                    self.osd.show(Osd::Fill(true));
                 }
             }
+        }
+    }
+
+    /// The picture filling the screen, cropped, or whole (`fill`).
+    fn set_fill(&mut self, on: bool) {
+        self.fill = on;
+        if let Some(player) = &mut self.player {
+            player.set_fill(on);
         }
     }
 
@@ -1388,8 +1407,9 @@ fn context_menu(
     cmds.extend(menu_cmds);
 }
 
-/// The picture's size: the window for 50 % or 100 % of the video or to the
-/// picture shown, and the picture filling the window.
+/// The picture's size: the window for 50 % to 200 % of the video, the
+/// largest window without black bars, the window to the picture shown,
+/// and the picture filling the window.
 fn zoom_menu(ui: &mut egui::Ui, state: &State, fill: bool, out: &mut Vec<Cmd>) {
     ui.menu_button(tr!("Zoom", "Масштаб"), |ui| {
         let video = video_size(state).is_some();
@@ -1402,20 +1422,42 @@ fn zoom_menu(ui: &mut egui::Ui, state: &State, fill: bool, out: &mut Vec<Cmd>) {
                 ui.close();
             }
         };
-        item(ui, "50%", "1", false, Cmd::WindowScale(0.5));
-        item(ui, "100%", "2", false, Cmd::WindowScale(1.0));
+        for (n, scale) in [0.5, 1.0, 1.5, 2.0].into_iter().enumerate() {
+            let text = format!("{:.0}%", scale * 100.0);
+            item(
+                ui,
+                &text,
+                &(n + 1).to_string(),
+                false,
+                Cmd::WindowScale(scale),
+            );
+        }
+        ui.separator();
+        item(
+            ui,
+            tr!(
+                "Largest window without black bars",
+                "Развернуть без чёрных полос"
+            ),
+            "5",
+            false,
+            Cmd::FitScreen,
+        );
         item(
             ui,
             tr!("Window to the picture", "Окно по размеру картинки"),
-            "3",
+            tr!("`", "Ё"),
             false,
             Cmd::FitWindow,
         );
         ui.separator();
         item(
             ui,
-            tr!("Fill the window (crops)", "Заполнить окно (с обрезкой)"),
-            "4",
+            tr!(
+                "Fullscreen without black bars (crops)",
+                "Полный экран без чёрных полос (с обрезкой)"
+            ),
+            "6",
             fill,
             Cmd::ToggleFill,
         );
@@ -1476,6 +1518,11 @@ impl eframe::App for App {
         let ctx = root_ui.ctx().clone();
         self.uncloak(&ctx);
         let fullscreen = frameless::is_fullscreen(&ctx);
+        // Fullscreen left by other means (Esc, Enter, `1`…): the picture is
+        // whole again.
+        if self.fullscreen && !fullscreen && self.fill {
+            self.set_fill(false);
+        }
         self.fullscreen = fullscreen;
         let maximized = frameless::is_maximized(&ctx);
         let state = self.state();

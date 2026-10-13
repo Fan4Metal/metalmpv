@@ -72,12 +72,16 @@ pub enum Cmd {
     /// The position, the duration and the chapter on the OSD (`O`).
     ShowPosition,
     /// Size the window for the picture at this part of the video's size
-    /// (`1`: 0.5, `2`: 1).
+    /// (`1` to `4`: 0.5, 1, 1.5, 2).
     WindowScale(f64),
-    /// Size the window to the picture shown, without the black bars (`3`).
+    /// The largest window the work area holds, the picture without black
+    /// bars (`5`).
+    FitScreen,
+    /// Size the window to the picture shown, without the black bars
+    /// (`` ` ``, `Ё` in the Russian layout).
     FitWindow,
-    /// Enlarge the picture to fill the window, cropping it, or show it
-    /// whole again (`4`).
+    /// Fullscreen with the picture filling the screen, cropped, or the
+    /// whole picture again, still in fullscreen (`6`).
     ToggleFill,
     Minimize,
     ToggleMaximize,
@@ -126,8 +130,12 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
         Key::V if !ctrl => Cmd::ToggleSubs,
         Key::Num1 if !ctrl && !m.alt => Cmd::WindowScale(0.5),
         Key::Num2 if !ctrl && !m.alt => Cmd::WindowScale(1.0),
-        Key::Num3 if !ctrl && !m.alt => Cmd::FitWindow,
-        Key::Num4 if !ctrl && !m.alt => Cmd::ToggleFill,
+        Key::Num3 if !ctrl && !m.alt => Cmd::WindowScale(1.5),
+        Key::Num4 if !ctrl && !m.alt => Cmd::WindowScale(2.0),
+        Key::Num5 if !ctrl && !m.alt => Cmd::FitScreen,
+        // The key left of 1: `Ё` in the Russian layout.
+        Key::Backtick if !ctrl && !m.alt => Cmd::FitWindow,
+        Key::Num6 if !ctrl && !m.alt => Cmd::ToggleFill,
         _ => return None,
     };
     let repeats = matches!(
@@ -205,8 +213,11 @@ mod tests {
         let none = Modifiers::NONE;
         assert_eq!(command(Key::Num1, none, false), Some(Cmd::WindowScale(0.5)));
         assert_eq!(command(Key::Num2, none, false), Some(Cmd::WindowScale(1.0)));
-        assert_eq!(command(Key::Num3, none, false), Some(Cmd::FitWindow));
-        assert_eq!(command(Key::Num4, none, false), Some(Cmd::ToggleFill));
+        assert_eq!(command(Key::Num3, none, false), Some(Cmd::WindowScale(1.5)));
+        assert_eq!(command(Key::Num4, none, false), Some(Cmd::WindowScale(2.0)));
+        assert_eq!(command(Key::Num5, none, false), Some(Cmd::FitScreen));
+        assert_eq!(command(Key::Backtick, none, false), Some(Cmd::FitWindow));
+        assert_eq!(command(Key::Num6, none, false), Some(Cmd::ToggleFill));
         assert_eq!(command(Key::Num4, none, true), None);
         assert_eq!(command(Key::Num1, Modifiers::COMMAND, false), None);
         assert_eq!(command(Key::Num1, Modifiers::ALT, false), None);

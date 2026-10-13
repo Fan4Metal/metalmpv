@@ -176,9 +176,12 @@ pub enum Osd {
     },
     /// The window sized for the picture at `percent` of the video's size.
     Scale(f64),
+    /// The largest window the screen holds, without the bars.
+    FitScreen,
     /// The window sized to the picture, without the bars.
     FitWindow,
-    /// The picture fills the window, cropped, or is shown whole.
+    /// Fullscreen with the picture filling the screen, cropped, or the
+    /// picture whole again.
     Fill(bool),
     /// Free text: a file name, an error.
     Text(String),
@@ -293,14 +296,18 @@ impl Osd {
                     format!("[ Size {percent:.0}% ]")
                 }
             }
+            Osd::FitScreen => match ru {
+                false => "[ Largest window without black bars ]".into(),
+                true => "[ Развёрнуто без чёрных полос ]".into(),
+            },
             Osd::FitWindow => match ru {
                 false => "[ Window fitted to the picture ]".into(),
                 true => "[ Окно по размеру картинки ]".into(),
             },
             Osd::Fill(on) => match (on, ru) {
-                (true, false) => "[ Fill the window ]".into(),
+                (true, false) => "[ Fullscreen without black bars ]".into(),
                 (false, false) => "[ Whole picture ]".into(),
-                (true, true) => "[ Заполнить окно ]".into(),
+                (true, true) => "[ Полный экран без чёрных полос ]".into(),
                 (false, true) => "[ Картинка целиком ]".into(),
             },
             Osd::Text(t) => t.clone(),
@@ -432,7 +439,10 @@ mod tests {
         );
         assert_eq!(Osd::Scale(50.0).text_in(Lang::Ru), "[ Размер 50% ]");
         assert_eq!(Osd::Scale(100.0).text_in(Lang::En), "[ Size 100% ]");
-        assert_eq!(Osd::Fill(true).text_in(Lang::Ru), "[ Заполнить окно ]");
+        assert_eq!(
+            Osd::Fill(true).text_in(Lang::Ru),
+            "[ Полный экран без чёрных полос ]"
+        );
         assert_eq!(Osd::Fill(false).text_in(Lang::En), "[ Whole picture ]");
     }
 }

@@ -28,7 +28,7 @@ MetalMPV is a video player for Windows with a classic layout: the picture fills 
 - **Every common format**: MP4, MKV, AVI, MOV, WebM, TS, WMV and more, audio files included; subtitles next to the video are loaded automatically.
 - **Audio tracks and subtitles** in one window by the volume (`T`), both lists side by side; subtitles from a file of their own by **Load from a file…** or by dropping the file onto the playing video (see [Audio and subtitles](#audio-and-subtitles)).
 - **File information** (`I`): the cover, the tags, the size, the container and the details of every track in a window that stays over the player while it plays; the cover of an audio file fills the picture (see [File information](#file-information)).
-- **Window for the picture**: 50 % or 100 % of the video's size, the window fitted to the picture without black bars, or the picture filling the window (`1`–`4`).
+- **Window for the picture**: 50 %, 100 %, 150 % or 200 % of the video's size, the largest window without black bars, the window fitted to the picture, or fullscreen without black bars (`1`–`6`, `` ` ``).
 - **Chapters**: marks on the seek bar, which can be turned off, and a list under the playlist to go to a chapter (see [Chapters](#chapters)).
 - **Hardware decoding** (NVDEC, D3D11VA and others, chosen by libmpv), which can be turned off in the settings.
 - **Resume**: a film opened again goes on from where it was stopped (see [Settings](#settings)).
@@ -57,7 +57,7 @@ A file is opened with the **Open** button (the eject symbol, `Ctrl+O`), by dropp
 
 The window has its own title row: it is moved by dragging the title, the picture or the free space of the control bar, resized by its edges, and maximised by a double click on the title. A double click on the picture or `Enter` switches to fullscreen, where only the picture is left; the control bar at the bottom and the file's name at the top appear over it independently, each while the pointer is near its edge, and the pointer itself hides after half a second of rest away from them. The strip with the name can be turned off, and the transparency of both is set in the settings.
 
-`1` and `2` size the window so that the picture is shown at 50 % or 100 % of the video's size (at 100 %, a pixel of the video on a pixel of the screen), `3` fits the window to the picture shown, removing the black bars, and `4` enlarges the picture to fill the window, cropping its edges, or shows it whole again. A maximised window is restored first and fullscreen is left; a window that would not fit the screen is made smaller, the picture keeping its shape, and keeps its centre where possible. The same commands are in the **Zoom** submenu of the picture's context menu.
+`1`, `2`, `3` and `4` size the window so that the picture is shown at 50 %, 100 %, 150 % or 200 % of the video's size (at 100 %, a pixel of the video on a pixel of the screen), `5` makes the largest window the screen holds with the picture's shape, so that there are no black bars, and `` ` `` (`Ё` in the Russian layout) fits the window to the picture shown, removing the black bars. A maximised window is restored first and fullscreen is left; a window that would not fit the screen is made smaller, the picture keeping its shape, and keeps its centre where possible. `6` switches to fullscreen with the picture enlarged to fill the screen, its edges cropped, so that there are no black bars; `6` again shows the picture whole with the black bars, still in fullscreen, and leaving fullscreen does so too. The same commands are in the **Zoom** submenu of the picture's context menu.
 
 The control bar holds the seek bar (a click or a drag moves there; the time under the pointer is shown), the time (a click on it switches between the position with the duration, the position alone and the time remaining; the choice is kept), the buttons **Open**, **Stop**, **Previous file**, **Play/Pause**, **Next file**, **Settings** and **Playlist**, the volume and the fullscreen button. A right click on the picture opens a menu with the same commands.
 
@@ -135,9 +135,10 @@ The list of fonts has a search field at its top. The **Keys** category lists the
 | `V` | Subtitles off, and on again |
 | `Page Up` / `Page Down` | Previous / next file of the playlist |
 | `Enter`, `F11`, double click | Fullscreen |
-| `1` / `2` | Window for the picture at 50 % / 100 % of the video's size |
-| `3` | Window fitted to the picture, without black bars |
-| `4` | Picture filling the window (cropped), or whole again |
+| `1` / `2` / `3` / `4` | Window for the picture at 50 % / 100 % / 150 % / 200 % of the video's size |
+| `5` | The largest window the screen holds, without black bars |
+| `` ` `` (`Ё`) | Window fitted to the picture, without black bars |
+| `6` | Fullscreen without black bars (the picture cropped); again, with them |
 | `Esc` | Closes the file information window, else leaves fullscreen, else closes the program |
 | `Ctrl+O` | Open files |
 | `L`, middle click on the picture | Show or hide the playlist |
