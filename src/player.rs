@@ -599,6 +599,13 @@ impl Player {
         self.mpv.set("hwdec", &Value::Str(hwdec_option(on).into()));
     }
 
+    /// Enlarge the picture to fill the window, cropping what is beyond it
+    /// (mpv's `panscan` 1), or show it whole (0).
+    pub fn set_fill(&mut self, on: bool) {
+        self.mpv
+            .set("panscan", &Value::Double(if on { 1.0 } else { 0.0 }));
+    }
+
     /// The font family of text subtitles (empty: mpv's, `sans-serif`) and
     /// the size of all subtitles in percent. ASS subtitles keep their
     /// own fonts.

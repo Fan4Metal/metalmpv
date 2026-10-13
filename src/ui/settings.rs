@@ -914,7 +914,7 @@ fn update_status(ui: &mut Ui, updates: &Updates) {
 
 /// The keys, as in the README.
 fn keys(ui: &mut Ui) {
-    let rows: [(&str, &str); 21] = [
+    let rows: [(&str, &str); 24] = [
         (
             tr!("Space", "Пробел"),
             tr!("Play / pause", "Воспроизведение / пауза"),
@@ -957,6 +957,24 @@ fn keys(ui: &mut Ui) {
         (
             tr!("Enter, F11, double click", "Enter, F11, двойной щелчок"),
             tr!("Fullscreen", "Полный экран"),
+        ),
+        (
+            "1 / 2",
+            tr!(
+                "Window for 50% / 100% of the video",
+                "Окно под 50% / 100% размера видео"
+            ),
+        ),
+        (
+            "3",
+            tr!("Window to the picture", "Окно по размеру картинки"),
+        ),
+        (
+            "4",
+            tr!(
+                "Fill the window (crops) / whole picture",
+                "Заполнить окно (с обрезкой) / картинка целиком"
+            ),
         ),
         (
             "Esc",

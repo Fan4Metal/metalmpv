@@ -26,6 +26,7 @@ use crate::player::{Happened, Player, Seek, State};
 use crate::playlist::{self, Playlist};
 use crate::resume::{Positions, Tracks};
 use crate::settings::Settings;
+use crate::sizing;
 use crate::tracks::{self, Kind};
 use crate::ui::about::AboutDialog;
 use crate::ui::info::{CoverView, InfoWindow};
@@ -96,6 +97,16 @@ pub struct App {
     /// (`prefer_last_tracks`), once it is loaded (`pick_ready`).
     pick_tracks: bool,
     pick_ready: bool,
+    /// The picture fills the window, cropped (`4`, mpv's `panscan`).
+    fill: bool,
+    /// The video area of the last frame, in points.
+    picture_area: Rect,
+    /// The title row, the control bar and the playlist around the video
+    /// area in a window (not fullscreen), in points.
+    chrome: egui::Vec2,
+    /// The picture's size in pixels the window is to be made for once
+    /// fullscreen has ended (`1`, `2`, `3` in fullscreen).
+    pending_picture: Option<[f64; 2]>,
 }
 
 impl App {
@@ -204,6 +215,10 @@ impl App {
             positions,
             pick_tracks: false,
             pick_ready: false,
+            fill: false,
+            picture_area: Rect::NOTHING,
+            chrome: egui::Vec2::ZERO,
+            pending_picture: None,
         };
         app.open(files);
         app
@@ -761,7 +776,71 @@ impl App {
                 }
             }
             Cmd::Close => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            Cmd::WindowScale(scale) => {
+                if let Some(video) = video_size(&state) {
+                    self.size_window(ctx, frame, [video[0] * scale, video[1] * scale]);
+                    self.osd.show(Osd::Scale(scale * 100.0));
+                }
+            }
+            Cmd::FitWindow => {
+                if let Some(video) = video_size(&state) {
+                    let ppp = f64::from(ctx.pixels_per_point());
+                    let area = self.picture_area.size();
+                    let area = [f64::from(area.x) * ppp, f64::from(area.y) * ppp];
+                    self.size_window(ctx, frame, sizing::fitted(video, area));
+                    self.osd.show(Osd::FitWindow);
+                }
+            }
+            Cmd::ToggleFill => {
+                if video_size(&state).is_some()
+                    && let Some(player) = &mut self.player
+                {
+                    self.fill = !self.fill;
+                    player.set_fill(self.fill);
+                    self.osd.show(Osd::Fill(self.fill));
+                }
+            }
         }
+    }
+
+    /// Size the window so that its video area shows `picture` pixels,
+    /// keeping its centre and staying on the monitor's work area (a
+    /// picture too big for it is scaled down); a maximized window is
+    /// restored first. In fullscreen, fullscreen ends and the window is
+    /// sized in the next frame (`pending_picture`).
+    fn size_window(&mut self, ctx: &egui::Context, frame: &eframe::Frame, picture: [f64; 2]) {
+        if frameless::is_fullscreen(ctx) {
+            self.pending_picture = Some(picture);
+            self.set_fullscreen(ctx, frame, false);
+            return;
+        }
+        let Some(hwnd) = self.hwnd else {
+            return;
+        };
+        let (Some(work), Some((window, client))) =
+            (win::work_area(hwnd), win::restored_rects(hwnd))
+        else {
+            return;
+        };
+        let ppp = f64::from(ctx.pixels_per_point());
+        let chrome = [
+            f64::from(self.chrome.x) * ppp,
+            f64::from(self.chrome.y) * ppp,
+        ];
+        let min = crate::MIN_SIZE.map(|v| f64::from(v) * ppp);
+        // A frame around the client area, if Windows draws one.
+        let border = [
+            window[2] - window[0] - client[0],
+            window[3] - window[1] - client[1],
+        ];
+        let room = [
+            f64::from(work[2] - work[0] - border[0]),
+            f64::from(work[3] - work[1] - border[1]),
+        ];
+        let size = sizing::client_size(picture, chrome, room, min);
+        let rect = sizing::placed(window, [size[0] + border[0], size[1] + border[1]], work);
+        log::debug!("window for a picture of {picture:?} px: {rect:?}");
+        win::set_rect(hwnd, rect);
     }
 
     /// Take what the player and other starts have to say; also called
@@ -932,9 +1011,14 @@ impl App {
                 cmds.push(Cmd::Volume(notches as f64 * input::VOLUME_STEP));
             }
         }
-        let (playlist_visible, chapter_marks) =
-            (self.settings.playlist_visible, self.settings.chapter_marks);
-        response.context_menu(|ui| context_menu(ui, state, playlist_visible, chapter_marks, cmds));
+        let (playlist_visible, chapter_marks, fill) = (
+            self.settings.playlist_visible,
+            self.settings.chapter_marks,
+            self.fill,
+        );
+        response.context_menu(|ui| {
+            context_menu(ui, state, playlist_visible, chapter_marks, fill, cmds)
+        });
         if ui.input(|i| !i.raw.hovered_files.is_empty()) {
             ui.painter()
                 .rect_filled(rect.shrink(12.0), 8.0, Color32::from_black_alpha(160));
@@ -1169,6 +1253,14 @@ struct Panels {
 
 /// The icon of the start screen in points: 112 as in qview, 64 in a low
 /// window (both embedded at 100–200 %).
+/// The video's display size in pixels, `None` without a picture.
+fn video_size(state: &State) -> Option<[f64; 2]> {
+    match (state.width, state.height) {
+        (Some(w), Some(h)) => Some([w as f64, h as f64]),
+        _ => None,
+    }
+}
+
 fn start_icon_size(rect: Rect) -> f32 {
     if rect.height() >= 340.0 { 112.0 } else { 64.0 }
 }
@@ -1223,8 +1315,11 @@ fn context_menu(
     state: &State,
     playlist_visible: bool,
     chapter_marks: bool,
+    fill: bool,
     cmds: &mut Vec<Cmd>,
 ) {
+    // Gathered apart: `item` holds `cmds` until its last use.
+    let mut menu_cmds = Vec::new();
     let mut item = |ui: &mut egui::Ui, text: String, shortcut: &str, cmd: Cmd| {
         let button = egui::Button::new(text).shortcut_text(shortcut);
         if ui.add(button).clicked() {
@@ -1266,6 +1361,7 @@ fn context_menu(
         "Enter",
         Cmd::ToggleFullscreen,
     );
+    zoom_menu(ui, state, fill, &mut menu_cmds);
     let list = if playlist_visible {
         tr!("Hide the playlist", "Скрыть список")
     } else {
@@ -1279,10 +1375,8 @@ fn context_menu(
     };
     item(ui, mute.into(), "M", Cmd::ToggleMute);
     ui.separator();
-    // Gathered apart: `item` holds `cmds` until its last use.
-    let mut track_cmds = Vec::new();
-    crate::ui::tracks::menus(ui, &state.tracks, &mut track_cmds);
-    chapters_menu(ui, state, chapter_marks, &mut track_cmds);
+    crate::ui::tracks::menus(ui, &state.tracks, &mut menu_cmds);
+    chapters_menu(ui, state, chapter_marks, &mut menu_cmds);
     ui.separator();
     item(
         ui,
@@ -1291,7 +1385,41 @@ fn context_menu(
         Cmd::Settings,
     );
     item(ui, tr!("About", "О программе").into(), "F1", Cmd::About);
-    cmds.extend(track_cmds);
+    cmds.extend(menu_cmds);
+}
+
+/// The picture's size: the window for 50 % or 100 % of the video or to the
+/// picture shown, and the picture filling the window.
+fn zoom_menu(ui: &mut egui::Ui, state: &State, fill: bool, out: &mut Vec<Cmd>) {
+    ui.menu_button(tr!("Zoom", "Масштаб"), |ui| {
+        let video = video_size(state).is_some();
+        let mut item = |ui: &mut egui::Ui, text: &str, key: &str, selected: bool, cmd: Cmd| {
+            let button = egui::Button::new(text)
+                .shortcut_text(key)
+                .selected(selected);
+            if ui.add_enabled(video, button).clicked() {
+                out.push(cmd);
+                ui.close();
+            }
+        };
+        item(ui, "50%", "1", false, Cmd::WindowScale(0.5));
+        item(ui, "100%", "2", false, Cmd::WindowScale(1.0));
+        item(
+            ui,
+            tr!("Window to the picture", "Окно по размеру картинки"),
+            "3",
+            false,
+            Cmd::FitWindow,
+        );
+        ui.separator();
+        item(
+            ui,
+            tr!("Fill the window (crops)", "Заполнить окно (с обрезкой)"),
+            "4",
+            fill,
+            Cmd::ToggleFill,
+        );
+    });
 }
 
 /// The chapters' submenu: the marks on the seek bar, then the chapters,
@@ -1438,8 +1566,17 @@ impl eframe::App for App {
                     });
             }
         }
-        egui::CentralPanel::no_frame()
-            .show(root_ui, |ui| self.video_area(ui, frame, &state, &mut cmds));
+        let picture = egui::CentralPanel::no_frame()
+            .show(root_ui, |ui| self.video_area(ui, frame, &state, &mut cmds))
+            .response
+            .rect;
+        self.picture_area = picture;
+        if !fullscreen {
+            self.chrome = ctx.content_rect().size() - picture.size();
+            if let Some(picture) = self.pending_picture.take() {
+                self.size_window(&ctx, frame, picture);
+            }
+        }
         if fullscreen {
             self.fullscreen_controls(&ctx, &state, &title, &mut cmds);
         }

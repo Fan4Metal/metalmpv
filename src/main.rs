@@ -25,6 +25,7 @@ mod player;
 mod playlist;
 mod resume;
 mod settings;
+mod sizing;
 mod tracks;
 mod type_icon;
 mod ui;
@@ -50,6 +51,8 @@ pub const APP_ID: &str = "MetalMPV";
 pub const VERSION: &str = env!("METALMPV_VERSION");
 /// The window's size on the first start, in points.
 pub const DEFAULT_SIZE: [f32; 2] = [960.0, 600.0];
+/// The smallest the window may be made, in points.
+pub const MIN_SIZE: [f32; 2] = [560.0, 340.0];
 
 /// The window was saved maximized: `window_builder` creates it restored and
 /// `App::new` maximizes it while cloaked (winit would show a window created
@@ -163,7 +166,7 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_title(APP_NAME)
             .with_inner_size(DEFAULT_SIZE)
-            .with_min_inner_size([560.0, 340.0])
+            .with_min_inner_size(MIN_SIZE)
             // The title row is the app's own (frameless.rs).
             .with_decorations(false)
             .with_resizable(true)

@@ -174,6 +174,12 @@ pub enum Osd {
         duration: Option<f64>,
         chapter: Option<(usize, Option<String>)>,
     },
+    /// The window sized for the picture at `percent` of the video's size.
+    Scale(f64),
+    /// The window sized to the picture, without the bars.
+    FitWindow,
+    /// The picture fills the window, cropped, or is shown whole.
+    Fill(bool),
     /// Free text: a file name, an error.
     Text(String),
 }
@@ -280,6 +286,23 @@ impl Osd {
                 }
                 format!("[ {text} ]")
             }
+            Osd::Scale(percent) => {
+                if ru {
+                    format!("[ Размер {percent:.0}% ]")
+                } else {
+                    format!("[ Size {percent:.0}% ]")
+                }
+            }
+            Osd::FitWindow => match ru {
+                false => "[ Window fitted to the picture ]".into(),
+                true => "[ Окно по размеру картинки ]".into(),
+            },
+            Osd::Fill(on) => match (on, ru) {
+                (true, false) => "[ Fill the window ]".into(),
+                (false, false) => "[ Whole picture ]".into(),
+                (true, true) => "[ Заполнить окно ]".into(),
+                (false, true) => "[ Картинка целиком ]".into(),
+            },
             Osd::Text(t) => t.clone(),
         }
     }
@@ -407,5 +430,9 @@ mod tests {
             position(Some((3, Some("The Quickening".into())))).text_in(Lang::En),
             "[ 00:42:10 / 01:48:57 (38.7%) · Chapter 3: The Quickening ]"
         );
+        assert_eq!(Osd::Scale(50.0).text_in(Lang::Ru), "[ Размер 50% ]");
+        assert_eq!(Osd::Scale(100.0).text_in(Lang::En), "[ Size 100% ]");
+        assert_eq!(Osd::Fill(true).text_in(Lang::Ru), "[ Заполнить окно ]");
+        assert_eq!(Osd::Fill(false).text_in(Lang::En), "[ Whole picture ]");
     }
 }

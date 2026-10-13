@@ -298,6 +298,63 @@ pub fn show_maximized(hwnd: isize, normal: Option<[i32; 4]>, default: [f32; 2]) 
     unsafe { SetWindowPlacement(hwnd as _, &placement) };
 }
 
+/// The work area (left, top, right, bottom in pixels: the screen without
+/// the taskbar) of the monitor the window is mostly on.
+pub fn work_area(hwnd: isize) -> Option<[i32; 4]> {
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+    };
+    let monitor = unsafe { MonitorFromWindow(hwnd as _, MONITOR_DEFAULTTONEAREST) };
+    let mut info: MONITORINFO = unsafe { std::mem::zeroed() };
+    info.cbSize = size_of::<MONITORINFO>() as u32;
+    if unsafe { GetMonitorInfoW(monitor, &mut info) } == 0 {
+        return None;
+    }
+    let r = info.rcWork;
+    Some([r.left, r.top, r.right, r.bottom])
+}
+
+/// Restore a maximized window; the window's rectangle and the size of its
+/// client area, in pixels.
+pub fn restored_rects(hwnd: isize) -> Option<([i32; 4], [i32; 2])> {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetClientRect, GetWindowRect, IsZoomed, SW_RESTORE, ShowWindow,
+    };
+    if unsafe { IsZoomed(hwnd as _) } != 0 {
+        unsafe { ShowWindow(hwnd as _, SW_RESTORE) };
+    }
+    let mut window = RECT::default();
+    let mut client = RECT::default();
+    if unsafe { GetWindowRect(hwnd as _, &mut window) } == 0
+        || unsafe { GetClientRect(hwnd as _, &mut client) } == 0
+    {
+        return None;
+    }
+    Some((
+        [window.left, window.top, window.right, window.bottom],
+        [client.right - client.left, client.bottom - client.top],
+    ))
+}
+
+/// Move and size the window to `rect` (pixels).
+pub fn set_rect(hwnd: isize, rect: [i32; 4]) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER, SetWindowPos,
+    };
+    unsafe {
+        SetWindowPos(
+            hwnd as _,
+            std::ptr::null_mut(),
+            rect[0],
+            rect[1],
+            rect[2] - rect[0],
+            rect[3] - rect[1],
+            SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE,
+        )
+    };
+}
+
 /// The double-click time of Windows in seconds (egui assumes 0.3).
 pub fn double_click_time() -> f64 {
     #[link(name = "user32")]

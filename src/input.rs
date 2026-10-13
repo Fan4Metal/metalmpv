@@ -71,6 +71,14 @@ pub enum Cmd {
     CycleTime,
     /// The position, the duration and the chapter on the OSD (`O`).
     ShowPosition,
+    /// Size the window for the picture at this part of the video's size
+    /// (`1`: 0.5, `2`: 1).
+    WindowScale(f64),
+    /// Size the window to the picture shown, without the black bars (`3`).
+    FitWindow,
+    /// Enlarge the picture to fill the window, cropping it, or show it
+    /// whole again (`4`).
+    ToggleFill,
     Minimize,
     ToggleMaximize,
     Close,
@@ -116,6 +124,10 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
         // S as in subtitles; J as in mpv.
         Key::S | Key::J if !ctrl => Cmd::CycleSubs,
         Key::V if !ctrl => Cmd::ToggleSubs,
+        Key::Num1 if !ctrl && !m.alt => Cmd::WindowScale(0.5),
+        Key::Num2 if !ctrl && !m.alt => Cmd::WindowScale(1.0),
+        Key::Num3 if !ctrl && !m.alt => Cmd::FitWindow,
+        Key::Num4 if !ctrl && !m.alt => Cmd::ToggleFill,
         _ => return None,
     };
     let repeats = matches!(
@@ -186,6 +198,18 @@ mod tests {
             command(Key::Period, Modifiers::NONE, true),
             Some(Cmd::Frame { forward: true })
         );
+    }
+
+    #[test]
+    fn digits_size_the_picture() {
+        let none = Modifiers::NONE;
+        assert_eq!(command(Key::Num1, none, false), Some(Cmd::WindowScale(0.5)));
+        assert_eq!(command(Key::Num2, none, false), Some(Cmd::WindowScale(1.0)));
+        assert_eq!(command(Key::Num3, none, false), Some(Cmd::FitWindow));
+        assert_eq!(command(Key::Num4, none, false), Some(Cmd::ToggleFill));
+        assert_eq!(command(Key::Num4, none, true), None);
+        assert_eq!(command(Key::Num1, Modifiers::COMMAND, false), None);
+        assert_eq!(command(Key::Num1, Modifiers::ALT, false), None);
     }
 
     #[test]
