@@ -995,6 +995,9 @@ mod tests {
             outline_color: [0, 0, 255],
             outline: 3.0,
             pos: 90.0,
+            bold: true,
+            shadow: 2.0,
+            boxed: true,
         };
         player.set_sub_style(&style);
         let options = style.options();
@@ -1032,6 +1035,11 @@ mod tests {
         assert!(text(5).starts_with("90"), "{}", text(5));
         // Colours come back with their alpha first.
         assert_eq!(text(2), "#FFFFFF00");
+        // The box: the outline's colour, a little see-through.
+        assert_eq!(text(3), "#C00000FF");
+        assert_eq!(text(6), "yes");
+        assert!(text(7).starts_with("2."), "{}", text(7));
+        assert_eq!(text(8), "opaque-box");
     }
 
     /// The picture's adjustments on a real file without a window: mpv

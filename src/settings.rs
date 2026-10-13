@@ -99,6 +99,9 @@ const SUB_COLOR: &str = "sub_color";
 const SUB_OUTLINE_COLOR: &str = "sub_outline_color";
 const SUB_OUTLINE: &str = "sub_outline";
 const SUB_POS: &str = "sub_pos";
+const SUB_BOLD: &str = "sub_bold";
+const SUB_SHADOW: &str = "sub_shadow";
+const SUB_BOX: &str = "sub_box";
 const OSD_FONT: &str = "osd_font";
 const OSD_FONT_FILE: &str = "osd_font_file";
 const OSD_SCALE: &str = "osd_scale";
@@ -431,6 +434,9 @@ impl Settings {
                     .unwrap_or(d.sub.outline_color),
                 outline: number(SUB_OUTLINE, sub_style::OUTLINE_RANGE, d.sub.outline),
                 pos: number(SUB_POS, sub_style::POS_RANGE, d.sub.pos),
+                bold: flag(SUB_BOLD, d.sub.bold),
+                shadow: number(SUB_SHADOW, sub_style::SHADOW_RANGE, d.sub.shadow),
+                boxed: flag(SUB_BOX, d.sub.boxed),
             },
             osd_font: osd_font
                 .as_ref()
@@ -515,6 +521,9 @@ impl Settings {
         storage.set_string(SUB_OUTLINE_COLOR, sub_style::hex(self.sub.outline_color));
         storage.set_string(SUB_OUTLINE, format!("{:.2}", self.sub.outline));
         storage.set_string(SUB_POS, format!("{:.0}", self.sub.pos));
+        storage.set_string(SUB_BOLD, self.sub.bold.to_string());
+        storage.set_string(SUB_SHADOW, format!("{:.2}", self.sub.shadow));
+        storage.set_string(SUB_BOX, self.sub.boxed.to_string());
         match &self.osd_font_file {
             Some((path, index)) if !self.osd_font.is_empty() => {
                 storage.set_string(OSD_FONT, self.osd_font.clone());
@@ -617,6 +626,9 @@ mod tests {
                 outline_color: [20, 20, 60],
                 outline: 2.5,
                 pos: 90.0,
+                bold: true,
+                shadow: 1.5,
+                boxed: true,
             },
             osd_font: "Segoe UI".into(),
             osd_font_file: Some((PathBuf::from(r"C:\Windows\Fonts\segoeui.ttf"), 0)),

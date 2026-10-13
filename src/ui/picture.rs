@@ -369,6 +369,22 @@ fn subtitles_tab(ui: &mut Ui, style: &mut SubStyle) {
     let spacing = ui.spacing().item_spacing.x;
     ui.spacing_mut().slider_width = WIDTH - LABEL - VALUE - RESET - 3.0 * spacing;
     ui.spacing_mut().interact_size.x = VALUE;
+    heading(ui, tr!("Style", "Стиль"));
+    labelled(ui, tr!("Ready-made", "Заготовка"), |ui| {
+        let preset = sub_style::Preset::of(style);
+        let name = preset.map_or(tr!("Own", "Свой"), sub_style::Preset::label);
+        egui::ComboBox::from_id_salt("sub_preset")
+            .selected_text(name)
+            .width(WIDTH - LABEL - 2.0 * spacing)
+            .show_ui(ui, |ui| {
+                for p in sub_style::Preset::ALL {
+                    if ui.selectable_label(preset == Some(p), p.label()).clicked() {
+                        p.apply(style);
+                    }
+                }
+            });
+    });
+
     heading(ui, tr!("Text", "Текст"));
     labelled(ui, tr!("Font", "Шрифт"), |ui| {
         let width = WIDTH - LABEL - RESET - 3.0 * spacing;
@@ -388,23 +404,46 @@ fn subtitles_tab(ui: &mut Ui, style: &mut SubStyle) {
         (5.0, 0, " %"),
         d.scale,
     );
+    labelled(ui, "", |ui| {
+        ui.checkbox(&mut style.bold, tr!("Bold", "Жирные"));
+    });
 
     heading(ui, tr!("Colour", "Цвет"));
     color_row(ui, tr!("Letters", "Буквы"), &mut style.color, d.color);
-    color_row(
-        ui,
-        tr!("Outline", "Обводка"),
-        &mut style.outline_color,
-        d.outline_color,
-    );
+    // With the box, the outline's colour and thickness are the box's
+    // colour and margin.
+    let (outline, thickness) = if style.boxed {
+        (tr!("Box", "Подложка"), tr!("Margin", "Поля"))
+    } else {
+        (tr!("Outline", "Обводка"), tr!("Thickness", "Толщина"))
+    };
+    color_row(ui, outline, &mut style.outline_color, d.outline_color);
     slider_row(
         ui,
-        tr!("Thickness", "Толщина"),
+        thickness,
         &mut style.outline,
         sub_style::OUTLINE_RANGE,
         (0.05, 2, ""),
         d.outline,
     );
+    slider_row(
+        ui,
+        tr!("Shadow", "Тень"),
+        &mut style.shadow,
+        sub_style::SHADOW_RANGE,
+        (0.25, 2, ""),
+        d.shadow,
+    );
+    labelled(ui, "", |ui| {
+        ui.checkbox(
+            &mut style.boxed,
+            tr!("A box behind the text", "Подложка под текстом"),
+        )
+        .on_hover_text(tr!(
+            "A dark, slightly see-through box behind each line in place of the outline, of the outline's colour.",
+            "Тёмная полупрозрачная плашка под каждой строкой вместо обводки, цвета обводки."
+        ));
+    });
 
     heading(ui, tr!("Place", "Положение"));
     slider_row(
