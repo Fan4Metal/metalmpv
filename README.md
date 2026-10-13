@@ -141,7 +141,7 @@ The list of fonts has a search field at its top. The **Keys** category lists the
 | Key | Action |
 |---|---|
 | `Space` | Play / pause |
-| `←` / `→` | Back / forward by the short step (10 s), on keyframes |
+| `←` / `→`, the mouse's back / forward buttons | Back / forward by the short step (10 s), on keyframes; the mouse's buttons with `Ctrl` or `Shift` as the arrows |
 | `Ctrl+←` / `Ctrl+→` | Back / forward by the long step (60 s), on keyframes |
 | `Shift+←` / `Shift+→` | Back / forward by 1 s to the exact frame |
 | `,` / `.` (or `D` / `F`) | Previous / next frame |

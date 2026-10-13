@@ -1154,8 +1154,8 @@ fn keys(ui: &mut Ui) {
         (
             "← / →",
             tr!(
-                "Seek by the short step, keyframes",
-                "Перемотка на короткий шаг, по ключевым кадрам"
+                "Seek by the short step, keyframes; also the mouse's back and forward buttons",
+                "Перемотка на короткий шаг, по ключевым кадрам; также кнопки мыши «назад» и «вперёд»"
             ),
         ),
         (

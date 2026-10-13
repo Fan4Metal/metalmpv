@@ -223,15 +223,40 @@ pub fn keys(ctx: &egui::Context) -> Vec<Cmd> {
                     modifiers,
                     ..
                 } => command(*key, *modifiers, *repeat),
+                // The mouse's side buttons as the arrows: back is Left,
+                // forward is Right (with Ctrl and Shift as they go).
+                Event::PointerButton {
+                    button,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } => command(side_button(*button)?, *modifiers, false),
                 _ => None,
             })
             .collect()
     })
 }
 
+/// The arrow a side button of the mouse stands for.
+fn side_button(button: egui::PointerButton) -> Option<Key> {
+    match button {
+        egui::PointerButton::Extra1 => Some(Key::ArrowLeft),
+        egui::PointerButton::Extra2 => Some(Key::ArrowRight),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn side_buttons_are_arrows() {
+        use egui::PointerButton;
+        assert_eq!(side_button(PointerButton::Extra1), Some(Key::ArrowLeft));
+        assert_eq!(side_button(PointerButton::Extra2), Some(Key::ArrowRight));
+        assert_eq!(side_button(PointerButton::Primary), None);
+    }
 
     #[test]
     fn arrows_seek() {
