@@ -1206,8 +1206,8 @@ fn keys(ui: &mut Ui) {
         (
             "F7",
             tr!(
-                "Video panel: colour, sharpness, rotation",
-                "Панель видео: цвет, резкость, поворот"
+                "Video and sound panel: colour, rotation, equalizer",
+                "Панель видео и звука: цвет, поворот, эквалайзер"
             ),
         ),
         ("Ctrl+E", tr!("Save the frame", "Сохранить кадр")),

@@ -848,6 +848,7 @@ impl App {
             }
             Cmd::ToggleInfo => self.info.toggle(),
             Cmd::ToggleVideoPanel => self.video_panel.toggle(),
+            Cmd::ShowEqualizer => self.video_panel.open_on(ui::picture::Tab::Sound),
             Cmd::SaveFrame => self.save_frame(&state),
             Cmd::OpenRecent(i) => {
                 if let Some(path) = self.settings.recent.get(i).cloned() {
@@ -1778,6 +1779,12 @@ fn context_menu(
         "F7",
         Cmd::ToggleVideoPanel,
     );
+    item(
+        ui,
+        tr!("Equalizer…", "Эквалайзер…").into(),
+        "",
+        Cmd::ShowEqualizer,
+    );
     if video_size(state).is_some() {
         item(
             ui,
@@ -2177,7 +2184,7 @@ impl eframe::App for App {
                 player.set_volume_max(self.settings.volume_max);
             }
             if changed.normalize {
-                player.set_normalize(self.settings.normalize);
+                player.set_audio_filters(self.settings.normalize, &self.settings.equalizer);
             }
             if changed.passthrough {
                 player.set_passthrough(self.settings.passthrough);
@@ -2227,14 +2234,22 @@ impl eframe::App for App {
         );
         cmds.extend(info_cmds);
         let before = self.adjust.clone();
+        let sound_before = (self.settings.equalizer.clone(), self.settings.normalize);
+        let sound = ui::picture::Sound {
+            equalizer: &mut self.settings.equalizer,
+            normalize: &mut self.settings.normalize,
+        };
         let panel_cmds =
             self.video_panel
-                .show(&ctx, &mut self.adjust, video_size(&state).is_some());
+                .show(&ctx, &mut self.adjust, sound, video_size(&state).is_some());
         cmds.extend(panel_cmds);
-        if self.adjust != before
-            && let Some(player) = &mut self.player
-        {
-            player.adjust(&before, &self.adjust);
+        if let Some(player) = &mut self.player {
+            if self.adjust != before {
+                player.adjust(&before, &self.adjust);
+            }
+            if (self.settings.equalizer.clone(), self.settings.normalize) != sound_before {
+                player.set_audio_filters(self.settings.normalize, &self.settings.equalizer);
+            }
         }
 
         for cmd in cmds {

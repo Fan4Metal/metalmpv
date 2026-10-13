@@ -15,6 +15,104 @@ pub const MAX_VOLUME: f64 = 200.0;
 /// passages and lowers loud ones as the film plays.
 pub const NORMALIZE_FILTER: &str = "lavfi=[dynaudnorm=f=250:g=31:p=0.5:m=5:r=0.9:b=1]";
 
+/// The equalizer's bands, their centres in Hz.
+pub const EQ_BANDS: [u32; 10] = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+/// The most a band is raised or lowered, in dB.
+pub const EQ_RANGE: i64 = 12;
+
+/// The ten-band equalizer: a peaking filter an octave wide at each band
+/// with a gain (FFmpeg's `equalizer`); kept in the settings.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Equalizer {
+    pub on: bool,
+    /// In dB, by [`EQ_BANDS`].
+    pub gains: [i64; 10],
+}
+
+/// A preset of the equalizer: its gains.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Preset {
+    Flat,
+    Rock,
+    Pop,
+    Jazz,
+    Classical,
+    Bass,
+    Voice,
+    Treble,
+}
+
+impl Preset {
+    pub const ALL: [Preset; 8] = [
+        Preset::Flat,
+        Preset::Rock,
+        Preset::Pop,
+        Preset::Jazz,
+        Preset::Classical,
+        Preset::Bass,
+        Preset::Voice,
+        Preset::Treble,
+    ];
+
+    pub fn gains(self) -> [i64; 10] {
+        match self {
+            Preset::Flat => [0; 10],
+            Preset::Rock => [5, 4, 3, 1, -1, -1, 1, 3, 4, 5],
+            Preset::Pop => [-1, 1, 3, 4, 3, 0, -1, -1, 0, 1],
+            Preset::Jazz => [3, 2, 1, 2, -1, -1, 0, 1, 2, 3],
+            Preset::Classical => [4, 3, 2, 1, -1, -1, 0, 2, 3, 4],
+            Preset::Bass => [7, 6, 5, 3, 1, 0, 0, 0, 0, 0],
+            Preset::Voice => [-3, -2, -1, 1, 4, 4, 3, 1, 0, -2],
+            Preset::Treble => [0, 0, 0, 0, 0, 1, 2, 4, 5, 6],
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Preset::Flat => tr!("Flat", "Ровно"),
+            Preset::Rock => tr!("Rock", "Рок"),
+            Preset::Pop => tr!("Pop", "Поп"),
+            Preset::Jazz => tr!("Jazz", "Джаз"),
+            Preset::Classical => tr!("Classical", "Классика"),
+            Preset::Bass => tr!("Bass", "Басы"),
+            Preset::Voice => tr!("Voice", "Голос"),
+            Preset::Treble => tr!("Treble", "Высокие"),
+        }
+    }
+
+    /// The preset `gains` are, if any.
+    pub fn of(gains: &[i64; 10]) -> Option<Self> {
+        Self::ALL.into_iter().find(|p| p.gains() == *gains)
+    }
+}
+
+/// The band's label: `31`, `1k`, `16k`.
+pub fn band_label(hz: u32) -> String {
+    if hz >= 1000 {
+        format!("{}k", hz / 1000)
+    } else {
+        hz.to_string()
+    }
+}
+
+/// mpv's `af`: the equalizer's bands that are not flat, then the
+/// normalization (which evens out what the equalizer raised).
+pub fn filters(normalize: bool, eq: &Equalizer) -> String {
+    let mut af: Vec<String> = Vec::new();
+    if eq.on {
+        for (hz, gain) in EQ_BANDS.iter().zip(eq.gains) {
+            if gain != 0 {
+                let gain = gain.clamp(-EQ_RANGE, EQ_RANGE);
+                af.push(format!("lavfi=[equalizer=f={hz}:t=o:w=1:g={gain}]"));
+            }
+        }
+    }
+    if normalize {
+        af.push(NORMALIZE_FILTER.to_owned());
+    }
+    af.join(",")
+}
+
 /// The channels sent to the device.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Channels {
@@ -187,6 +285,7 @@ pub struct Setup {
     pub volume_max: f64,
     pub channels: Channels,
     pub normalize: bool,
+    pub equalizer: Equalizer,
     pub passthrough: Passthrough,
 }
 
@@ -207,6 +306,25 @@ mod tests {
         }
         assert_eq!(Passthrough::Off.option(), "");
         assert_eq!(Passthrough::Spdif.option(), "ac3,dts");
+    }
+
+    #[test]
+    fn equalizer_filters() {
+        let mut eq = Equalizer::default();
+        assert_eq!(filters(false, &eq), "");
+        eq.gains = Preset::Bass.gains();
+        assert_eq!(filters(false, &eq), "", "off: no bands");
+        eq.on = true;
+        eq.gains = [0, 0, 0, 0, 0, 0, 0, 0, 3, -20];
+        assert_eq!(
+            filters(true, &eq),
+            format!(
+                "lavfi=[equalizer=f=8000:t=o:w=1:g=3],lavfi=[equalizer=f=16000:t=o:w=1:g=-12],{NORMALIZE_FILTER}"
+            )
+        );
+        assert_eq!(Preset::of(&Preset::Rock.gains()), Some(Preset::Rock));
+        assert_eq!(band_label(16000), "16k");
+        assert_eq!(band_label(62), "62");
     }
 
     #[test]

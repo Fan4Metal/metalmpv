@@ -32,7 +32,7 @@ MetalMPV is a video player for Windows with a classic layout: the picture fills 
 - **Chapters**: marks on the seek bar, which can be turned off, and a list under the playlist to go to a chapter (see [Chapters](#chapters)).
 - **Hardware decoding** (NVDEC, D3D11VA and others, chosen by libmpv), which can be turned off in the settings.
 - **Sound settings**: the output device, the channels (automatic or a layout chosen by hand), a volume boost up to 200 %, normalization that evens the volume out, and Dolby and DTS sound sent to a receiver undecoded; the sound can be moved against the picture with `Ctrl+=` and `Ctrl+-`.
-- **Video panel** (`F7`): brightness, contrast, saturation, hue and gamma, sharpness, noise reduction and debanding, a forced aspect ratio, rotation and flips, and saving the frame (see [Video panel](#video-panel)).
+- **Video and sound panel** (`F7`): brightness, contrast, saturation, hue and gamma, sharpness, noise reduction and debanding, a forced aspect ratio, rotation and flips, saving the frame, and a ten-band equalizer with presets (see [Video and sound panel](#video-and-sound-panel)).
 - **Resume**: a film opened again goes on from where it was stopped (see [Settings](#settings)).
 - **Playlist**: files opened together, dropped onto the window or added with the **+** button of the playlist; optionally the other media files of the folder of an opened file.
 - **One window**: a file opened from Explorer while the player runs is played in the window already open.
@@ -65,11 +65,13 @@ The control bar holds the seek bar (a click or a drag moves there; the time unde
 
 The playlist (`L`) lists the files with the current one highlighted; a double click plays an entry. The icon buttons above the list add files (**+**), remove the selected entry (**−**, `Delete`), sort the list by name, numbers by value (the bars with an arrow), clear it (the bin), save it as an M3U8 playlist (the arrow into a tray) and shuffle it (crossing arrows; the current file plays on); their names are shown in the tooltips. The loop button on the right, `R` or the **Repeat** submenu of the context menu switches the repeat mode, which is kept: off, the file (played again without a gap) or the list (the first file after the last; **Next** and **Previous** go round).
 
-### Video panel
+### Video and sound panel
 
-`F7` or **Video settings…** in the picture's context menu opens a panel over the player; playback and the keys go on while it is open, and `F7` or `Esc` closes it. Its sliders set the brightness, the contrast, the saturation, the hue and the gamma from −100 to 100 (a double click puts one back to 0), and the sharpness (AMD's contrast adaptive sharpening). Noise reduction smooths out grain and compression noise, and gradient smoothing removes the steps in skies and dark scenes. The aspect ratio is the file's or one forced on it: 4:3, 16:9, 16:10, 1.85:1, 2.35:1 or 2.39:1 (also in the **Aspect ratio** submenu of the picture's context menu). The buttons turn the picture left or right by 90° and flip it upside down or mirror it. The sharpness, the noise reduction and the flips are FFmpeg filters run by the processor (a hardware-decoded frame is copied back for them); the colour, the rotation and the gradient smoothing are done by the graphics card. The adjustments apply to every file until the program is closed; **Reset all** puts them back.
+`F7` or **Video settings…** in the picture's context menu opens a panel over the player with the tabs **Video** and **Sound**; playback and the keys go on while it is open, and `F7` or `Esc` closes it. On the Video tab, sliders set the brightness, the contrast, the saturation, the hue and the gamma from −100 to 100 (a double click puts one back to 0), and the sharpness (AMD's contrast adaptive sharpening). Noise reduction smooths out grain and compression noise, and gradient smoothing removes the steps in skies and dark scenes. The aspect ratio is the file's or one forced on it: 4:3, 16:9, 16:10, 1.85:1, 2.35:1 or 2.39:1 (also in the **Aspect ratio** submenu of the picture's context menu). The buttons turn the picture left or right by 90° and flip it upside down or mirror it. The sharpness, the noise reduction and the flips are FFmpeg filters run by the processor (a hardware-decoded frame is copied back for them); the colour, the rotation and the gradient smoothing are done by the graphics card. The adjustments apply to every file until the program is closed; **Reset all** puts them back.
 
 **Save the frame** (`Ctrl+E`, also in the context menu) saves the frame on screen as decoded, without subtitles, as a PNG named after the file and the position into `Pictures\MetalMPV`; **Open the folder** opens that folder.
+
+The Sound tab (also **Equalizer…** in the context menu) holds a ten-band equalizer, 31 Hz to 16 kHz, ±12 dB a band (a double click puts one back to 0), with the presets Flat, Rock, Pop, Jazz, Classical, Bass, Voice and Treble, and the normalization, the same as in the settings. The equalizer is kept between runs; neither applies to sound sent to a receiver undecoded.
 
 ### Chapters
 
@@ -144,7 +146,7 @@ The list of fonts has a search field at its top. The **Keys** category lists the
 | `M` | Mute |
 | `T` | The audio and subtitles window |
 | `I` | The file information window |
-| `F7` | The Video panel |
+| `F7` | The Video and sound panel |
 | `Ctrl+E` | Save the frame into Pictures\MetalMPV |
 | `O` | Shows the position, the duration and the chapter playing on the screen |
 | `A` | Next audio track |

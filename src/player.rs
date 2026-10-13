@@ -427,7 +427,7 @@ impl Player {
             scan_asked: None,
         };
         player.set_channels(setup.channels);
-        player.set_normalize(setup.normalize);
+        player.set_audio_filters(setup.normalize, &setup.equalizer);
         player.set_passthrough(setup.passthrough);
         player.set_volume_max(setup.volume_max);
         let volume = setup.volume.clamp(0.0, player.state.volume_max);
@@ -645,10 +645,10 @@ impl Player {
             .set("audio-channels", &Value::Str(channels.option().into()));
     }
 
-    /// The normalization filter on or off (the only audio filter).
-    pub fn set_normalize(&mut self, on: bool) {
-        let filter = if on { audio::NORMALIZE_FILTER } else { "" };
-        self.mpv.set("af", &Value::Str(filter.into()));
+    /// The audio filters: the equalizer's bands and the normalization.
+    pub fn set_audio_filters(&mut self, normalize: bool, eq: &audio::Equalizer) {
+        self.mpv
+            .set("af", &Value::Str(audio::filters(normalize, eq)));
     }
 
     /// Give mpv what changed from `old` to `new` in the picture's
@@ -875,7 +875,11 @@ mod tests {
         )
         .unwrap();
         mpv.request_log_messages("warn");
-        mpv.set("af", &Value::Str(audio::NORMALIZE_FILTER.into()));
+        let eq = audio::Equalizer {
+            on: true,
+            gains: audio::Preset::Rock.gains(),
+        };
+        mpv.set("af", &Value::Str(audio::filters(true, &eq)));
         mpv.set(
             "audio-channels",
             &Value::Str(Channels::Stereo.option().into()),

@@ -89,6 +89,8 @@ pub enum Cmd {
     ToggleInfo,
     /// Open or close the Video panel (`F7`).
     ToggleVideoPanel,
+    /// Open the panel on its Sound tab (the context menu).
+    ShowEqualizer,
     /// Save the frame on screen into Pictures\MetalMPV (`Ctrl+E`).
     SaveFrame,
     /// Open the folder of the saved frames.

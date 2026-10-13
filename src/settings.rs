@@ -82,6 +82,8 @@ const AUDIO_DEVICE: &str = "audio_device";
 const AUDIO_CHANNELS: &str = "audio_channels";
 const VOLUME_MAX: &str = "volume_max";
 const NORMALIZE: &str = "normalize";
+const EQ_ON: &str = "eq_on";
+const EQ_GAINS: &str = "eq_gains";
 const PASSTHROUGH: &str = "audio_passthrough";
 const SUB_FONT: &str = "sub_font";
 const SUB_SCALE: &str = "sub_scale";
@@ -213,6 +215,8 @@ pub struct Settings {
     pub volume_max: f64,
     /// The volume evened out (`audio::NORMALIZE_FILTER`).
     pub normalize: bool,
+    /// The ten-band equalizer (the Video panel's Sound tab).
+    pub equalizer: audio::Equalizer,
     /// Compressed sound sent to a receiver as it is.
     pub passthrough: Passthrough,
     /// The font family of text subtitles, empty for mpv's.
@@ -269,6 +273,7 @@ impl Default for Settings {
             audio_channels: Channels::Auto,
             volume_max: 100.0,
             normalize: false,
+            equalizer: audio::Equalizer::default(),
             passthrough: Passthrough::Off,
             sub_font: String::new(),
             sub_scale: 100.0,
@@ -295,6 +300,7 @@ impl Settings {
             volume_max: self.volume_max,
             channels: self.audio_channels,
             normalize: self.normalize,
+            equalizer: self.equalizer.clone(),
             passthrough: self.passthrough,
         }
     }
@@ -367,6 +373,19 @@ impl Settings {
                 .filter(|v| audio::BOOSTS.contains(v))
                 .unwrap_or(d.volume_max),
             normalize: flag(NORMALIZE, d.normalize),
+            equalizer: audio::Equalizer {
+                on: flag(EQ_ON, d.equalizer.on),
+                gains: get(EQ_GAINS)
+                    .and_then(|v| {
+                        let gains: Vec<i64> = v
+                            .split(',')
+                            .filter_map(|g| g.trim().parse().ok())
+                            .filter(|g: &i64| g.abs() <= audio::EQ_RANGE)
+                            .collect();
+                        <[i64; 10]>::try_from(gains).ok()
+                    })
+                    .unwrap_or(d.equalizer.gains),
+            },
             passthrough: get(PASSTHROUGH)
                 .as_deref()
                 .and_then(Passthrough::from_name)
@@ -438,6 +457,9 @@ impl Settings {
         storage.set_string(AUDIO_CHANNELS, self.audio_channels.name().into());
         storage.set_string(VOLUME_MAX, format!("{:.0}", self.volume_max));
         storage.set_string(NORMALIZE, self.normalize.to_string());
+        storage.set_string(EQ_ON, self.equalizer.on.to_string());
+        let gains: Vec<String> = self.equalizer.gains.iter().map(i64::to_string).collect();
+        storage.set_string(EQ_GAINS, gains.join(","));
         storage.set_string(PASSTHROUGH, self.passthrough.name().into());
         storage.set_string(SUB_FONT, self.sub_font.clone());
         storage.set_string(SUB_SCALE, format!("{:.0}", self.sub_scale));
@@ -527,6 +549,10 @@ mod tests {
             audio_channels: Channels::Surround51,
             volume_max: 150.0,
             normalize: true,
+            equalizer: audio::Equalizer {
+                on: true,
+                gains: [5, 4, 3, 1, -1, -1, 1, 3, 4, -12],
+            },
             passthrough: Passthrough::Hdmi,
             sub_font: "Arial".into(),
             sub_scale: 150.0,
