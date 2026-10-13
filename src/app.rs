@@ -30,7 +30,7 @@ use crate::settings::{OnTop, Settings};
 use crate::sizing;
 use crate::tracks::{self, Kind};
 use crate::ui::about::AboutDialog;
-use crate::ui::info::{CoverView, InfoWindow};
+use crate::ui::info::{ChannelView, CoverView, InfoWindow};
 use crate::ui::osd::OsdLine;
 use crate::ui::picture::VideoPanel;
 use crate::ui::settings::SettingsDialog;
@@ -2303,15 +2303,25 @@ impl eframe::App for App {
         {
             player.ask_scan();
         }
+        let channel = self
+            .playlist
+            .current_path()
+            .and_then(|p| self.playlist.channel(p));
+        let channel = channel.map(|channel| ChannelView {
+            channel,
+            logo: channel
+                .logo
+                .as_deref()
+                .filter(|_| self.settings.channel_logos && self.info.open)
+                .and_then(|url| self.logos.get(&ctx, url).cloned()),
+        });
         let info_cmds = self.info.show(
             &ctx,
             self.playlist.current_path(),
             &state,
             cover,
             self.settings.panels_pinned,
-            self.playlist
-                .current_path()
-                .and_then(|p| self.playlist.channel(p)),
+            channel,
         );
         cmds.extend(info_cmds);
         let before = self.adjust.clone();

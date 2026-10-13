@@ -23,6 +23,8 @@ use crate::tracks::Track;
 const LABEL_WIDTH: f32 = 170.0;
 /// The side of the cover in the header.
 const THUMB: f32 = 120.0;
+/// The side of a channel's logo in the header.
+const LOGO: f32 = 64.0;
 /// The window's width (egui's, with the frame).
 pub const WIDTH: f32 = 520.0;
 /// The window's top right corner from the player's: under the title row,
@@ -39,6 +41,13 @@ pub struct InfoWindow {
     zoom: bool,
     /// When Copy all was last clicked.
     copied: Option<Instant>,
+}
+
+/// What an IPTV list says about the entry playing, and its logo once
+/// fetched (`logos.rs`).
+pub struct ChannelView<'a> {
+    pub channel: &'a Channel,
+    pub logo: Option<TextureHandle>,
 }
 
 /// The cover as the window gets it: the picture and its texture.
@@ -79,7 +88,7 @@ impl InfoWindow {
         state: &State,
         cover: Option<CoverView<'_>>,
         pinned: bool,
-        channel: Option<&Channel>,
+        channel: Option<ChannelView<'_>>,
     ) -> Vec<Cmd> {
         let mut out = Vec::new();
         if !self.open {
@@ -117,7 +126,7 @@ impl InfoWindow {
                     ui.weak(tr!("No file is open.", "Файл не открыт."));
                     return;
                 }
-                self.header(ui, state, cover.as_ref(), channel);
+                self.header(ui, state, cover.as_ref(), channel.as_ref());
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
@@ -180,8 +189,9 @@ impl InfoWindow {
         ui: &mut Ui,
         state: &State,
         cover: Option<&CoverView<'_>>,
-        channel: Option<&Channel>,
+        view: Option<&ChannelView<'_>>,
     ) {
+        let channel = view.map(|v| v.channel);
         // An IPTV list's channel by the list's name (a stream's title is
         // its file's, "index.m3u8"), with its group in place of an album.
         let title = channel
@@ -216,6 +226,19 @@ impl InfoWindow {
                 {
                     self.zoom = true;
                 }
+                ui.add_space(10.0);
+            } else if let Some(logo) = view.and_then(|v| v.logo.as_ref()) {
+                // The channel's logo in place of a cover, no larger than
+                // fetched (`logos::THUMB`).
+                let side = LOGO;
+                let size = fit(logo.size_vec2(), vec2(side, side));
+                let (rect, _) = ui.allocate_exact_size(vec2(side, side), Sense::hover());
+                ui.painter().image(
+                    logo.id(),
+                    Rect::from_center_size(rect.center(), size),
+                    Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    Color32::WHITE,
+                );
                 ui.add_space(10.0);
             }
             ui.with_layout(Layout::top_down(Align::Min), |ui| {
