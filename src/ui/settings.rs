@@ -502,8 +502,8 @@ fn general(ui: &mut Ui, settings: &mut Settings) {
             ui,
             tr!("Snap to the screen's centre", "Притягивать к центру экрана"),
             Some(tr!(
-                "The window being moved stops with its centre on the screen's centre, across or up and down, when it comes near; moved on, it comes away.",
-                "Перетаскиваемое окно останавливается центром на центре экрана по горизонтали или по вертикали, когда подходит к нему; если тянуть дальше, оно отрывается."
+                "A window let go with its centre near the screen's centre, across or up and down, is put exactly on it; while it is moved, nothing holds it back.",
+                "Окно, отпущенное центром рядом с центром экрана по горизонтали или по вертикали, встаёт точно по центру; во время перетаскивания ничто его не удерживает."
             )),
             50.0,
             |ui| switch(ui, &mut settings.snap_to_centre),

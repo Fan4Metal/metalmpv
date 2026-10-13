@@ -355,9 +355,14 @@ pub fn set_rect(hwnd: isize, rect: [i32; 4]) {
     };
 }
 
-/// Whether a window being moved is drawn to the screen's centre lines
-/// ([`set_snap`]).
+/// Whether a window let go after a move is put on the screen's centre
+/// lines it is near ([`set_snap`]).
 static SNAP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// The window moved in the current move or size loop (not only sized).
+static MOVED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// How near the screen's centre a window's centre is put on it, in pixels
+/// at 96 dpi.
+const SNAP_REACH: i32 = 20;
 
 /// What the window's messages asked for, for the app to take each frame
 /// ([`take_hooked`]).
@@ -394,8 +399,8 @@ static TASKBAR_CREATED: std::sync::atomic::AtomicU32 = std::sync::atomic::Atomic
 /// Subclass the window once: media keys (`WM_KEYDOWN` with a
 /// `VK_MEDIA_*` key, which egui drops, and `WM_APPCOMMAND`, which headsets
 /// and remotes send) are queued for [`take_hooked`] and `wake` is called;
-/// while [`set_snap`] is on, a window being moved is drawn to the screen's
-/// centre lines (`WM_MOVING`).
+/// while [`set_snap`] is on, a window let go after a move is put on the
+/// screen's centre lines it is near (`WM_EXITSIZEMOVE` after `WM_MOVING`).
 pub fn hook_window(hwnd: isize, wake: impl Fn() + Send + Sync + 'static) {
     use std::sync::Once;
     use windows_sys::Win32::UI::Shell::SetWindowSubclass;
@@ -410,9 +415,10 @@ pub fn hook_window(hwnd: isize, wake: impl Fn() + Send + Sync + 'static) {
     });
 }
 
-/// While the user moves the window, its centre is drawn to the centre of
-/// the monitor's work area along each axis it comes near
-/// (`sizing::snapped_to_centre`).
+/// When the user lets the window go after moving it, its centre is put on
+/// the centre of the monitor's work area along each axis it is within
+/// [`SNAP_REACH`] of (`sizing::snapped_to_centre`); while it moves, nothing
+/// holds it back.
 pub fn set_snap(on: bool) {
     SNAP.store(on, std::sync::atomic::Ordering::Relaxed);
 }
@@ -469,7 +475,7 @@ unsafe extern "system" fn window_proc(
     use std::sync::atomic::Ordering;
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        WM_APPCOMMAND, WM_COMMAND, WM_KEYDOWN, WM_MOVING,
+        WM_APPCOMMAND, WM_COMMAND, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_KEYDOWN, WM_MOVING,
     };
     // THBN_CLICKED in WM_COMMAND's high word.
     const THBN_CLICKED: usize = 0x1800;
@@ -481,9 +487,11 @@ unsafe extern "system" fn window_proc(
             hook(Hooked::Thumb((wparam & 0xFFFF) as u16));
             return 0;
         }
-        WM_MOVING if lparam != 0 && SNAP.load(Ordering::Relaxed) => {
-            if unsafe { snap(hwnd as isize, lparam) } {
-                return 1;
+        WM_MOVING => MOVED.store(true, Ordering::Relaxed),
+        WM_ENTERSIZEMOVE => MOVED.store(false, Ordering::Relaxed),
+        WM_EXITSIZEMOVE => {
+            if MOVED.swap(false, Ordering::Relaxed) && SNAP.load(Ordering::Relaxed) {
+                unsafe { snap_let_go(hwnd as isize) };
             }
         }
         WM_KEYDOWN => {
@@ -508,41 +516,59 @@ unsafe extern "system" fn window_proc(
     unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
 }
 
-/// `WM_MOVING`: put the moved rectangle at `lparam` on the centre lines it
-/// is near; whether it could.
-unsafe fn snap(hwnd: isize, lparam: windows_sys::Win32::Foundation::LPARAM) -> bool {
+/// The user let the window go after moving it: put it on the centre lines
+/// of the work area it is near. Nothing happens while it moves, so the
+/// snapping never holds the window back.
+unsafe fn snap_let_go(hwnd: isize) {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::Graphics::Gdi::{
-        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromRect,
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetWindowRect, IsZoomed, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER,
+        SetWindowPos,
     };
     #[link(name = "user32")]
     unsafe extern "system" {
         fn GetDpiForWindow(hwnd: isize) -> u32;
     }
-    let rect = unsafe { &mut *(lparam as *mut RECT) };
-    let monitor = unsafe { MonitorFromRect(rect, MONITOR_DEFAULTTONEAREST) };
+    if unsafe { IsZoomed(hwnd as _) } != 0 {
+        return;
+    }
+    let mut rect = RECT::default();
+    if unsafe { GetWindowRect(hwnd as _, &mut rect) } == 0 {
+        return;
+    }
+    let monitor = unsafe { MonitorFromWindow(hwnd as _, MONITOR_DEFAULTTONEAREST) };
     let mut info: MONITORINFO = unsafe { std::mem::zeroed() };
     info.cbSize = size_of::<MONITORINFO>() as u32;
     if unsafe { GetMonitorInfoW(monitor, &mut info) } == 0 {
-        return false;
+        return;
     }
     let dpi = match unsafe { GetDpiForWindow(hwnd) } {
         0 => 96,
         dpi => dpi as i32,
     };
     let w = info.rcWork;
-    let [left, top, right, bottom] = crate::sizing::snapped_to_centre(
-        [rect.left, rect.top, rect.right, rect.bottom],
+    let now = [rect.left, rect.top, rect.right, rect.bottom];
+    let snapped = crate::sizing::snapped_to_centre(
+        now,
         [w.left, w.top, w.right, w.bottom],
-        16 * dpi / 96,
+        SNAP_REACH * dpi / 96,
     );
-    *rect = RECT {
-        left,
-        top,
-        right,
-        bottom,
-    };
-    true
+    if snapped != now {
+        unsafe {
+            SetWindowPos(
+                hwnd as _,
+                std::ptr::null_mut(),
+                snapped[0],
+                snapped[1],
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE,
+            )
+        };
+    }
 }
 
 /// What playback needs Windows to keep on.
