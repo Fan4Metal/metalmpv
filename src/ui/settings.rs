@@ -889,6 +889,22 @@ fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
             |ui| switch(ui, &mut settings.chapter_marks),
         );
     });
+    section(
+        ui,
+        tr!("Incomplete files", "Неполные файлы"),
+        |ui| {
+            row(
+                ui,
+                tr!("Stay in the file", "Оставаться в файле"),
+                Some(tr!(
+                    "Where the part of the file that is there ends (a download not finished), playback stops, paused, with a message on the OSD, and Play goes on from where there was data; off, the file ends and the next one in the playlist plays.",
+                    "Там, где кончается имеющаяся часть файла (загрузка не закончена), воспроизведение останавливается на паузе с сообщением на OSD, а Play продолжает с места, где данные были; выключено — файл заканчивается и воспроизводится следующий в плейлисте."
+                )),
+                50.0,
+                |ui| switch(ui, &mut settings.stay_in_incomplete),
+            );
+        },
+    );
 }
 
 /// The video page; whether hardware decoding was switched.
@@ -1659,6 +1675,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.resume_playback = d.resume_playback;
     settings.remember_tracks = d.remember_tracks;
     settings.prefer_last_tracks = d.prefer_last_tracks;
+    settings.stay_in_incomplete = d.stay_in_incomplete;
     settings.remember_recent = d.remember_recent;
     settings.fullscreen_transparency = d.fullscreen_transparency;
     settings.fullscreen_title = d.fullscreen_title;

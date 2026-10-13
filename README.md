@@ -131,6 +131,7 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | Playback | Left / Right | 10 s | The step of `←` and `→`, on keyframes |
 | Playback | Ctrl+Left / Right | 60 s | The step of `Ctrl+←` and `Ctrl+→`, on keyframes |
 | Playback | Marks on the seek bar | on | Cuts in the seek bar where the chapters start; also in the context menu |
+| Playback | Stay in the file | on | A file whose download has not finished shows its whole length, but its data ends earlier. Where the data ends, whether reached by playing or by a seek past it, playback stops, paused, with a message on the screen that stays until playback goes on; Play then goes on from where there was data (the place before the seek, or the end of the data, which may have grown meanwhile). When off, the file ends there and the next one in the playlist plays. An end within the last 15 seconds is taken as the end of the file; so is any end of a format whose duration may be an estimate (MP3, AAC), apart from a seek past the data |
 | Video | Hardware decoding (GPU) | on | Decoding on the graphics card where possible; the decoder in use is shown below |
 | Video | File name at the top | on | A strip with the file's name across the top in fullscreen, shown while the pointer is near the top edge |
 | Video | Panel transparency | 12 % | Transparency of the control bar and the file's name over the picture in fullscreen, 0–80 % |

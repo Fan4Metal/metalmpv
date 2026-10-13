@@ -24,7 +24,7 @@ use crate::frameless;
 use crate::input::{self, Cmd};
 use crate::keymap;
 use crate::mpv::Mpv;
-use crate::player::{Happened, Player, Seek, State};
+use crate::player::{DataEnd, Happened, Player, Seek, State};
 use crate::playlist::{self, Playlist, Repeat};
 use crate::resume::{Positions, Tracks};
 use crate::settings::{OnTop, Settings};
@@ -363,6 +363,7 @@ impl App {
         };
         self.playlist.selected = Some(index);
         self.file_error = None;
+        self.osd.clear_at_end();
         self.remember_position();
         let left = self.positions.get(&path);
         let start = left
@@ -1579,7 +1580,19 @@ impl App {
                         .collect();
                     self.playlist.expand_current(entries, playing);
                 }
-                Happened::Eof => {
+                Happened::NoData(end) if self.settings.stay_in_incomplete => {
+                    // mpv stopped at the end of the data (keep-open): it
+                    // stays there, paused; Play goes on from there.
+                    if let Some(player) = &mut self.player {
+                        player.set_pause(true);
+                    }
+                    // Kept while it stays there: why it stopped.
+                    self.osd.show_at_end(match end {
+                        DataEnd::Seek(t) => Osd::NoData(t),
+                        DataEnd::Played(t) => Osd::DataEnds(t),
+                    });
+                }
+                Happened::Eof | Happened::NoData(_) => {
                     if let Some(i) = self.playlist.next_in(self.settings.repeat) {
                         self.play(i);
                     }

@@ -111,6 +111,7 @@ const WINDOW_NORMAL: &str = "window_normal";
 const RESUME_PLAYBACK: &str = "resume_playback";
 const REMEMBER_TRACKS: &str = "remember_tracks";
 const PREFER_LAST_TRACKS: &str = "prefer_last_tracks";
+const STAY_IN_INCOMPLETE: &str = "stay_in_incomplete";
 const LAST_AUDIO: &str = "last_audio";
 const LAST_SUB: &str = "last_sub";
 const RECENT: &str = "recent_files";
@@ -273,6 +274,9 @@ pub struct Settings {
     /// A file opened for the first time plays the tracks most like the
     /// last chosen by hand (`tracks::most_like`).
     pub prefer_last_tracks: bool,
+    /// Where the data of an incomplete file ends, playback stops there,
+    /// paused; off, the file ends and the next one plays.
+    pub stay_in_incomplete: bool,
     /// The audio track and the subtitles last chosen by hand (subtitles:
     /// `Some(None)` for none). Not settings, so Reset keeps them.
     pub last_audio: Option<Likeness>,
@@ -325,6 +329,7 @@ impl Default for Settings {
             resume_playback: true,
             remember_tracks: true,
             prefer_last_tracks: true,
+            stay_in_incomplete: true,
             last_audio: None,
             last_sub: None,
             remember_recent: true,
@@ -478,6 +483,7 @@ impl Settings {
             resume_playback: flag(RESUME_PLAYBACK, d.resume_playback),
             remember_tracks: flag(REMEMBER_TRACKS, d.remember_tracks),
             prefer_last_tracks: flag(PREFER_LAST_TRACKS, d.prefer_last_tracks),
+            stay_in_incomplete: flag(STAY_IN_INCOMPLETE, d.stay_in_incomplete),
             last_audio: get(LAST_AUDIO).as_deref().and_then(Likeness::parse),
             last_sub: get(LAST_SUB).and_then(|v| match v.as_str() {
                 "off" => Some(None),
@@ -578,6 +584,7 @@ impl Settings {
         storage.set_string(RESUME_PLAYBACK, self.resume_playback.to_string());
         storage.set_string(REMEMBER_TRACKS, self.remember_tracks.to_string());
         storage.set_string(PREFER_LAST_TRACKS, self.prefer_last_tracks.to_string());
+        storage.set_string(STAY_IN_INCOMPLETE, self.stay_in_incomplete.to_string());
         match &self.last_audio {
             Some(like) => storage.set_string(LAST_AUDIO, like.to_text()),
             None => storage.remove_string(LAST_AUDIO),
@@ -672,6 +679,7 @@ mod tests {
             resume_playback: false,
             remember_tracks: false,
             prefer_last_tracks: false,
+            stay_in_incomplete: false,
             last_audio: Some(Likeness {
                 lang: Some("russian".into()),
                 title: Some("многоголосый".into()),

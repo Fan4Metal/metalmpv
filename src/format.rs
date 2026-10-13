@@ -305,6 +305,11 @@ pub enum Osd {
         a: Option<f64>,
         b: Option<f64>,
     },
+    /// A seek to `time` found the file's data ended before it (a download
+    /// not finished): playback stopped at the end of the data.
+    NoData(f64),
+    /// Playback stopped at `time`, where the file's data ends.
+    DataEnds(f64),
     /// Free text: a file name, an error.
     Text(String),
 }
@@ -495,6 +500,23 @@ impl Osd {
                     (true, false) => format!("[ Subtitle delay {ms} ms ]"),
                 }
             }
+            Osd::NoData(time) => {
+                if ru {
+                    format!("[ Нет данных на {}: файл неполный ]", clock(*time))
+                } else {
+                    format!("[ No data at {}: the file is incomplete ]", clock(*time))
+                }
+            }
+            Osd::DataEnds(time) => {
+                if ru {
+                    format!("[ Данные кончаются на {}: файл неполный ]", clock(*time))
+                } else {
+                    format!(
+                        "[ The data ends at {}: the file is incomplete ]",
+                        clock(*time)
+                    )
+                }
+            }
             Osd::Text(t) => t.clone(),
         }
     }
@@ -650,6 +672,18 @@ mod tests {
             "[ Глава 3: The Quickening ]"
         );
         assert_eq!(chapter(None).text_in(Lang::En), "[ Chapter 3 ]");
+        assert_eq!(
+            Osd::NoData(2700.0).text_in(Lang::Ru),
+            "[ Нет данных на 00:45:00: файл неполный ]"
+        );
+        assert_eq!(
+            Osd::NoData(2700.0).text_in(Lang::En),
+            "[ No data at 00:45:00: the file is incomplete ]"
+        );
+        assert_eq!(
+            Osd::DataEnds(1830.0).text_in(Lang::Ru),
+            "[ Данные кончаются на 00:30:30: файл неполный ]"
+        );
         let position = |chapter| Osd::Position {
             time: 2530.0,
             duration: Some(6537.0),

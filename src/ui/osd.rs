@@ -17,6 +17,10 @@ const FADE: Duration = Duration::from_millis(400);
 #[derive(Default)]
 pub struct OsdLine {
     line: Option<(Osd, Instant)>,
+    /// Shown, without fading, while playback stays stopped at the end of
+    /// the file (why it stopped: the data ran out); a passing line covers
+    /// it for its while.
+    at_end: Option<Osd>,
 }
 
 impl OsdLine {
@@ -24,19 +28,38 @@ impl OsdLine {
         self.line = Some((osd, Instant::now()));
     }
 
+    /// Show `osd` until playback leaves the end of the file.
+    pub fn show_at_end(&mut self, osd: Osd) {
+        self.at_end = Some(osd);
+        self.line = None;
+    }
+
+    pub fn clear_at_end(&mut self) {
+        self.at_end = None;
+    }
+
     /// Paint the line over `video`, `scale` times its usual size (which
     /// follows the picture's height). A seek's line shows where playback
     /// actually landed (a keyframe seek lands near, not on, the target)
     /// once mpv has finished the seek.
     pub fn paint(&mut self, ctx: &egui::Context, video: Rect, state: &State, scale: f32) {
+        if !state.eof || state.idle {
+            self.at_end = None;
+        }
+        if self
+            .line
+            .as_ref()
+            .is_some_and(|(_, since)| since.elapsed() >= SHOWN)
+        {
+            self.line = None;
+        }
         let Some((osd, since)) = &mut self.line else {
+            if let Some(osd) = &self.at_end {
+                paint_line(ctx, video, &osd.text(), scale, 1.0);
+            }
             return;
         };
         let age = since.elapsed();
-        if age >= SHOWN {
-            self.line = None;
-            return;
-        }
         if !state.seeking
             && let Some(t) = state.time
         {
@@ -53,31 +76,7 @@ impl OsdLine {
         } else {
             1.0
         };
-        let size = (video.height() / 26.0).clamp(15.0, 30.0) * scale;
-        let painter = ctx.layer_painter(egui::LayerId::new(
-            egui::Order::Foreground,
-            egui::Id::new("osd"),
-        ));
-        let painter = painter.with_clip_rect(video);
-        let pos = video.left_top() + vec2(size * 0.6, size * 0.45);
-        let text = osd.text();
-        let font = FontId::new(size, style::osd_family());
-        let shadow = egui::Color32::from_black_alpha((200.0 * alpha) as u8);
-        for d in [
-            vec2(1.5, 1.5),
-            vec2(-1.0, 1.0),
-            vec2(1.0, -1.0),
-            vec2(-1.0, -1.0),
-        ] {
-            painter.text(pos + d, Align2::LEFT_TOP, &text, font.clone(), shadow);
-        }
-        painter.text(
-            pos,
-            Align2::LEFT_TOP,
-            &text,
-            font,
-            style::OSD.gamma_multiply(alpha),
-        );
+        paint_line(ctx, video, &osd.text(), scale, alpha);
         // Woken for the fade, then every few frames through it.
         let next = if age < SHOWN - FADE {
             SHOWN - FADE - age
@@ -86,4 +85,32 @@ impl OsdLine {
         };
         ctx.request_repaint_after(next);
     }
+}
+
+/// One line of the OSD over `video`, `alpha` of its colour.
+fn paint_line(ctx: &egui::Context, video: Rect, text: &str, scale: f32, alpha: f32) {
+    let size = (video.height() / 26.0).clamp(15.0, 30.0) * scale;
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("osd"),
+    ));
+    let painter = painter.with_clip_rect(video);
+    let pos = video.left_top() + vec2(size * 0.6, size * 0.45);
+    let font = FontId::new(size, style::osd_family());
+    let shadow = egui::Color32::from_black_alpha((200.0 * alpha) as u8);
+    for d in [
+        vec2(1.5, 1.5),
+        vec2(-1.0, 1.0),
+        vec2(1.0, -1.0),
+        vec2(-1.0, -1.0),
+    ] {
+        painter.text(pos + d, Align2::LEFT_TOP, text, font.clone(), shadow);
+    }
+    painter.text(
+        pos,
+        Align2::LEFT_TOP,
+        text,
+        font,
+        style::OSD.gamma_multiply(alpha),
+    );
 }
