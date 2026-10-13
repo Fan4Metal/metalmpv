@@ -502,8 +502,8 @@ fn general(ui: &mut Ui, settings: &mut Settings) {
             ui,
             tr!("Snap to the screen's centre", "Притягивать к центру экрана"),
             Some(tr!(
-                "A window let go with its centre near the screen's centre, across or up and down, is put exactly on it; while it is moved, nothing holds it back.",
-                "Окно, отпущенное центром рядом с центром экрана по горизонтали или по вертикали, встаёт точно по центру; во время перетаскивания ничто его не удерживает."
+                "While the window is moved, its centre is drawn to the screen's centre, across or up and down, when it comes within a few pixels, as in GOM Player; moved on, it comes away.",
+                "При перетаскивании центр окна примагничивается к центру экрана по горизонтали или по вертикали, когда подходит к нему на несколько пикселей, как в GOM Player; если тянуть дальше, окно отрывается."
             )),
             50.0,
             |ui| switch(ui, &mut settings.snap_to_centre),

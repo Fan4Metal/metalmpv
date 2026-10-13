@@ -51,7 +51,7 @@ pub fn placed(current: [i32; 4], size: [i32; 2], work: [i32; 4]) -> [i32; 4] {
     [left, top, left + size[0], top + size[1]]
 }
 
-/// `rect` (a window let go after a move) with its centre on the centre of `work`
+/// `rect` (a window being moved) with its centre on the centre of `work`
 /// along each axis where it is within `reach` pixels of it.
 pub fn snapped_to_centre(rect: [i32; 4], work: [i32; 4], reach: i32) -> [i32; 4] {
     let shift = |a: i32, b: i32, lo: i32, hi: i32| {
