@@ -189,43 +189,55 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, has_video: bool, out: &mut Vec<Cm
             });
     });
 
-    heading(ui, tr!("Rotation and flips", "Поворот и отражение"));
-    ui.horizontal(|ui| {
-        if ui.button(tr!("Turn left", "Повернуть влево")).clicked() {
-            adjust.turn(-1);
-        }
-        if ui.button(tr!("Turn right", "Повернуть вправо")).clicked() {
-            adjust.turn(1);
-        }
-        ui.label(RichText::new(format!("{}°", adjust.rotate)).color(style::TEXT_WEAK));
-    });
-    ui.horizontal(|ui| {
-        ui.toggle_value(
-            &mut adjust.flip,
-            tr!("Upside down", "Перевернуть вертикально"),
-        );
-        ui.toggle_value(&mut adjust.mirror, tr!("Mirror", "Отразить зеркально"));
-    });
+    heading_with(
+        ui,
+        tr!("Rotation and flips", "Поворот и отражение"),
+        &format!("{}°", adjust.rotate),
+    );
+    let [left, right] = pair(
+        ui,
+        egui::Button::new(tr!("Turn left", "Повернуть влево")),
+        egui::Button::new(tr!("Turn right", "Повернуть вправо")),
+        true,
+    );
+    if left.clicked() {
+        adjust.turn(-1);
+    }
+    if right.clicked() {
+        adjust.turn(1);
+    }
+    let [flip, mirror] = pair(
+        ui,
+        egui::Button::new(tr!("Upside down", "Перевернуть вертикально")).selected(adjust.flip),
+        egui::Button::new(tr!("Mirror", "Отразить зеркально")).selected(adjust.mirror),
+        true,
+    );
+    if flip.clicked() {
+        adjust.flip = !adjust.flip;
+    }
+    if mirror.clicked() {
+        adjust.mirror = !adjust.mirror;
+    }
 
     heading(ui, tr!("Frame", "Кадр"));
-    ui.horizontal(|ui| {
-        if ui
-            .add_enabled(
-                has_video,
-                egui::Button::new(tr!("Save the frame", "Сохранить кадр")).shortcut_text("Ctrl+E"),
-            )
-            .on_hover_text(tr!(
-                "Into Pictures\\MetalMPV, as decoded, without subtitles",
-                "В «Изображения\\MetalMPV», как декодирован, без субтитров"
-            ))
-            .clicked()
-        {
-            out.push(Cmd::SaveFrame);
-        }
-        if ui.button(tr!("Open the folder", "Открыть папку")).clicked() {
-            out.push(Cmd::ShowFrames);
-        }
-    });
+    let [save, folder] = pair(
+        ui,
+        egui::Button::new(tr!("Save the frame", "Сохранить кадр")).shortcut_text("Ctrl+E"),
+        egui::Button::new(tr!("Open the folder", "Открыть папку")),
+        has_video,
+    );
+    if save
+        .on_hover_text(tr!(
+            "Into Pictures\\MetalMPV, as decoded, without subtitles",
+            "В «Изображения\\MetalMPV», как декодирован, без субтитров"
+        ))
+        .clicked()
+    {
+        out.push(Cmd::SaveFrame);
+    }
+    if folder.clicked() {
+        out.push(Cmd::ShowFrames);
+    }
 
     ui.add_space(10.0);
     if ui
@@ -354,9 +366,38 @@ fn reset(ui: &mut Ui, enabled: bool, tip: &str) -> bool {
 
 /// A group's title.
 fn heading(ui: &mut Ui, text: &str) {
+    heading_with(ui, text, "");
+}
+
+/// A group's title with `note` (a value) at the right end of its line.
+fn heading_with(ui: &mut Ui, text: &str, note: &str) {
     ui.add_space(6.0);
-    ui.label(RichText::new(text).strong().color(style::TEXT_BRIGHT));
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(text).strong().color(style::TEXT_BRIGHT));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(RichText::new(note).color(style::TEXT_WEAK));
+        });
+    });
     ui.add_space(2.0);
+}
+
+/// Two buttons side by side, each half the panel's width; the first only
+/// clickable while `first_enabled`.
+fn pair(
+    ui: &mut Ui,
+    a: egui::Button<'_>,
+    b: egui::Button<'_>,
+    first_enabled: bool,
+) -> [egui::Response; 2] {
+    ui.horizontal(|ui| {
+        let gap = ui.spacing().item_spacing.x;
+        let size = vec2((WIDTH - gap) / 2.0, 26.0);
+        let a = ui
+            .add_enabled_ui(first_enabled, |ui| ui.add_sized(size, a))
+            .inner;
+        [a, ui.add_sized(size, b)]
+    })
+    .inner
 }
 
 /// A row: the label in a fixed-width column, then what `add` adds.
