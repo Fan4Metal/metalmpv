@@ -421,6 +421,34 @@ unsafe extern "system" fn moving_proc(
     unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
 }
 
+/// What playback needs Windows to keep on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Awake {
+    /// Nothing: Windows may turn the display off and sleep.
+    #[default]
+    No,
+    /// The computer (sound plays).
+    System,
+    /// The computer and the display (a picture plays).
+    Display,
+}
+
+/// Keep the computer, and the display, from sleeping while `awake` says
+/// so (`SetThreadExecutionState` with `ES_CONTINUOUS`: it lasts until the
+/// next call from the same thread). mpv does this only for its own video
+/// window, not for a render API client.
+pub fn keep_awake(awake: Awake) {
+    use windows_sys::Win32::System::Power::{
+        ES_CONTINUOUS, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED, SetThreadExecutionState,
+    };
+    let flags = match awake {
+        Awake::No => 0,
+        Awake::System => ES_SYSTEM_REQUIRED,
+        Awake::Display => ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED,
+    };
+    unsafe { SetThreadExecutionState(ES_CONTINUOUS | flags) };
+}
+
 /// The user's Pictures folder, wherever it was moved (OneDrive).
 pub fn pictures_dir() -> Option<std::path::PathBuf> {
     use std::os::windows::ffi::OsStringExt;

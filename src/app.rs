@@ -116,6 +116,8 @@ pub struct App {
     /// The output device given to mpv (empty: Windows' default, as mpv
     /// starts), kept in step with the setting and the devices there are.
     audio_device_used: String,
+    /// What playback last asked Windows to keep on.
+    awake: win::Awake,
 }
 
 impl App {
@@ -232,6 +234,7 @@ impl App {
             chrome: egui::Vec2::ZERO,
             pending_picture: None,
             audio_device_used: String::new(),
+            awake: win::Awake::No,
         };
         app.open(files);
         app
@@ -903,6 +906,27 @@ impl App {
         } else {
             [w, h]
         })
+    }
+
+    /// Keep the display on while a picture plays in sight and the computer
+    /// awake while sound plays; let them sleep when paused, stopped or
+    /// idle.
+    fn keep_awake(&mut self, minimized: bool) {
+        let awake = match &self.player {
+            Some(p) if !p.state.idle && !p.state.paused && !p.state.eof => {
+                if p.state.video().is_some() && !minimized {
+                    win::Awake::Display
+                } else {
+                    win::Awake::System
+                }
+            }
+            _ => win::Awake::No,
+        };
+        if awake != self.awake {
+            log::debug!("keep awake: {awake:?}");
+            win::keep_awake(awake);
+            self.awake = awake;
+        }
     }
 
     /// Give mpv the chosen output device while Windows has it, else the
@@ -1670,10 +1694,12 @@ fn chapters_menu(ui: &mut egui::Ui, state: &State, marks: bool, out: &mut Vec<Cm
 impl eframe::App for App {
     /// Every frame, and alone while the window is minimised: the player's
     /// events keep a playlist going.
-    fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.updates.poll();
         self.take_events();
         self.follow_audio_device();
+        let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
+        self.keep_awake(minimized);
     }
 
     fn ui(&mut self, root_ui: &mut egui::Ui, frame: &mut eframe::Frame) {

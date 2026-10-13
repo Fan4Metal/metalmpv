@@ -47,6 +47,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Console",           # AttachConsole for the command line modes
     "Win32_System_DataExchange",      # COPYDATASTRUCT (instance.rs)
     "Win32_System_LibraryLoader",     # LoadLibraryW for libmpv, GetModuleHandleW
+    "Win32_System_Power",             # SetThreadExecutionState while playing
     "Win32_Security",                 # CreateMutexW's attributes (instance.rs)
     "Win32_System_Registry",          # the file types (assoc.rs)
     "Win32_System_Threading",         # CreateMutexW (instance.rs)
