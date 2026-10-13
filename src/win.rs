@@ -473,7 +473,7 @@ unsafe extern "system" fn window_proc(
     use std::sync::atomic::Ordering;
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        WM_APPCOMMAND, WM_COMMAND, WM_KEYDOWN, WM_MOVING,
+        WM_APPCOMMAND, WM_COMMAND, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_KEYDOWN, WM_MOVING,
     };
     // THBN_CLICKED in WM_COMMAND's high word.
     const THBN_CLICKED: usize = 0x1800;
@@ -484,6 +484,12 @@ unsafe extern "system" fn window_proc(
         WM_COMMAND if (wparam >> 16) & 0xFFFF == THBN_CLICKED => {
             hook(Hooked::Thumb((wparam & 0xFFFF) as u16));
             return 0;
+        }
+        WM_ENTERSIZEMOVE => unsafe { move_started(hwnd as isize) },
+        WM_EXITSIZEMOVE => {
+            if let Ok(mut start) = MOVE_START.lock() {
+                *start = None;
+            }
         }
         WM_MOVING if lparam != 0 && SNAP.load(Ordering::Relaxed) => {
             if unsafe { snap(hwnd as isize, lparam) } {
@@ -512,10 +518,32 @@ unsafe extern "system" fn window_proc(
     unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
 }
 
+/// Where the window and the pointer were when the move began
+/// (`WM_ENTERSIZEMOVE`): the rectangle the pointer alone would give.
+static MOVE_START: std::sync::Mutex<Option<([i32; 4], [i32; 2])>> = std::sync::Mutex::new(None);
+
+unsafe fn move_started(hwnd: isize) {
+    use windows_sys::Win32::Foundation::{POINT, RECT};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
+    let mut rect = RECT::default();
+    let mut cursor = POINT::default();
+    let start = (unsafe { GetWindowRect(hwnd as _, &mut rect) } != 0
+        && unsafe { GetCursorPos(&mut cursor) } != 0)
+        .then_some((
+            [rect.left, rect.top, rect.right, rect.bottom],
+            [cursor.x, cursor.y],
+        ));
+    if let Ok(mut s) = MOVE_START.lock() {
+        *s = start;
+    }
+}
+
 /// `WM_MOVING`: put the moved rectangle at `lparam` on the centre lines of
-/// the work area it is within [`SNAP_REACH`] of; whether it could. Windows
-/// works the next rectangle out from the pointer again, so the window
-/// holds on a line only while the pointer stays near it, as a magnet.
+/// the work area it is within [`SNAP_REACH`] of; whether it could. The
+/// rectangle snapped is where the pointer alone puts the window (the start
+/// plus the pointer's way): Windows works the next rectangle out from the
+/// one given back, so a snapped one would keep the window on the line for
+/// as long as each step stays within the reach (slow moves got stuck).
 unsafe fn snap(hwnd: isize, lparam: windows_sys::Win32::Foundation::LPARAM) -> bool {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::Graphics::Gdi::{
@@ -525,7 +553,36 @@ unsafe fn snap(hwnd: isize, lparam: windows_sys::Win32::Foundation::LPARAM) -> b
     unsafe extern "system" {
         fn GetDpiForWindow(hwnd: isize) -> u32;
     }
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
     let rect = unsafe { &mut *(lparam as *mut RECT) };
+    let start = MOVE_START.lock().ok().and_then(|s| *s);
+    let mut cursor = POINT::default();
+    let (w, h) = (rect.right - rect.left, rect.bottom - rect.top);
+    if unsafe { GetCursorPos(&mut cursor) } != 0 {
+        match start {
+            // A maximized window dragged is restored under the pointer:
+            // its size changed, so the way is counted from here.
+            Some((r, _)) if (r[2] - r[0], r[3] - r[1]) != (w, h) => {
+                if let Ok(mut s) = MOVE_START.lock() {
+                    *s = Some((
+                        [rect.left, rect.top, rect.right, rect.bottom],
+                        [cursor.x, cursor.y],
+                    ));
+                }
+            }
+            Some((r, c)) => {
+                let (dx, dy) = (cursor.x - c[0], cursor.y - c[1]);
+                *rect = RECT {
+                    left: r[0] + dx,
+                    top: r[1] + dy,
+                    right: r[0] + dx + w,
+                    bottom: r[1] + dy + h,
+                };
+            }
+            None => {}
+        }
+    }
     let monitor = unsafe { MonitorFromRect(rect, MONITOR_DEFAULTTONEAREST) };
     let mut info: MONITORINFO = unsafe { std::mem::zeroed() };
     info.cbSize = size_of::<MONITORINFO>() as u32;
