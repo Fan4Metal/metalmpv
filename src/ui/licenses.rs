@@ -2,7 +2,11 @@
 //! (the GPL v3, under which the program as distributed with it is), and
 //! the notices of the Rust crates and fonts compiled into the exe. The
 //! texts are embedded, so the exe carries them wherever it goes; the
-//! installer and the portable archive ship them as files too.
+//! installer and the portable archive ship them as files too. Long lines
+//! are wrapped at words to the text's width beforehand ([`wrap`]): the
+//! lines are shown with `show_rows`, which wants rows of one height.
+
+use std::borrow::Cow;
 
 use egui::{Color32, FontId, Key, Rect, RichText, Sense, pos2, vec2};
 
@@ -19,6 +23,8 @@ const SIZE: egui::Vec2 = vec2(860.0, 540.0);
 /// The width of the list on the left.
 const LIST: f32 = 200.0;
 const ROW: f32 = 15.0;
+/// The font of the texts.
+const FONT: f32 = 12.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum Part {
@@ -51,17 +57,15 @@ impl Part {
 #[derive(Default)]
 pub struct LicensesView {
     part: Part,
-    /// The lines of the part shown, split once.
-    lines: Vec<&'static str>,
+    /// The lines of the part shown, wrapped to `columns`.
+    lines: Vec<Cow<'static, str>>,
+    columns: usize,
 }
 
 impl LicensesView {
     /// Draw the window; whether it is to close (the cross, Esc, a click
     /// outside).
     pub fn show(&mut self, ctx: &egui::Context) -> bool {
-        if self.lines.is_empty() {
-            self.split();
-        }
         let modal = egui::Modal::new(egui::Id::new("licenses")).show(ctx, |ui| {
             let (rect, _) = ui.allocate_exact_size(SIZE, Sense::hover());
             let list = Rect::from_min_size(rect.min, vec2(LIST, rect.height()));
@@ -80,7 +84,7 @@ impl LicensesView {
                     && self.part != part
                 {
                     self.part = part;
-                    self.split();
+                    self.lines.clear();
                 }
             }
             list_ui.add_space(12.0);
@@ -97,16 +101,26 @@ impl LicensesView {
             let cross = Rect::from_min_size(pos2(rect.right() - 24.0, rect.top()), vec2(24.0, 24.0));
             let closed = super::close_cross(&mut ui.new_child(egui::UiBuilder::new().max_rect(cross)));
             ui.painter().rect_filled(text, 4.0, Color32::from_black_alpha(60));
-            let mut text_ui = ui.new_child(egui::UiBuilder::new().max_rect(text.shrink(6.0)));
-            egui::ScrollArea::both()
+            let inner = text.shrink(6.0);
+            // As many characters as fit beside the scroll bar.
+            let font = FontId::monospace(FONT);
+            let glyph = ui.fonts_mut(|f| f.glyph_width(&font, 'M'));
+            let room = inner.width() - ui.spacing().scroll.bar_width - 8.0;
+            let columns = ((room / glyph).floor() as usize).max(20);
+            if self.lines.is_empty() || columns != self.columns {
+                self.columns = columns;
+                self.split();
+            }
+            let mut text_ui = ui.new_child(egui::UiBuilder::new().max_rect(inner));
+            egui::ScrollArea::vertical()
                 .id_salt(("licenses_text", self.part as u8))
                 .auto_shrink([false, false])
                 .show_rows(&mut text_ui, ROW, self.lines.len(), |ui, rows| {
                     for line in &self.lines[rows] {
                         ui.add(
                             egui::Label::new(
-                                RichText::new(*line)
-                                    .font(FontId::monospace(12.0))
+                                RichText::new(line.as_ref())
+                                    .font(font.clone())
                                     .color(style::TEXT),
                             )
                             .extend(),
@@ -122,11 +136,51 @@ impl LicensesView {
         self.lines.clear();
         for (i, text) in self.part.texts().iter().enumerate() {
             if i > 0 {
-                self.lines.extend(["", ""]);
+                self.lines.extend([Cow::Borrowed(""), Cow::Borrowed("")]);
             }
-            self.lines
-                .extend(text.lines().map(|l| l.trim_end_matches('\r')));
+            for line in text.lines() {
+                wrap(line.trim_end_matches('\r'), self.columns, &mut self.lines);
+            }
         }
+    }
+}
+
+/// `line` in pieces of at most `columns` characters, broken after spaces
+/// where it can be (else inside a word); the pieces after the first keep
+/// the line's indent.
+fn wrap(line: &'static str, columns: usize, out: &mut Vec<Cow<'static, str>>) {
+    if line.chars().count() <= columns {
+        out.push(Cow::Borrowed(line));
+        return;
+    }
+    let indent = line
+        .chars()
+        .take_while(|c| *c == ' ')
+        .count()
+        .min(columns / 2);
+    let mut rest = line;
+    let mut first = true;
+    while !rest.is_empty() {
+        let room = if first { columns } else { columns - indent };
+        // The byte where the piece of `room` characters ends.
+        let end = rest.char_indices().nth(room).map_or(rest.len(), |(i, _)| i);
+        let cut = if end == rest.len() {
+            end
+        } else {
+            // After the last space, if it leaves something on the line.
+            match rest[..end].rfind(' ') {
+                Some(space) if !rest[..space].trim().is_empty() => space + 1,
+                _ => end,
+            }
+        };
+        let piece = rest[..cut].trim_end();
+        out.push(if first {
+            Cow::Borrowed(piece)
+        } else {
+            Cow::Owned(format!("{}{piece}", " ".repeat(indent)))
+        });
+        rest = rest[cut..].trim_start_matches(' ');
+        first = false;
     }
 }
 
@@ -152,6 +206,34 @@ mod tests {
             NOTICES.contains(&format!("Cargo.lock FNV-1a 64: {hash}")),
             "licenses/THIRD_PARTY_NOTICES.txt is older than Cargo.lock: run python tools/notices.py"
         );
+    }
+
+    #[test]
+    fn long_lines_wrap_at_words() {
+        let mut out = Vec::new();
+        wrap("short", 10, &mut out);
+        wrap("  one two three four", 10, &mut out);
+        wrap("abcdefghijklmnop", 6, &mut out);
+        assert_eq!(
+            out,
+            [
+                "short",
+                "  one two",
+                "  three",
+                "  four",
+                "abcdef",
+                "ghijkl",
+                "mnop"
+            ]
+        );
+        // Every line of the texts fits.
+        let mut all = Vec::new();
+        for text in [METALMPV, THIRD_PARTY, GPL, NOTICES] {
+            for line in text.lines() {
+                wrap(line.trim_end_matches('\r'), 80, &mut all);
+            }
+        }
+        assert!(all.iter().all(|l| l.chars().count() <= 80));
     }
 
     #[test]
