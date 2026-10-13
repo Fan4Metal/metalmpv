@@ -177,6 +177,8 @@ pub struct State {
     pub volume_max: f64,
     /// The sound against the picture, in seconds (later when positive).
     pub audio_delay: f64,
+    /// The playback speed (1: normal).
+    pub speed: f64,
     /// The output devices there are.
     pub audio_devices: Vec<Device>,
     pub mute: bool,
@@ -275,6 +277,7 @@ impl Default for State {
             volume: 100.0,
             volume_max: 100.0,
             audio_delay: 0.0,
+            speed: 1.0,
             audio_devices: Vec::new(),
             mute: false,
             title: None,
@@ -686,6 +689,12 @@ impl Player {
     }
 
     /// The sound against the picture, in seconds; kept between files.
+    /// The playback speed (mpv keeps the voice's pitch); kept between files.
+    pub fn set_speed(&mut self, speed: f64) {
+        self.mpv.set("speed", &Value::Double(speed));
+        self.state.speed = speed;
+    }
+
     pub fn set_audio_delay(&mut self, seconds: f64) {
         let seconds = (seconds * 1000.0).round() / 1000.0;
         self.mpv.set("audio-delay", &Value::Double(seconds));

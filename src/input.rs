@@ -26,6 +26,11 @@ pub enum Cmd {
     /// the picture (`Ctrl+=` later, `Ctrl+-` earlier); 0 puts it back
     /// (`Ctrl+0`).
     AudioDelay(f64),
+    /// The playback speed by this many steps of `format::SPEEDS` (`C`
+    /// faster, `X` slower), 0 for normal (`Z`), as in GOM Player.
+    Speed(i32),
+    /// The playback speed itself (the context menu).
+    SetSpeed(f64),
     ToggleFullscreen,
     /// Close the information window, else leave fullscreen, else close
     /// the program.
@@ -146,6 +151,9 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
         // S as in subtitles; J as in mpv.
         Key::S | Key::J if !ctrl => Cmd::CycleSubs,
         Key::V if !ctrl => Cmd::ToggleSubs,
+        Key::C if !ctrl && !m.alt => Cmd::Speed(1),
+        Key::X if !ctrl && !m.alt => Cmd::Speed(-1),
+        Key::Z if !ctrl && !m.alt => Cmd::Speed(0),
         Key::Num1 if !ctrl && !m.alt => Cmd::WindowScale(0.5),
         Key::Num2 if !ctrl && !m.alt => Cmd::WindowScale(1.0),
         Key::Num3 if !ctrl && !m.alt => Cmd::WindowScale(1.5),
@@ -225,6 +233,15 @@ mod tests {
             command(Key::Period, Modifiers::NONE, true),
             Some(Cmd::Frame { forward: true })
         );
+    }
+
+    #[test]
+    fn c_x_z_set_the_speed() {
+        let none = Modifiers::NONE;
+        assert_eq!(command(Key::C, none, false), Some(Cmd::Speed(1)));
+        assert_eq!(command(Key::X, none, false), Some(Cmd::Speed(-1)));
+        assert_eq!(command(Key::Z, none, false), Some(Cmd::Speed(0)));
+        assert_eq!(command(Key::C, Modifiers::COMMAND, false), None);
     }
 
     #[test]

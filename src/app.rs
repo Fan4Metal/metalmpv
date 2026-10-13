@@ -751,6 +751,18 @@ impl App {
             Cmd::ToggleFullscreen => {
                 self.set_fullscreen(ctx, frame, !frameless::is_fullscreen(ctx))
             }
+            Cmd::Speed(steps) => {
+                if let Some(player) = &self.player {
+                    let speed = crate::format::speed_step(player.state.speed, steps);
+                    self.run(ctx, frame, Cmd::SetSpeed(speed));
+                }
+            }
+            Cmd::SetSpeed(speed) => {
+                if let Some(player) = &mut self.player {
+                    player.set_speed(speed);
+                    self.osd.show(Osd::Speed(speed));
+                }
+            }
             Cmd::AudioDelay(steps) => {
                 if let Some(player) = &mut self.player {
                     let delay = if steps == 0.0 {
@@ -1562,6 +1574,7 @@ fn context_menu(
     );
     zoom_menu(ui, state, picture.fill, &mut menu_cmds);
     aspect_menu(ui, state, picture.aspect, &mut menu_cmds);
+    speed_menu(ui, state, &mut menu_cmds);
     let list = if playlist_visible {
         tr!("Hide the playlist", "Скрыть список")
     } else {
@@ -1598,6 +1611,26 @@ struct Picture {
 }
 
 /// The picture's shape: the file's or a standard one, the current marked.
+/// The playback speed: the steps of `format::SPEEDS`, the current marked,
+/// with the keys that change it.
+fn speed_menu(ui: &mut egui::Ui, state: &State, out: &mut Vec<Cmd>) {
+    ui.menu_button(tr!("Speed", "Скорость"), |ui| {
+        for speed in crate::format::SPEEDS {
+            let text = crate::format::speed_in(crate::i18n::lang(), speed);
+            let key = if speed == 1.0 { "Z" } else { "" };
+            let button = egui::Button::new(text)
+                .shortcut_text(key)
+                .selected((state.speed - speed).abs() < 1e-9);
+            if ui.add(button).clicked() {
+                out.push(Cmd::SetSpeed(speed));
+                ui.close();
+            }
+        }
+        ui.separator();
+        ui.weak(tr!("C faster, X slower", "C быстрее, X медленнее"));
+    });
+}
+
 fn aspect_menu(
     ui: &mut egui::Ui,
     state: &State,

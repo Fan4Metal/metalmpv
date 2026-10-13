@@ -149,6 +149,7 @@ The list of fonts has a search field at its top. The **Keys** category lists the
 | `A` | Next audio track |
 | `S`, `J` | Next subtitles; after the last, none |
 | `V` | Subtitles off, and on again |
+| `C` / `X` / `Z` | Faster / slower / normal speed (0.25× to 4×, the voice keeps its pitch; also the **Speed** submenu of the context menu) |
 | `Ctrl+=` / `Ctrl+-` | Sound later / earlier by 100 ms against the picture |
 | `Ctrl+0` | Sound back in sync |
 | `Page Up` / `Page Down` | Previous / next file of the playlist |

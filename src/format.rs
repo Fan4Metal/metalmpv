@@ -106,6 +106,41 @@ pub fn percent_in(lang: Lang, share: f64) -> String {
     }
 }
 
+/// The steps of the playback speed (`C`, `X`; `Z` is 1).
+pub const SPEEDS: [f64; 11] = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0];
+
+/// The speed after `speed` by `steps` steps of [`SPEEDS`] (0: normal);
+/// from between two steps, one step is to the next.
+pub fn speed_step(speed: f64, steps: i32) -> f64 {
+    if steps == 0 {
+        return 1.0;
+    }
+    let found = if steps > 0 {
+        SPEEDS.iter().position(|s| *s > speed + 1e-9)
+    } else {
+        SPEEDS.iter().rposition(|s| *s < speed - 1e-9)
+    };
+    match found {
+        Some(i) => {
+            let i = i as i32 + steps.signum() * (steps.abs() - 1);
+            SPEEDS[i.clamp(0, SPEEDS.len() as i32 - 1) as usize]
+        }
+        None if steps > 0 => SPEEDS[SPEEDS.len() - 1],
+        None => SPEEDS[0],
+    }
+}
+
+/// A speed: `1.25×`, `0.5×`; `1,25×`.
+pub fn speed_in(lang: Lang, speed: f64) -> String {
+    let text = format!("{speed:.2}");
+    let text = text.trim_end_matches('0').trim_end_matches('.');
+    let text = match lang {
+        Lang::En => text.to_owned(),
+        Lang::Ru => text.replace('.', ","),
+    };
+    format!("{text}×")
+}
+
 /// A seek step: `10 s`, `1 min`, `1:30 min`; `10 сек`, `1 мин`.
 pub fn step_in(lang: Lang, seconds: f64) -> String {
     let s = seconds.abs();
@@ -187,6 +222,8 @@ pub enum Osd {
     Aspect(Option<String>),
     /// The sound against the picture, in seconds (later when positive).
     AudioDelay(f64),
+    /// The playback speed.
+    Speed(f64),
     /// Free text: a file name, an error.
     Text(String),
 }
@@ -320,6 +357,14 @@ impl Osd {
                 (None, false) => "[ Aspect ratio as in the file ]".into(),
                 (None, true) => "[ Пропорции как в файле ]".into(),
             },
+            Osd::Speed(speed) => {
+                let s = speed_in(lang, *speed);
+                if ru {
+                    format!("[ Скорость {s} ]")
+                } else {
+                    format!("[ Speed {s} ]")
+                }
+            }
             Osd::AudioDelay(seconds) => {
                 let ms = (seconds * 1000.0).round();
                 let ms = if ms == 0.0 {
@@ -341,6 +386,17 @@ impl Osd {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn speed_steps() {
+        assert_eq!(speed_step(1.0, 1), 1.25);
+        assert_eq!(speed_step(1.0, -1), 0.75);
+        assert_eq!(speed_step(4.0, 1), 4.0);
+        assert_eq!(speed_step(0.25, -1), 0.25);
+        assert_eq!(speed_step(1.1, 1), 1.25);
+        assert_eq!(speed_step(1.1, -1), 1.0);
+        assert_eq!(speed_step(3.0, 0), 1.0);
+    }
 
     #[test]
     fn times() {
@@ -467,6 +523,9 @@ mod tests {
             "[ Полный экран без чёрных полос ]"
         );
         assert_eq!(Osd::Fill(false).text_in(Lang::En), "[ Whole picture ]");
+        assert_eq!(Osd::Speed(1.25).text_in(Lang::Ru), "[ Скорость 1,25× ]");
+        assert_eq!(Osd::Speed(2.0).text_in(Lang::En), "[ Speed 2× ]");
+        assert_eq!(speed_in(Lang::En, 0.5), "0.5×");
         assert_eq!(
             Osd::AudioDelay(0.3).text_in(Lang::Ru),
             "[ Задержка звука +300 мс ]"
