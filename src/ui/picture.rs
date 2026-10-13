@@ -1,14 +1,16 @@
-//! The Video and sound panel (`F7`): a floating window over the player,
-//! so that playback and the keys go on, with two tabs. Video: the
-//! picture's adjustments (`adjust.rs`): the colour's sliders (a double
-//! click or the round arrow beside one puts it back to 0), the sharpness, the noise reduction and the
-//! debanding, the aspect ratio, the rotation and the flips, saving the
-//! frame, and Reset all. Sound: the ten-band equalizer with its presets
-//! and the normalization (`audio.rs`).
+//! The Video and sound panel (`F7`, the sliders button of the control
+//! bar): a floating window over the player, so that playback and the keys
+//! go on, pinned like the information window (left of it when both are
+//! open), with two tabs. Video: the picture's adjustments (`adjust.rs`):
+//! the colour's sliders (a double click or the round arrow beside one puts
+//! it back to 0), the sharpness, the noise reduction and the debanding,
+//! the aspect ratio, the rotation and the flips, saving the frame, and
+//! Reset all. Sound: the ten-band equalizer with its presets and the
+//! normalization (`audio.rs`).
 
 use egui::{RichText, Ui, vec2};
 
-use super::{icons, style};
+use super::{icons, info, style};
 use crate::adjust::{Adjust, Aspect, Color};
 use crate::audio::{EQ_BANDS, EQ_RANGE, Equalizer, Preset, band_label};
 use crate::input::Cmd;
@@ -21,8 +23,8 @@ const WIDTH: f32 = 360.0;
 const LABEL: f32 = 110.0;
 /// The width of a slider's value.
 const VALUE: f32 = 44.0;
-/// The window's top left corner from the player's: under the title row.
-const CORNER: egui::Vec2 = vec2(23.0, 46.0);
+/// The room between the panel and the information window beside it.
+const GAP: f32 = 8.0;
 
 /// The panel's tab.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -57,13 +59,18 @@ impl VideoPanel {
 
     /// Draw the panel while it is open, editing `adjust` and `sound` in
     /// place; the commands of its buttons. `has_video`: a frame can be
-    /// saved.
+    /// saved. A `pinned` panel stays at the player's top right corner, as
+    /// the information window does, and left of it while `beside_info`
+    /// (that window open and pinned); else it starts there, is moved by
+    /// its title and egui's memory keeps its place.
     pub fn show(
         &mut self,
         ctx: &egui::Context,
         adjust: &mut Adjust,
         sound: Sound<'_>,
         has_video: bool,
+        pinned: bool,
+        beside_info: bool,
     ) -> Vec<Cmd> {
         let mut out = Vec::new();
         if !self.open {
@@ -76,12 +83,24 @@ impl VideoPanel {
             .corner_radius(8)
             .inner_margin(12);
         let outer = WIDTH + frame.total_margin().sum().x;
-        egui::Window::new(tr!("Video and sound", "Видео и звук"))
+        let mut corner = info::CORNER;
+        if beside_info {
+            corner.x -= info::WIDTH + GAP;
+        }
+        let window = egui::Window::new(tr!("Video and sound", "Видео и звук"))
             .id(egui::Id::new("video_panel"))
             .open(&mut open)
-            .collapsible(false)
+            .collapsible(false);
+        let window = if pinned {
+            window.anchor(egui::Align2::RIGHT_TOP, corner)
+        } else {
+            // The same pivot as the anchor's: unpinning leaves it in place.
+            window
+                .pivot(egui::Align2::RIGHT_TOP)
+                .default_pos(screen.right_top() + corner)
+        };
+        window
             .resizable(false)
-            .default_pos(screen.left_top() + CORNER)
             .min_width(outer)
             .max_width(outer)
             .constrain_to(screen)

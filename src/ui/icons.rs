@@ -371,6 +371,16 @@ pub fn shuffle(p: &Painter, o: Pos2, s: f32, c: Color32) {
     }
 }
 
+/// Three sliders with their knobs: the picture's and the sound's settings.
+pub fn sliders(p: &Painter, o: Pos2, s: f32, c: Color32) {
+    let stroke = Stroke::new(1.4, c);
+    let at = |x: f32, y: f32| o + vec2(x, y) * s;
+    for (y, knob) in [(-0.65, 0.35), (0.0, -0.45), (0.65, 0.15)] {
+        p.line_segment([at(-1.0, y), at(1.0, y)], stroke);
+        p.circle(at(knob, y), 0.28 * s, c, Stroke::NONE);
+    }
+}
+
 /// A round arrow turning back (↺): back to the default.
 pub fn reset(p: &Painter, o: Pos2, s: f32, c: Color32) {
     let stroke = Stroke::new(1.4, c);

@@ -30,7 +30,9 @@ const CHAPTER_MARKS: &str = "chapter_marks";
 const TIME_DISPLAY: &str = "time_display";
 const FULLSCREEN_TRANSPARENCY: &str = "fullscreen_transparency";
 const FULLSCREEN_TITLE: &str = "fullscreen_title";
-const INFO_PINNED: &str = "info_pinned";
+const PANELS_PINNED: &str = "panels_pinned";
+/// The key before the Video and sound panel was pinned too.
+const OLD_INFO_PINNED: &str = "info_pinned";
 const SNAP_TO_CENTRE: &str = "snap_to_centre";
 const REPEAT: &str = "repeat";
 const ON_TOP: &str = "on_top";
@@ -200,9 +202,10 @@ pub struct Settings {
     pub fullscreen_transparency: f64,
     /// A strip with the file's name at the top in fullscreen.
     pub fullscreen_title: bool,
-    /// The information window stays at the player's top right corner;
-    /// else it is moved by its title and egui keeps its place.
-    pub info_pinned: bool,
+    /// The information window and the Video and sound panel stay at the
+    /// player's top right corner (the panel left of the information);
+    /// else they are moved by their titles and egui keeps their places.
+    pub panels_pinned: bool,
     /// The window, being moved, is drawn to the screen's centre lines.
     pub snap_to_centre: bool,
     /// What plays after the end of a file (`R`, the playlist's button).
@@ -269,7 +272,7 @@ impl Default for Settings {
             time_mode: TimeMode::Both,
             fullscreen_transparency: 12.0,
             fullscreen_title: true,
-            info_pinned: true,
+            panels_pinned: true,
             snap_to_centre: true,
             repeat: Repeat::Off,
             on_top: OnTop::Never,
@@ -358,7 +361,7 @@ impl Settings {
                 d.fullscreen_transparency,
             ),
             fullscreen_title: flag(FULLSCREEN_TITLE, d.fullscreen_title),
-            info_pinned: flag(INFO_PINNED, d.info_pinned),
+            panels_pinned: flag(PANELS_PINNED, flag(OLD_INFO_PINNED, d.panels_pinned)),
             snap_to_centre: flag(SNAP_TO_CENTRE, d.snap_to_centre),
             repeat: get(REPEAT)
                 .as_deref()
@@ -458,7 +461,8 @@ impl Settings {
             format!("{:.0}", self.fullscreen_transparency),
         );
         storage.set_string(FULLSCREEN_TITLE, self.fullscreen_title.to_string());
-        storage.set_string(INFO_PINNED, self.info_pinned.to_string());
+        storage.set_string(PANELS_PINNED, self.panels_pinned.to_string());
+        storage.remove_string(OLD_INFO_PINNED);
         storage.set_string(SNAP_TO_CENTRE, self.snap_to_centre.to_string());
         storage.set_string(REPEAT, self.repeat.name().into());
         storage.set_string(ON_TOP, self.on_top.name().into());
@@ -551,7 +555,7 @@ mod tests {
             time_mode: TimeMode::Remaining,
             fullscreen_transparency: 40.0,
             fullscreen_title: false,
-            info_pinned: false,
+            panels_pinned: false,
             snap_to_centre: false,
             repeat: Repeat::All,
             on_top: OnTop::Playing,
@@ -606,6 +610,17 @@ mod tests {
         storage.set_string(OSD_FONT_FILE, "x|C:/f.ttf".into());
         storage.set_string(WINDOW_NORMAL, "1,2,3".into());
         assert_eq!(Settings::load(&storage), Settings::default());
+    }
+
+    #[test]
+    fn the_old_pin_key_is_read() {
+        let mut storage = MemStorage::default();
+        storage.set_string(OLD_INFO_PINNED, "false".into());
+        assert!(!Settings::load(&storage).panels_pinned);
+        storage.set_string(PANELS_PINNED, "true".into());
+        assert!(Settings::load(&storage).panels_pinned);
+        Settings::load(&storage).save(&mut storage);
+        assert_eq!(storage.get_string(OLD_INFO_PINNED), None);
     }
 
     #[test]

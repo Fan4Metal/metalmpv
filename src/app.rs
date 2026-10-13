@@ -1675,6 +1675,7 @@ impl App {
         let bar = ui::controls::Bar {
             state,
             playlist_visible: false,
+            video_panel_open: self.video_panel.open,
             fullscreen: true,
             has_prev: self.playlist.prev_in(self.settings.repeat).is_some(),
             has_next: self.playlist.next_in(self.settings.repeat).is_some(),
@@ -2151,6 +2152,7 @@ impl eframe::App for App {
             let bar = ui::controls::Bar {
                 state: &state,
                 playlist_visible: self.settings.playlist_visible,
+                video_panel_open: self.video_panel.open,
                 fullscreen: false,
                 has_prev: self.playlist.prev_in(self.settings.repeat).is_some(),
                 has_next: self.playlist.next_in(self.settings.repeat).is_some(),
@@ -2276,7 +2278,7 @@ impl eframe::App for App {
             self.playlist.current_path(),
             &state,
             cover,
-            self.settings.info_pinned,
+            self.settings.panels_pinned,
         );
         cmds.extend(info_cmds);
         let before = self.adjust.clone();
@@ -2285,9 +2287,15 @@ impl eframe::App for App {
             equalizer: &mut self.settings.equalizer,
             normalize: &mut self.settings.normalize,
         };
-        let panel_cmds =
-            self.video_panel
-                .show(&ctx, &mut self.adjust, sound, video_size(&state).is_some());
+        let pinned = self.settings.panels_pinned;
+        let panel_cmds = self.video_panel.show(
+            &ctx,
+            &mut self.adjust,
+            sound,
+            video_size(&state).is_some(),
+            pinned,
+            pinned && self.info.open,
+        );
         cmds.extend(panel_cmds);
         if let Some(player) = &mut self.player {
             if self.adjust != before {

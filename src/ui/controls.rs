@@ -12,6 +12,8 @@ use crate::player::State;
 pub struct Bar<'a> {
     pub state: &'a State,
     pub playlist_visible: bool,
+    /// The Video and sound panel is open (its button underlined).
+    pub video_panel_open: bool,
     pub fullscreen: bool,
     pub has_prev: bool,
     pub has_next: bool,
@@ -122,14 +124,7 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
         icons::list(p, o, s, c)
     });
     if bar.playlist_visible {
-        let r = list.rect;
-        ui.painter().line_segment(
-            [
-                pos2(r.center().x - 6.0, r.bottom() - 3.0),
-                pos2(r.center().x + 6.0, r.bottom() - 3.0),
-            ],
-            egui::Stroke::new(2.0, style::ACCENT),
-        );
+        underline(ui, list.rect);
     }
     if list.clicked() {
         out.push(Cmd::TogglePlaylist);
@@ -224,7 +219,8 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
     }
 
     // Audio and subtitles, left of the volume: one button, both lists
-    // side by side in the window over it.
+    // side by side in the window over it. The Video and sound panel's
+    // button left of it.
     let tracks_rect = Rect::from_center_size(
         pos2(speaker.left() - 6.0 - SMALL / 2.0, row.center().y),
         vec2(SMALL, SMALL),
@@ -242,7 +238,34 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
             .gap(6.0)
             .show(|ui| out.extend(super::tracks::panel(ui, &state.tracks)));
     }
+    let panel_rect = tracks_rect.translate(vec2(-(SMALL + GAP), 0.0));
+    if panel_rect.left() > group.right() + 4.0 {
+        let panel = flat(
+            ui,
+            panel_rect,
+            tr!("Video and sound (F7)", "Видео и звук (F7)"),
+            true,
+            |p, o, c, _| icons::sliders(p, o, s, c),
+        );
+        if bar.video_panel_open {
+            underline(ui, panel.rect);
+        }
+        if panel.clicked() {
+            out.push(Cmd::ToggleVideoPanel);
+        }
+    }
     out
+}
+
+/// The accent line under a button whose panel is shown.
+fn underline(ui: &Ui, r: Rect) {
+    ui.painter().line_segment(
+        [
+            pos2(r.center().x - 6.0, r.bottom() - 3.0),
+            pos2(r.center().x + 6.0, r.bottom() - 3.0),
+        ],
+        egui::Stroke::new(2.0, style::ACCENT),
+    );
 }
 
 /// A button with no frame: an icon painted by `paint(painter, centre,
