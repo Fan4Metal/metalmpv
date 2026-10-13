@@ -13,7 +13,7 @@ use egui::{Align, Color32, Layout, Rect, RichText, Sense, TextureHandle, Ui, vec
 use super::{icons, style, tool};
 use crate::cover::{Cover, Source};
 use crate::i18n::lang;
-use crate::info::{self, ChipAction};
+use crate::info::{self, ChipAction, Tone};
 use crate::input::Cmd;
 use crate::player::State;
 use crate::playlist::Channel;
@@ -50,6 +50,15 @@ pub struct ChannelView<'a> {
     pub logo: Option<TextureHandle>,
 }
 
+/// How the window is shown, from the settings.
+#[derive(Clone, Copy, Debug)]
+pub struct Look {
+    /// At the player's top right corner, else where it was left.
+    pub pinned: bool,
+    /// The chips in colour (`settings.info_colours`).
+    pub colours: bool,
+}
+
 /// The cover as the window gets it: the picture and its texture.
 pub struct CoverView<'a> {
     pub cover: &'a Cover,
@@ -76,7 +85,7 @@ impl InfoWindow {
     }
 
     /// Draw the window while it is open; the commands of its buttons. A
-    /// `pinned` window stays at the player's top right corner (anchored,
+    /// pinned window stays at the player's top right corner (anchored,
     /// so it follows the corner as the player's window changes); else it
     /// starts there, is moved by its title and egui's memory keeps its
     /// place. The width is fixed; only the bottom edge is dragged, and
@@ -87,7 +96,7 @@ impl InfoWindow {
         path: Option<&Path>,
         state: &State,
         cover: Option<CoverView<'_>>,
-        pinned: bool,
+        look: Look,
         channel: Option<ChannelView<'_>>,
     ) -> Vec<Cmd> {
         let mut out = Vec::new();
@@ -100,7 +109,7 @@ impl InfoWindow {
             .id(egui::Id::new("file_info"))
             .open(&mut open)
             .collapsible(false);
-        let window = if pinned {
+        let window = if look.pinned {
             window.anchor(egui::Align2::RIGHT_TOP, CORNER)
         } else {
             // The same pivot as the anchor's: unpinning leaves it in place.
@@ -126,7 +135,14 @@ impl InfoWindow {
                     ui.weak(tr!("No file is open.", "Файл не открыт."));
                     return;
                 }
-                self.header(ui, path, state, cover.as_ref(), channel.as_ref(), &mut out);
+                out.extend(self.header(
+                    ui,
+                    path,
+                    state,
+                    cover.as_ref(),
+                    channel.as_ref(),
+                    look.colours,
+                ));
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
@@ -184,7 +200,8 @@ impl InfoWindow {
     }
 
     /// The cover and, beside it, the title, the artist and the album, then
-    /// the chips: the file's main facts at a glance ([`info::chips_in`]).
+    /// the chips: the file's main facts at a glance ([`info::chips_in`]);
+    /// the commands of the chips clicked.
     fn header(
         &mut self,
         ui: &mut Ui,
@@ -192,8 +209,9 @@ impl InfoWindow {
         state: &State,
         cover: Option<&CoverView<'_>>,
         view: Option<&ChannelView<'_>>,
-        out: &mut Vec<Cmd>,
-    ) {
+        colours: bool,
+    ) -> Vec<Cmd> {
+        let mut out = Vec::new();
         let channel = view.map(|v| v.channel);
         // An IPTV list's channel by the list's name (a stream's title is
         // its file's, "index.m3u8"), with its group in place of an album.
@@ -263,7 +281,7 @@ impl InfoWindow {
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
                         for c in row {
-                            if chip(ui, &c).clicked() {
+                            if chip(ui, &c, colours).clicked() {
                                 match c.action {
                                     ChipAction::Audio(id) => out.push(Cmd::SelectAudio(id)),
                                     ChipAction::None => {}
@@ -274,6 +292,7 @@ impl InfoWindow {
                 }
             });
         });
+        out
     }
 
     /// The cover over the whole window, as big as it fits; a click or `Esc`
@@ -433,15 +452,49 @@ fn track_entry(ui: &mut Ui, track: &Track, state: &State) {
     });
 }
 
+/// The hue of a kind of chip: the picture, the sound, the subtitles.
+fn hue(tone: Tone) -> Option<Color32> {
+    match tone {
+        Tone::Picture => Some(Color32::from_rgb(0x5b, 0x9d, 0xe0)),
+        Tone::Sound => Some(Color32::from_rgb(0x5e, 0xc2, 0x7f)),
+        Tone::Subtitles => Some(Color32::from_rgb(0xe6, 0xb4, 0x4c)),
+        Tone::Plain | Tone::Format(_) => None,
+    }
+}
+
 /// A chip of the header: plain text on a light ground, as the badges of
 /// the tracks window; the playing track's outlined in the accent colour,
-/// one that does something lit when hovered.
-fn chip(ui: &mut Ui, chip: &info::Chip) -> egui::Response {
+/// one that does something lit when hovered. With `colours`, the format
+/// chip is its file icon's band with white letters, and the picture, the
+/// sound and the subtitles each a tint of their own hue.
+fn chip(ui: &mut Ui, chip: &info::Chip, colours: bool) -> egui::Response {
     let clickable = chip.action != ChipAction::None;
-    let color = if chip.selected {
-        style::TEXT_BRIGHT
-    } else {
-        style::TEXT
+    let tone = if colours { chip.tone } else { Tone::Plain };
+    let (ground, lit, color) = match tone {
+        Tone::Format(c) => {
+            let band = Color32::from_rgb(c.band[0], c.band[1], c.band[2]);
+            (band, band, style::TEXT_BRIGHT)
+        }
+        _ => match hue(tone) {
+            Some(h) => (
+                h.gamma_multiply(0.22),
+                h.gamma_multiply(0.36),
+                if chip.selected {
+                    style::TEXT_BRIGHT
+                } else {
+                    h.lerp_to_gamma(Color32::WHITE, 0.55)
+                },
+            ),
+            None => (
+                Color32::from_white_alpha(18),
+                Color32::from_white_alpha(34),
+                if chip.selected {
+                    style::TEXT_BRIGHT
+                } else {
+                    style::TEXT
+                },
+            ),
+        },
     };
     let galley = ui.fonts_mut(|f| {
         f.layout_no_wrap(chip.text.clone(), egui::FontId::proportional(12.0), color)
@@ -455,9 +508,9 @@ fn chip(ui: &mut Ui, chip: &info::Chip) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(size, sense);
     let painter = ui.painter();
     let ground = if clickable && response.hovered() {
-        Color32::from_white_alpha(34)
+        lit
     } else {
-        Color32::from_white_alpha(18)
+        ground
     };
     painter.rect_filled(rect, 4.0, ground);
     if chip.selected {

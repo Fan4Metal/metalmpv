@@ -35,6 +35,7 @@ const TIME_DISPLAY: &str = "time_display";
 const FULLSCREEN_TRANSPARENCY: &str = "fullscreen_transparency";
 const FULLSCREEN_TITLE: &str = "fullscreen_title";
 const PANELS_PINNED: &str = "panels_pinned";
+const INFO_COLOURS: &str = "info_colours";
 /// The key before the Video, sound and subtitles panel was pinned too.
 const OLD_INFO_PINNED: &str = "info_pinned";
 const SNAP_TO_CENTRE: &str = "snap_to_centre";
@@ -235,6 +236,9 @@ pub struct Settings {
     /// player's top right corner (the panel left of the information);
     /// else they are moved by their titles and egui keeps their places.
     pub panels_pinned: bool,
+    /// The chips of the information window in colour: the format as its
+    /// file icon, the picture, the sound and the subtitles each in a hue.
+    pub info_colours: bool,
     /// The window, being moved, is drawn to the screen's centre lines.
     pub snap_to_centre: bool,
     /// What plays after the end of a file (`R`, the playlist's button).
@@ -310,6 +314,7 @@ impl Default for Settings {
             fullscreen_transparency: 12.0,
             fullscreen_title: true,
             panels_pinned: true,
+            info_colours: true,
             snap_to_centre: true,
             repeat: Repeat::Off,
             on_top: OnTop::Never,
@@ -415,6 +420,7 @@ impl Settings {
             ),
             fullscreen_title: flag(FULLSCREEN_TITLE, d.fullscreen_title),
             panels_pinned: flag(PANELS_PINNED, flag(OLD_INFO_PINNED, d.panels_pinned)),
+            info_colours: flag(INFO_COLOURS, d.info_colours),
             snap_to_centre: flag(SNAP_TO_CENTRE, d.snap_to_centre),
             repeat: get(REPEAT)
                 .as_deref()
@@ -540,6 +546,7 @@ impl Settings {
         );
         storage.set_string(FULLSCREEN_TITLE, self.fullscreen_title.to_string());
         storage.set_string(PANELS_PINNED, self.panels_pinned.to_string());
+        storage.set_string(INFO_COLOURS, self.info_colours.to_string());
         storage.remove_string(OLD_INFO_PINNED);
         storage.set_string(SNAP_TO_CENTRE, self.snap_to_centre.to_string());
         storage.set_string(REPEAT, self.repeat.name().into());
@@ -647,6 +654,7 @@ mod tests {
             fullscreen_transparency: 40.0,
             fullscreen_title: false,
             panels_pinned: false,
+            info_colours: false,
             snap_to_centre: false,
             repeat: Repeat::All,
             on_top: OnTop::Playing,

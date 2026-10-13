@@ -684,6 +684,20 @@ fn general(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
         divider(ui);
         row(
             ui,
+            tr!(
+                "Colour in the file information",
+                "Цвета в сведениях о файле"
+            ),
+            Some(tr!(
+                "The chips under the title: the format in the colour of its file icon, the picture, the sound and the subtitles each in a hue of their own; off, all of them grey.",
+                "Чипы под названием: формат — цветом значка его типа файлов, изображение, звук и субтитры — каждый своим оттенком; выключено — все серые."
+            )),
+            50.0,
+            |ui| switch(ui, &mut settings.info_colours),
+        );
+        divider(ui);
+        row(
+            ui,
             tr!("Snap to the screen's centre", "Притягивать к центру экрана"),
             Some(tr!(
                 "While the window is moved, its centre is drawn to the screen's centre, across or up and down, when it comes within a few pixels, as in GOM Player; moved on, it comes away.",
@@ -1680,6 +1694,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.fullscreen_transparency = d.fullscreen_transparency;
     settings.fullscreen_title = d.fullscreen_title;
     settings.panels_pinned = d.panels_pinned;
+    settings.info_colours = d.info_colours;
     settings.snap_to_centre = d.snap_to_centre;
     settings.on_top = d.on_top;
     changed.accent |= settings.accent != d.accent;

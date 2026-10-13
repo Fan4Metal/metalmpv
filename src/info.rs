@@ -649,6 +649,18 @@ pub enum ChipAction {
     Audio(i64),
 }
 
+/// A chip's colour, when the window shows colours.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tone {
+    /// Grey: the file's size, duration and bitrate.
+    Plain,
+    /// The format, in the colours of its file icon.
+    Format(crate::filetypes::Colors),
+    Picture,
+    Sound,
+    Subtitles,
+}
+
 /// A short fact of the file in the header, on a light ground: "MKV",
 /// "HEVC", "1920×1080", "AAC 5.1 Русский".
 #[derive(Clone, Debug, PartialEq)]
@@ -659,6 +671,7 @@ pub struct Chip {
     /// The track playing: outlined.
     pub selected: bool,
     pub action: ChipAction,
+    pub tone: Tone,
 }
 
 impl Chip {
@@ -668,7 +681,13 @@ impl Chip {
             tip: None,
             selected: false,
             action: ChipAction::None,
+            tone: Tone::Plain,
         }
+    }
+
+    fn tone(mut self, tone: Tone) -> Self {
+        self.tone = tone;
+        self
     }
 
     fn tip(mut self, tip: impl Into<String>) -> Self {
@@ -695,13 +714,17 @@ pub fn chips_in(lang: Lang, path: Option<&Path>, state: &State) -> Vec<Vec<Chip>
         let extension = path
             .filter(|p| !crate::playlist::is_url(p))
             .and_then(|p| p.extension())
-            .map(|e| e.to_string_lossy().to_uppercase())
+            .map(|e| e.to_string_lossy().into_owned())
             .filter(|e| e.len() <= 5);
+        let tone = extension
+            .as_deref()
+            .and_then(crate::filetypes::of_extension)
+            .map_or(Tone::Plain, |t| Tone::Format(t.colors));
         let chip = match extension {
-            Some(e) => Chip::new(e).tip(container),
+            Some(e) => Chip::new(e.to_uppercase()).tip(container),
             None => Chip::new(container),
         };
-        file.push(chip);
+        file.push(chip.tone(tone));
     }
     if let Some(size) = state.file_size {
         file.push(Chip::new(size_in(lang, size)).tip(if ru {
@@ -804,6 +827,9 @@ pub fn chips_in(lang: Lang, path: Option<&Path>, state: &State) -> Vec<Vec<Chip>
             }));
         }
         if !picture.is_empty() {
+            for chip in &mut picture {
+                chip.tone = Tone::Picture;
+            }
             rows.push(picture);
         }
     }
@@ -841,6 +867,7 @@ pub fn chips_in(lang: Lang, path: Option<&Path>, state: &State) -> Vec<Vec<Chip>
             tip: Some(tip.trim_end().to_owned()),
             selected: track.selected,
             action: ChipAction::Audio(track.id),
+            tone: Tone::Sound,
         });
     }
     if shown < audio.len() {
@@ -855,6 +882,7 @@ pub fn chips_in(lang: Lang, path: Option<&Path>, state: &State) -> Vec<Vec<Chip>
             tip: Some(rest.join("\n")),
             selected: audio.iter().skip(shown).any(|t| t.selected),
             action: ChipAction::None,
+            tone: Tone::Sound,
         });
     }
     let subs = tracks::of_kind(&state.tracks, Kind::Sub);
@@ -880,7 +908,7 @@ pub fn chips_in(lang: Lang, path: Option<&Path>, state: &State) -> Vec<Vec<Chip>
                 format!("{mark}{}. {}", i + 1, t.name_in(lang, i + 1))
             })
             .collect();
-        sound.push(Chip::new(text).tip(all.join("\n")));
+        sound.push(Chip::new(text).tip(all.join("\n")).tone(Tone::Subtitles));
     }
     if !sound.is_empty() {
         rows.push(sound);
@@ -1188,6 +1216,12 @@ mod tests {
             ]
         );
         assert_eq!(rows[0][0].tip.as_deref(), Some("Matroska"));
+        let mkv = crate::filetypes::of_extension("MKV").unwrap().colors;
+        assert_eq!(rows[0][0].tone, Tone::Format(mkv));
+        assert_eq!(rows[0][1].tone, Tone::Plain);
+        assert!(rows[1].iter().all(|c| c.tone == Tone::Picture));
+        assert_eq!(rows[2][0].tone, Tone::Sound);
+        assert_eq!(rows[2][2].tone, Tone::Subtitles);
         assert_eq!(rows[1][0].tip.as_deref(), Some("H.265 / HEVC · Main 10"));
         assert!(rows[2][0].selected && !rows[2][1].selected);
         assert_eq!(rows[2][1].action, ChipAction::Audio(2));
@@ -1233,5 +1267,6 @@ mod tests {
             &state,
         );
         assert_eq!(rows[0][0].text, "MPEG-TS");
+        assert_eq!(rows[0][0].tone, Tone::Plain);
     }
 }

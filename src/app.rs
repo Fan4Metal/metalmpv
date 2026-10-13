@@ -31,7 +31,7 @@ use crate::settings::{OnTop, Settings};
 use crate::sizing;
 use crate::tracks::{self, Kind};
 use crate::ui::about::AboutDialog;
-use crate::ui::info::{ChannelView, CoverView, InfoWindow};
+use crate::ui::info::{ChannelView, CoverView, InfoWindow, Look};
 use crate::ui::osd::OsdLine;
 use crate::ui::picture::VideoPanel;
 use crate::ui::settings::SettingsDialog;
@@ -2788,7 +2788,10 @@ impl eframe::App for App {
             self.playlist.current_path(),
             &state,
             cover,
-            self.settings.panels_pinned,
+            Look {
+                pinned: self.settings.panels_pinned,
+                colours: self.settings.info_colours,
+            },
             channel,
         );
         cmds.extend(info_cmds);
