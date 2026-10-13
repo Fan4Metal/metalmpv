@@ -97,6 +97,7 @@ const PREFER_LAST_TRACKS: &str = "prefer_last_tracks";
 const LAST_AUDIO: &str = "last_audio";
 const LAST_SUB: &str = "last_sub";
 const RECENT: &str = "recent_files";
+const REMEMBER_RECENT: &str = "remember_recent";
 
 /// How many recent files are kept.
 pub const RECENT_COUNT: usize = 10;
@@ -243,6 +244,9 @@ pub struct Settings {
     /// `Some(None)` for none). Not settings, so Reset keeps them.
     pub last_audio: Option<Likeness>,
     pub last_sub: Option<Option<Likeness>>,
+    /// The start screen lists the files played last ([`Self::recent`]);
+    /// off, none are kept.
+    pub remember_recent: bool,
     /// The files played last, the latest first (the start screen). Not a
     /// setting, so Reset keeps them; Forget all clears them.
     pub recent: Vec<PathBuf>,
@@ -286,6 +290,7 @@ impl Default for Settings {
             prefer_last_tracks: true,
             last_audio: None,
             last_sub: None,
+            remember_recent: true,
             recent: Vec::new(),
         }
     }
@@ -412,6 +417,7 @@ impl Settings {
                 "off" => Some(None),
                 v => Likeness::parse(v).map(Some),
             }),
+            remember_recent: flag(REMEMBER_RECENT, d.remember_recent),
             recent: get(RECENT)
                 .map(|v| {
                     v.lines()
@@ -424,8 +430,11 @@ impl Settings {
         }
     }
 
-    /// `path` played: first in the recent files.
+    /// `path` played: first in the recent files, if they are kept.
     pub fn played(&mut self, path: &Path) {
+        if !self.remember_recent {
+            return;
+        }
         self.recent.retain(|p| p != path);
         self.recent.insert(0, path.to_path_buf());
         self.recent.truncate(RECENT_COUNT);
@@ -493,6 +502,7 @@ impl Settings {
             Some(None) => storage.set_string(LAST_SUB, "off".into()),
             None => storage.remove_string(LAST_SUB),
         }
+        storage.set_string(REMEMBER_RECENT, self.remember_recent.to_string());
         let recent: Vec<String> = self
             .recent
             .iter()
@@ -568,6 +578,7 @@ mod tests {
                 title: Some("многоголосый".into()),
             }),
             last_sub: Some(None),
+            remember_recent: false,
             recent: vec![PathBuf::from(r"D:\Films\a.mkv"), PathBuf::from(r"E:\b.mp4")],
         };
         let mut storage = MemStorage::default();

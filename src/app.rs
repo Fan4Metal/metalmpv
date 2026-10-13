@@ -1559,10 +1559,14 @@ impl App {
         }
         let mut out = None;
         y += 32.0;
+        // Centred under the hint, as in metalmd.
         let width = (rect.width() - 48.0).clamp(120.0, 520.0);
-        let left = rect.center().x - width / 2.0;
+        let centre = rect.center().x;
+        let centred = |y: f32, size: egui::Vec2| {
+            Rect::from_min_size(egui::pos2(centre - size.x / 2.0, y), size)
+        };
         let header = layout(tr!("RECENT", "НЕДАВНИЕ").to_owned(), 11.0, style::TEXT_WEAK);
-        painter.galley(egui::pos2(left, y), header, style::TEXT_WEAK);
+        painter.galley(centred(y, header.size()).min, header, style::TEXT_WEAK);
         y += 20.0 + 8.0;
         let truncated = |text: String, points: f32, color: Color32| {
             let mut job =
@@ -1571,14 +1575,6 @@ impl App {
             painter.layout_job(job)
         };
         for (i, path) in self.settings.recent.iter().take(shown).enumerate() {
-            let row = Rect::from_min_size(egui::pos2(left, y), egui::vec2(width, RECENT_ROW - 4.0));
-            let response = ui
-                .interact(row, ui.id().with(("recent", i)), Sense::CLICK)
-                .on_hover_text(path.display().to_string());
-            let hovered = response.hovered();
-            if hovered {
-                ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
-            }
             let name = path.file_name().map_or_else(
                 || path.display().to_string(),
                 |n| n.to_string_lossy().into_owned(),
@@ -1587,15 +1583,23 @@ impl App {
                 .parent()
                 .map(|p| p.display().to_string())
                 .unwrap_or_default();
+            // Laid out in the text colour: the hover only tints it.
+            let name = truncated(name, 14.0, style::TEXT);
+            let folder = truncated(folder, 11.0, style::TEXT_WEAK);
+            let name_rect = centred(y, name.size());
+            let folder_rect = centred(name_rect.bottom() + 1.0, folder.size());
+            // The name and the folder under it take the click.
+            let row = name_rect.union(folder_rect);
+            let response = ui
+                .interact(row, ui.id().with(("recent", i)), Sense::CLICK)
+                .on_hover_text(path.display().to_string());
+            let hovered = response.hovered();
+            if hovered {
+                ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+            }
             let color = if hovered { style::ACCENT } else { style::TEXT };
-            let name = truncated(name, 14.0, color);
-            let name_height = name.size().y;
-            painter.galley(row.min, name, color);
-            painter.galley(
-                row.min + egui::vec2(0.0, name_height + 1.0),
-                truncated(folder, 11.0, style::TEXT_WEAK),
-                style::TEXT_WEAK,
-            );
+            painter.galley_with_override_text_color(name_rect.min, name, color);
+            painter.galley(folder_rect.min, folder, style::TEXT_WEAK);
             if response.clicked() {
                 out = Some(Cmd::OpenRecent(i));
             }
@@ -1606,14 +1610,14 @@ impl App {
             12.0,
             style::TEXT_WEAK,
         );
-        let clear_rect = Rect::from_min_size(egui::pos2(left, y + 4.0), clear.size());
+        let clear_rect = centred(y + 4.0, clear.size());
         let response = ui.interact(clear_rect, ui.id().with("recent_clear"), Sense::CLICK);
         let color = if response.hovered() {
             style::ACCENT
         } else {
             style::TEXT_WEAK
         };
-        painter.galley(clear_rect.min, clear, color);
+        painter.galley_with_override_text_color(clear_rect.min, clear, color);
         if response.clicked() {
             out = Some(Cmd::ClearRecent);
         }
@@ -2214,6 +2218,9 @@ impl eframe::App for App {
         }
         if self.settings_dialog.open {
             win::set_snap(self.settings.snap_to_centre);
+            if !self.settings.remember_recent {
+                self.settings.recent.clear();
+            }
         }
         if let Some(player) = &mut self.player {
             if changed.audio_channels {

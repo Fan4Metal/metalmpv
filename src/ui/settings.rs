@@ -588,6 +588,17 @@ fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                 |ui| switch(ui, &mut settings.prefer_last_tracks),
             );
             divider(ui);
+            row(
+                ui,
+                tr!("Remember the recent files", "Запоминать недавние файлы"),
+                Some(tr!(
+                    "The start screen lists the files played last; off, none are kept and the list is cleared.",
+                    "Стартовый экран показывает последние воспроизведённые файлы; выключено — они не запоминаются, а список очищается."
+                )),
+                50.0,
+                |ui| switch(ui, &mut settings.remember_recent),
+            );
+            divider(ui);
             changed.forget_positions |= row(
                 ui,
                 tr!(
@@ -1353,6 +1364,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.resume_playback = d.resume_playback;
     settings.remember_tracks = d.remember_tracks;
     settings.prefer_last_tracks = d.prefer_last_tracks;
+    settings.remember_recent = d.remember_recent;
     settings.fullscreen_transparency = d.fullscreen_transparency;
     settings.fullscreen_title = d.fullscreen_title;
     settings.info_pinned = d.info_pinned;
