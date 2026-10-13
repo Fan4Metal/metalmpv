@@ -67,6 +67,12 @@ pub enum Cmd {
     ToggleChapterMarks,
     /// Open or close the file's information window (`I`).
     ToggleInfo,
+    /// Open or close the Video panel (`F7`).
+    ToggleVideoPanel,
+    /// Save the frame on screen into Pictures\MetalMPV (`Ctrl+E`).
+    SaveFrame,
+    /// Open the folder of the saved frames.
+    ShowFrames,
     /// Save the file's cover as a picture file.
     SaveCover,
     /// Show the file in Explorer.
@@ -129,6 +135,8 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
         Key::L if !ctrl => Cmd::TogglePlaylist,
         Key::F1 => Cmd::About,
         Key::F5 => Cmd::Settings,
+        Key::F7 => Cmd::ToggleVideoPanel,
+        Key::E if ctrl => Cmd::SaveFrame,
         Key::Delete => Cmd::Delete,
         Key::T if !ctrl => Cmd::ToggleTracks,
         Key::I if !ctrl => Cmd::ToggleInfo,
@@ -251,6 +259,15 @@ mod tests {
     #[test]
     fn other_keys() {
         assert_eq!(command(Key::O, Modifiers::COMMAND, false), Some(Cmd::Open));
+        assert_eq!(
+            command(Key::F7, Modifiers::NONE, false),
+            Some(Cmd::ToggleVideoPanel)
+        );
+        assert_eq!(
+            command(Key::E, Modifiers::COMMAND, false),
+            Some(Cmd::SaveFrame)
+        );
+        assert_eq!(command(Key::E, Modifiers::NONE, false), None);
         assert_eq!(
             command(Key::O, Modifiers::NONE, false),
             Some(Cmd::ShowPosition)

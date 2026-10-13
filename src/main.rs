@@ -8,6 +8,7 @@
 #[macro_use]
 mod i18n;
 
+mod adjust;
 mod app;
 mod assoc;
 mod audio;

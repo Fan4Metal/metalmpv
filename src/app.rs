@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 
 use egui::{Align2, Color32, CursorIcon, FontId, Rect, Sense, TextureHandle};
 
+use crate::adjust::Adjust;
 use crate::cover::Cover;
 use crate::format::Osd;
 use crate::frameless;
@@ -31,6 +32,7 @@ use crate::tracks::{self, Kind};
 use crate::ui::about::AboutDialog;
 use crate::ui::info::{CoverView, InfoWindow};
 use crate::ui::osd::OsdLine;
+use crate::ui::picture::VideoPanel;
 use crate::ui::settings::SettingsDialog;
 use crate::ui::{self, style};
 use crate::update::Updates;
@@ -65,6 +67,9 @@ pub struct App {
     about: AboutDialog,
     settings_dialog: SettingsDialog,
     info: InfoWindow,
+    /// The Video panel (`F7`) and the picture's adjustments it edits.
+    video_panel: VideoPanel,
+    adjust: Adjust,
     /// The cover of the file playing, while or once it is looked for.
     cover: Option<CoverSlot>,
     updates: Updates,
@@ -201,6 +206,8 @@ impl App {
             playlist: Playlist::default(),
             about: AboutDialog::default(),
             info: InfoWindow::default(),
+            video_panel: VideoPanel::default(),
+            adjust: Adjust::default(),
             cover: None,
             settings_dialog: SettingsDialog::default(),
             updates,
@@ -378,6 +385,41 @@ impl App {
     }
 
     /// Save the cover of the file playing where the user says.
+    /// Save the frame on screen into Pictures\MetalMPV as
+    /// `<file> <position>.png`, never over another.
+    fn save_frame(&mut self, state: &State) {
+        let (Some(player), Some(dir)) = (&mut self.player, frames_dir()) else {
+            return;
+        };
+        if video_size(state).is_none() {
+            return;
+        }
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            log::warn!("cannot make {}: {e}", dir.display());
+            return;
+        }
+        let stem = self
+            .playlist
+            .current_path()
+            .and_then(Path::file_stem)
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "frame".into());
+        let time = crate::format::time(state.time, true).replace(':', "-");
+        let mut path = dir.join(format!("{stem} {time}.png"));
+        for n in 2.. {
+            if !path.exists() {
+                break;
+            }
+            path = dir.join(format!("{stem} {time} ({n}).png"));
+        }
+        player.save_frame(&path);
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned());
+        self.osd.show(Osd::Text(tr!(
+            format!("[ Frame saved: {} ]", name.unwrap_or_default()),
+            format!("[ Кадр сохранён: {} ]", name.unwrap_or_default())
+        )));
+    }
+
     fn save_cover(&mut self, frame: &eframe::Frame) {
         let Some((cover, _)) = self.cover.as_ref().and_then(|c| c.loaded.as_ref()) else {
             return;
@@ -715,10 +757,12 @@ impl App {
                 }
             }
             Cmd::Escape => {
-                // The big cover and the information window first, then
-                // fullscreen, then the program (as its close button: the
-                // settings are saved).
+                // The big cover and the information window first, the
+                // Video panel, then fullscreen, then the program (as its
+                // close button: the settings are saved).
                 if self.info.close() {
+                } else if self.video_panel.open {
+                    self.video_panel.open = false;
                 } else if frameless::is_fullscreen(ctx) {
                     self.set_fullscreen(ctx, frame, false);
                 } else {
@@ -726,6 +770,14 @@ impl App {
                 }
             }
             Cmd::ToggleInfo => self.info.toggle(),
+            Cmd::ToggleVideoPanel => self.video_panel.toggle(),
+            Cmd::SaveFrame => self.save_frame(&state),
+            Cmd::ShowFrames => {
+                if let Some(dir) = frames_dir() {
+                    let _ = std::fs::create_dir_all(&dir);
+                    win::shell_open(&dir);
+                }
+            }
             Cmd::SaveCover => self.save_cover(frame),
             Cmd::ShowInFolder => {
                 if let Some(path) = self.playlist.current_path() {
@@ -1244,7 +1296,7 @@ impl App {
         let rest = Self::pointer_rest(ctx);
         if rest < HIDE_AFTER {
             ctx.request_repaint_after(HIDE_AFTER - rest);
-        } else if !panels.top && !panels.bottom && !self.info.open {
+        } else if !panels.top && !panels.bottom && !self.info.open && !self.video_panel.open {
             ctx.set_cursor_icon(CursorIcon::None);
         }
         let screen = ctx.content_rect();
@@ -1309,6 +1361,11 @@ struct Panels {
 
 /// The icon of the start screen in points: 112 as in qview, 64 in a low
 /// window (both embedded at 100–200 %).
+/// Where saved frames go: Pictures\MetalMPV.
+fn frames_dir() -> Option<PathBuf> {
+    Some(win::pictures_dir()?.join(crate::APP_NAME))
+}
+
 /// The video's display size in pixels, `None` without a picture.
 fn video_size(state: &State) -> Option<[f64; 2]> {
     match (state.width, state.height) {
@@ -1390,6 +1447,20 @@ fn context_menu(
         "I",
         Cmd::ToggleInfo,
     );
+    item(
+        ui,
+        tr!("Video settings…", "Настройки видео…").into(),
+        "F7",
+        Cmd::ToggleVideoPanel,
+    );
+    if video_size(state).is_some() {
+        item(
+            ui,
+            tr!("Save the frame", "Сохранить кадр").into(),
+            "Ctrl+E",
+            Cmd::SaveFrame,
+        );
+    }
     ui.separator();
     let pause = if state.paused || state.idle {
         tr!("Play", "Воспроизвести")
@@ -1731,6 +1802,16 @@ impl eframe::App for App {
             self.settings.info_pinned,
         );
         cmds.extend(info_cmds);
+        let before = self.adjust.clone();
+        let panel_cmds =
+            self.video_panel
+                .show(&ctx, &mut self.adjust, video_size(&state).is_some());
+        cmds.extend(panel_cmds);
+        if self.adjust != before
+            && let Some(player) = &mut self.player
+        {
+            player.adjust(&before, &self.adjust);
+        }
 
         for cmd in cmds {
             self.run(&ctx, frame, cmd);

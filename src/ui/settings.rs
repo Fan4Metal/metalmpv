@@ -1088,7 +1088,7 @@ fn update_status(ui: &mut Ui, updates: &Updates) {
 
 /// The keys, as in the README.
 fn keys(ui: &mut Ui) {
-    let rows: [(&str, &str); 26] = [
+    let rows: [(&str, &str); 28] = [
         (
             tr!("Space", "Пробел"),
             tr!("Play / pause", "Воспроизведение / пауза"),
@@ -1170,6 +1170,14 @@ fn keys(ui: &mut Ui) {
         ),
         ("A", tr!("Next audio track", "Следующая звуковая дорожка")),
         ("I", tr!("File information", "Сведения о файле")),
+        (
+            "F7",
+            tr!(
+                "Video panel: colour, sharpness, rotation",
+                "Панель видео: цвет, резкость, поворот"
+            ),
+        ),
+        ("Ctrl+E", tr!("Save the frame", "Сохранить кадр")),
         (
             "O",
             tr!(

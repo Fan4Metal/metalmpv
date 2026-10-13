@@ -355,6 +355,26 @@ pub fn set_rect(hwnd: isize, rect: [i32; 4]) {
     };
 }
 
+/// The user's Pictures folder, wherever it was moved (OneDrive).
+pub fn pictures_dir() -> Option<std::path::PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::UI::Shell::{FOLDERID_Pictures, SHGetKnownFolderPath};
+    // ole32 is declared by hand, to spare a `windows-sys` feature.
+    #[link(name = "ole32")]
+    unsafe extern "system" {
+        fn CoTaskMemFree(pv: *const core::ffi::c_void);
+    }
+    let mut raw: windows_sys::core::PWSTR = std::ptr::null_mut();
+    let hr = unsafe { SHGetKnownFolderPath(&FOLDERID_Pictures, 0, std::ptr::null_mut(), &mut raw) };
+    let path = (hr >= 0 && !raw.is_null()).then(|| {
+        let len = (0..).take_while(|&i| unsafe { *raw.add(i) } != 0).count();
+        let wide = unsafe { std::slice::from_raw_parts(raw, len) };
+        std::path::PathBuf::from(std::ffi::OsString::from_wide(wide))
+    });
+    unsafe { CoTaskMemFree(raw.cast()) };
+    path
+}
+
 /// The double-click time of Windows in seconds (egui assumes 0.3).
 pub fn double_click_time() -> f64 {
     #[link(name = "user32")]
@@ -362,4 +382,13 @@ pub fn double_click_time() -> f64 {
         fn GetDoubleClickTime() -> u32;
     }
     unsafe { GetDoubleClickTime() as f64 / 1000.0 }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn pictures_dir_is_found() {
+        let dir = super::pictures_dir().expect("the Pictures folder");
+        assert!(dir.is_absolute(), "{}", dir.display());
+    }
 }

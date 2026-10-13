@@ -8,6 +8,7 @@ pub mod controls;
 pub mod icons;
 pub mod info;
 pub mod osd;
+pub mod picture;
 pub mod playlist;
 pub mod settings;
 pub mod style;

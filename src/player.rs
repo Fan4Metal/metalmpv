@@ -9,6 +9,7 @@
 
 use std::path::Path;
 
+use crate::adjust::{Adjust, Color};
 use crate::audio::{self, Channels, Device, Passthrough};
 use crate::chapters::{self, Chapter};
 use crate::mpv::{EndReason, Event, Mpv, Value, sys};
@@ -644,6 +645,34 @@ impl Player {
         self.mpv.set("af", &Value::Str(filter.into()));
     }
 
+    /// Give mpv what changed from `old` to `new` in the picture's
+    /// adjustments.
+    pub fn adjust(&mut self, old: &Adjust, new: &Adjust) {
+        for c in Color::ALL {
+            if old.get(c) != new.get(c) {
+                self.mpv.set(c.property(), &Value::Int(new.get(c)));
+            }
+        }
+        if old.rotate != new.rotate {
+            self.mpv.set("video-rotate", &Value::Int(new.rotate));
+        }
+        let filters = new.filters();
+        if old.filters() != filters {
+            self.mpv.set("vf", &Value::Str(filters));
+        }
+        if old.deband != new.deband {
+            self.mpv.set("deband", &Value::Flag(new.deband));
+        }
+    }
+
+    /// Save the frame on screen as it was decoded (without subtitles) to
+    /// `path`; the extension says the format.
+    pub fn save_frame(&mut self, path: &Path) {
+        let path = path.to_string_lossy();
+        self.mpv
+            .command(0, &["screenshot-to-file", path.as_ref(), "video"]);
+    }
+
     /// Compressed sound to a receiver as it is, or decoded here.
     pub fn set_passthrough(&mut self, passthrough: Passthrough) {
         self.mpv
@@ -869,6 +898,85 @@ mod tests {
             !errors
                 .iter()
                 .any(|e| e.contains("dynaudnorm") || e.contains("filter")),
+            "{errors:?}"
+        );
+    }
+
+    /// The picture's adjustments on a real file without a window: mpv
+    /// takes the colour, the rotation, the filters and the debanding, the
+    /// filters run, and a frame is saved. `cargo test picture_adjustments
+    /// -- --ignored --nocapture` with METALMPV_SAMPLE.
+    #[test]
+    #[ignore = "needs vendor/libmpv and a sample video"]
+    fn picture_adjustments_of_a_real_file() {
+        let sample = std::env::var("METALMPV_SAMPLE")
+            .unwrap_or_else(|_| "D:/Projects/video_converter/samples/test.mp4".into());
+        let api = sys::api().unwrap();
+        let mpv = Mpv::new(
+            api,
+            &[
+                ("vo", "null"),
+                ("ao", "null"),
+                ("idle", "yes"),
+                ("terminal", "no"),
+                ("pause", "yes"),
+            ],
+        )
+        .unwrap();
+        mpv.request_log_messages("warn");
+        let mut player = Player {
+            mpv,
+            state: State::default(),
+            scan_asked: None,
+        };
+        let mut new = Adjust::default();
+        new.set(Color::Brightness, 10);
+        new.set(Color::Gamma, -20);
+        new.turn(1);
+        new.flip = true;
+        new.mirror = true;
+        new.sharpen = 60;
+        new.denoise = true;
+        new.deband = true;
+        player.adjust(&Adjust::default(), &new);
+        player.mpv.observe(1, "vf", sys::MPV_FORMAT_NODE);
+        player
+            .mpv
+            .observe(2, "video-out-params", sys::MPV_FORMAT_NODE);
+        player.mpv.observe(3, "brightness", sys::MPV_FORMAT_INT64);
+        player.mpv.command(0, &["loadfile", &sample]);
+        let shot = std::env::temp_dir().join(format!("metalmpv_frame_{}.png", std::process::id()));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let (mut out, mut errors, mut shot_asked) = (None, Vec::new(), false);
+        while !(out.is_some() && shot.exists()) && std::time::Instant::now() < deadline {
+            while let Some(event) = player.mpv.next_event() {
+                match event {
+                    Event::Property { id: 1, value } => eprintln!("vf: {value:?}"),
+                    Event::Property { id: 2, value } if value.get("w").is_some() => {
+                        eprintln!("out: {value:?}");
+                        out = Some(value);
+                    }
+                    Event::Property { id: 3, value } => eprintln!("brightness: {value:?}"),
+                    Event::Log { prefix, text, .. } => {
+                        eprint!("[{prefix}] {text}");
+                        errors.push(text);
+                    }
+                    _ => {}
+                }
+            }
+            if out.is_some() && !shot_asked {
+                player.save_frame(&shot);
+                shot_asked = true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(out.is_some(), "no picture came out of the filters");
+        assert!(shot.exists(), "no frame saved");
+        let _ = std::fs::remove_file(&shot);
+        assert!(
+            !errors
+                .iter()
+                .any(|e| e.contains("filter") || e.contains("Disabling")),
             "{errors:?}"
         );
     }
