@@ -9,16 +9,19 @@ use egui::{Align2, FontId, Response, Sense, Ui, pos2, vec2};
 use super::{icons, style, tool};
 use crate::chapters::{self, Chapter};
 use crate::input::Cmd;
+use crate::logos::Logos;
 use crate::playlist::{Playlist, Repeat};
 
 const ROW: f32 = 22.0;
 /// The height of the chapters' header.
 const HEADER: f32 = 26.0;
 
-/// The panel; `chapters` and `time` are the playing file's.
+/// The panel; `chapters` and `time` are the playing file's; `logos`, when
+/// they are fetched, pictures the channels of an IPTV list.
 pub fn panel(
     ui: &mut Ui,
     playlist: &mut Playlist,
+    logos: Option<&mut Logos>,
     repeat: Repeat,
     chapters: &[Chapter],
     time: Option<f64>,
@@ -111,7 +114,7 @@ pub fn panel(
         ui.available_width(),
         ui.available_height() - chapters_height,
     );
-    ui.allocate_ui(files, |ui| files_list(ui, playlist, &mut out));
+    ui.allocate_ui(files, |ui| files_list(ui, playlist, logos, &mut out));
     if !chapters.is_empty() {
         if chapters_header(ui, chapters.len(), open).clicked() {
             ui.data_mut(|d| d.insert_persisted(open_id, !open));
@@ -123,8 +126,14 @@ pub fn panel(
     out
 }
 
-/// The files, filling `ui`.
-fn files_list(ui: &mut Ui, playlist: &mut Playlist, out: &mut Vec<Cmd>) {
+/// The files, filling `ui`: an IPTV list's channels by their names, with
+/// their logos.
+fn files_list(
+    ui: &mut Ui,
+    playlist: &mut Playlist,
+    mut logos: Option<&mut Logos>,
+    out: &mut Vec<Cmd>,
+) {
     let frame = egui::Frame::new()
         .fill(style::LIST_BG)
         .corner_radius(3.0)
@@ -148,9 +157,8 @@ fn files_list(ui: &mut Ui, playlist: &mut Playlist, out: &mut Vec<Cmd>) {
             .show_rows(ui, ROW, total, |ui, range| {
                 for i in range {
                     let path = &playlist.items()[i];
-                    let name = path
-                        .file_name()
-                        .map_or_else(|| path.to_string_lossy(), |n| n.to_string_lossy());
+                    let name = playlist.title(path);
+                    let channel = playlist.channel(path);
                     let current = playlist.current() == Some(i);
                     let selected = playlist.selected == Some(i);
                     let (rect, response) =
@@ -171,13 +179,31 @@ fn files_list(ui: &mut Ui, playlist: &mut Playlist, out: &mut Vec<Cmd>) {
                         font.clone(),
                         style::TEXT_WEAK,
                     );
-                    let text_left = n.right() + 6.0;
-                    let galley = ui.fonts_mut(|f| {
-                        let mut job = egui::text::LayoutJob::simple_singleline(
-                            name.into_owned(),
-                            font,
-                            color,
+                    let mut text_left = n.right() + 6.0;
+                    if let Some(url) = channel.and_then(|c| c.logo.as_deref())
+                        && let Some(logos) = logos.as_deref_mut()
+                    {
+                        // A square the row's height, the logo fitted in it.
+                        let side = ROW - 4.0;
+                        let square = egui::Rect::from_min_size(
+                            pos2(text_left, rect.center().y - side / 2.0),
+                            vec2(side, side),
                         );
+                        if let Some(texture) = logos.get(ui.ctx(), url) {
+                            let size = texture.size_vec2();
+                            let scale = (side / size.x).min(side / size.y);
+                            let shown = egui::Rect::from_center_size(square.center(), size * scale);
+                            painter.image(
+                                texture.id(),
+                                shown,
+                                egui::Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+                                egui::Color32::WHITE,
+                            );
+                        }
+                        text_left = square.right() + 6.0;
+                    }
+                    let galley = ui.fonts_mut(|f| {
+                        let mut job = egui::text::LayoutJob::simple_singleline(name, font, color);
                         job.wrap = egui::text::TextWrapping::truncate_at_width(
                             rect.right() - 6.0 - text_left,
                         );
@@ -188,7 +214,15 @@ fn files_list(ui: &mut Ui, playlist: &mut Playlist, out: &mut Vec<Cmd>) {
                         galley,
                         color,
                     );
-                    let response = response.on_hover_text(path.display().to_string());
+                    let tip = match channel.and_then(|c| c.group.as_deref()) {
+                        Some(group) => format!(
+                            "{group}
+{}",
+                            path.display()
+                        ),
+                        None => path.display().to_string(),
+                    };
+                    let response = response.on_hover_text(tip);
                     if crate::ui::double_clicked(&response) {
                         out.push(Cmd::PlayIndex(i));
                     } else if response.clicked() {

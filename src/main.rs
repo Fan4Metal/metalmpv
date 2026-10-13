@@ -22,6 +22,7 @@ mod icon;
 mod info;
 mod input;
 mod instance;
+mod logos;
 mod mpv;
 mod player;
 mod playlist;

@@ -3,6 +3,7 @@
 //! one. A plain list is easy to show, edit and test.
 
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// Extensions of the files a folder contributes (a file opened by name is
@@ -28,29 +29,105 @@ pub fn is_playlist_file(path: &Path) -> bool {
         })
 }
 
-/// The entries of an M3U playlist's `text`: every line but blank ones and
-/// `#` comments (`#EXTINF` and the like); a relative path is from `dir`,
-/// an address is kept as it is.
-pub fn m3u_entries(text: &str, dir: &Path) -> Vec<PathBuf> {
-    text.trim_start_matches('\u{feff}')
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        .map(|l| {
-            let path = PathBuf::from(l);
-            if is_url(&path) || path.is_absolute() {
-                path
-            } else {
-                dir.join(path)
+/// What an M3U list's `#EXTINF` line says about the entry after it: the
+/// name after the comma (an IPTV list's channel), the `tvg-logo` picture's
+/// address and the `group-title`. Only text: nothing in it is run, and the
+/// logo is fetched by `logos.rs` under its own rules.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Channel {
+    pub title: Option<String>,
+    pub logo: Option<String>,
+    pub group: Option<String>,
+}
+
+impl Channel {
+    /// The `#EXTINF` line's text after the colon; `None` when it names
+    /// nothing.
+    fn parse(line: &str) -> Option<Self> {
+        // `-1 tvg-id="…" tvg-logo="…" group-title="…",Title`: the title
+        // follows the first comma outside quotes.
+        let mut quoted = false;
+        let comma = line.char_indices().find_map(|(i, c)| {
+            if c == '"' {
+                quoted = !quoted;
             }
-        })
-        .collect()
+            (c == ',' && !quoted).then_some(i)
+        });
+        let (head, title) = match comma {
+            Some(i) => (&line[..i], Some(line[i + 1..].trim())),
+            None => (line, None),
+        };
+        let attribute = |name: &str| {
+            let start = head.find(&format!("{name}=\""))? + name.len() + 2;
+            let end = head[start..].find('"')? + start;
+            Some(clean(&head[start..end])).filter(|v| !v.is_empty())
+        };
+        let channel = Self {
+            title: title.map(clean).filter(|t| !t.is_empty()),
+            logo: attribute("tvg-logo"),
+            group: attribute("group-title"),
+        };
+        (channel != Self::default()).then_some(channel)
+    }
+
+    /// The `#EXTINF` line written back for this entry.
+    fn line(&self) -> String {
+        let mut line = String::from("#EXTINF:-1");
+        for (name, value) in [("tvg-logo", &self.logo), ("group-title", &self.group)] {
+            if let Some(v) = value {
+                line.push_str(&format!(" {name}=\"{}\"", v.replace('"', "'")));
+            }
+        }
+        line.push(',');
+        line.push_str(self.title.as_deref().unwrap_or_default());
+        line
+    }
+}
+
+/// A value of a list without control characters (a line break in a title
+/// would break the line written back).
+fn clean(text: &str) -> String {
+    text.chars()
+        .filter(|c| !c.is_control())
+        .collect::<String>()
+        .trim()
+        .to_owned()
+}
+
+/// The entries of an M3U playlist's `text`: every line but blank ones and
+/// `#` comments; a relative path is from `dir`, an address is kept as it
+/// is. An `#EXTINF` line describes the entry after it ([`Channel`]).
+pub fn m3u_entries(text: &str, dir: &Path) -> Vec<(PathBuf, Option<Channel>)> {
+    let mut entries = Vec::new();
+    let mut described = None;
+    for line in text.trim_start_matches('\u{feff}').lines().map(str::trim) {
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(info) = line.strip_prefix("#EXTINF:") {
+            described = Channel::parse(info);
+            continue;
+        }
+        if line.starts_with('#') {
+            continue;
+        }
+        let path = PathBuf::from(line);
+        let path = if is_url(&path) || path.is_absolute() {
+            path
+        } else {
+            dir.join(path)
+        };
+        entries.push((path, described.take()));
+    }
+    entries
 }
 
 /// `paths` with each playlist file replaced by its entries (UTF-8, else
-/// read as it comes); one that cannot be read is dropped.
-pub fn expand_lists(paths: Vec<PathBuf>) -> Vec<PathBuf> {
-    paths
+/// read as it comes; one that cannot be read is dropped), and what the
+/// lists say about their entries.
+pub fn expand_lists(paths: Vec<PathBuf>) -> (Vec<PathBuf>, HashMap<PathBuf, Channel>) {
+    let mut channels = HashMap::new();
+    let paths = paths
         .into_iter()
         .flat_map(|p| {
             if !is_playlist_file(&p) {
@@ -60,6 +137,14 @@ pub fn expand_lists(paths: Vec<PathBuf>) -> Vec<PathBuf> {
                 Ok(bytes) => {
                     let text = String::from_utf8_lossy(&bytes);
                     m3u_entries(&text, p.parent().unwrap_or(Path::new("")))
+                        .into_iter()
+                        .map(|(path, channel)| {
+                            if let Some(c) = channel {
+                                channels.insert(path.clone(), c);
+                            }
+                            path
+                        })
+                        .collect()
                 }
                 Err(e) => {
                     log::warn!("cannot read the playlist {}: {e}", p.display());
@@ -67,13 +152,19 @@ pub fn expand_lists(paths: Vec<PathBuf>) -> Vec<PathBuf> {
                 }
             }
         })
-        .collect()
+        .collect();
+    (paths, channels)
 }
 
-/// An M3U8 playlist of `items` (UTF-8, full paths, CRLF).
-pub fn m3u_text(items: &[PathBuf]) -> String {
+/// An M3U8 playlist of the list's entries (UTF-8, full paths, CRLF), each
+/// with its `#EXTINF` line when it came with one.
+pub fn m3u_text(list: &Playlist) -> String {
     let mut text = String::from("#EXTM3U\r\n");
-    for item in items {
+    for item in &list.items {
+        if let Some(channel) = list.channels.get(item) {
+            text.push_str(&channel.line());
+            text.push_str("\r\n");
+        }
         text.push_str(&item.display().to_string());
         text.push_str("\r\n");
     }
@@ -153,6 +244,8 @@ pub struct Playlist {
     current: Option<usize>,
     /// The entry selected in the list (for Delete).
     pub selected: Option<usize>,
+    /// What the M3U lists said about their entries.
+    channels: HashMap<PathBuf, Channel>,
 }
 
 impl Playlist {
@@ -172,6 +265,25 @@ impl Playlist {
         self.current
     }
 
+    /// Keep what a list said about its entries (`expand_lists`).
+    pub fn describe(&mut self, channels: HashMap<PathBuf, Channel>) {
+        self.channels.extend(channels);
+    }
+
+    /// What the list said about `path`.
+    pub fn channel(&self, path: &Path) -> Option<&Channel> {
+        self.channels.get(path)
+    }
+
+    /// The name the list gave `path` (a channel's), else its file name,
+    /// else all of it.
+    pub fn title(&self, path: &Path) -> String {
+        self.channel(path)
+            .and_then(|c| c.title.clone())
+            .or_else(|| path.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| path.to_string_lossy().into_owned())
+    }
+
     pub fn current_path(&self) -> Option<&Path> {
         self.current
             .and_then(|i| self.items.get(i))
@@ -189,6 +301,7 @@ impl Playlist {
     /// the first becomes current.
     pub fn replace(&mut self, paths: Vec<PathBuf>) {
         self.items.clear();
+        self.channels.clear();
         self.current = None;
         self.selected = None;
         self.add(paths);
@@ -234,13 +347,16 @@ impl Playlist {
         *self = Self::default();
     }
 
-    /// Sort by file name, numbers by value ("2" before "10"); the current
-    /// and the selected entries follow their files.
+    /// Sort by name (a channel's, else the file's), numbers by value ("2"
+    /// before "10"); the current and the selected entries follow their
+    /// files.
     pub fn sort(&mut self) {
         let current = self.current_path().map(Path::to_path_buf);
         let selected = self.selected.and_then(|i| self.items.get(i)).cloned();
-        self.items
-            .sort_by(|a, b| natural_cmp(&name_of(a), &name_of(b)).then_with(|| a.cmp(b)));
+        let mut items = std::mem::take(&mut self.items);
+        let name = |p: &Path| self.title(p).to_lowercase();
+        items.sort_by(|a, b| natural_cmp(&name(a), &name(b)).then_with(|| a.cmp(b)));
+        self.items = items;
         let find = |p: Option<PathBuf>| p.and_then(|p| self.items.iter().position(|i| *i == p));
         self.current = find(current);
         self.selected = find(selected);
@@ -397,22 +513,72 @@ mod tests {
     fn m3u_read_and_written() {
         let text = "\u{feff}#EXTM3U\r\n#EXTINF:120,One\r\none.mkv\r\n\r\nsub\\two.mp4\r\nD:\\Films\\three.avi\r\nhttps://example.com/s.m3u8\r\n";
         let dir = Path::new(r"C:\Lists");
+        let one = Channel {
+            title: Some("One".into()),
+            ..Channel::default()
+        };
         assert_eq!(
             m3u_entries(text, dir),
             vec![
-                PathBuf::from(r"C:\Lists\one.mkv"),
-                PathBuf::from(r"C:\Lists\sub\two.mp4"),
-                PathBuf::from(r"D:\Films\three.avi"),
-                PathBuf::from("https://example.com/s.m3u8"),
+                (PathBuf::from(r"C:\Lists\one.mkv"), Some(one)),
+                (PathBuf::from(r"C:\Lists\sub\two.mp4"), None),
+                (PathBuf::from(r"D:\Films\three.avi"), None),
+                (PathBuf::from("https://example.com/s.m3u8"), None),
             ]
         );
-        let items = [PathBuf::from(r"D:\a.mkv"), PathBuf::from("https://x/y")];
-        assert_eq!(m3u_text(&items), "#EXTM3U\r\nD:\\a.mkv\r\nhttps://x/y\r\n");
-        assert_eq!(m3u_entries(&m3u_text(&items), dir), items);
+        let items = vec![PathBuf::from(r"D:\a.mkv"), PathBuf::from("https://x/y")];
+        let mut list = Playlist::default();
+        list.replace(items.clone());
+        assert_eq!(m3u_text(&list), "#EXTM3U\r\nD:\\a.mkv\r\nhttps://x/y\r\n");
+        let read: Vec<PathBuf> = m3u_entries(&m3u_text(&list), dir)
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect();
+        assert_eq!(read, items);
         assert!(is_playlist_file(Path::new(r"C:\a.M3U8")));
         assert!(!is_playlist_file(Path::new(
             "https://example.com/live.m3u8"
         )));
+    }
+
+    #[test]
+    fn iptv_channels() {
+        let text = "#EXTM3U x-tvg-url=\"https://e/epg.xml.gz\"\r\n\
+            #EXTINF:-1 tvg-id=\"one\" tvg-name=\"Один, канал\" tvg-logo=\"https://e/one.png\" group-title=\"Новости\", Один, канал\r\n\
+            http://10.0.0.1:16060/one/index.m3u8\r\n\
+            \r\n\
+            #EXTINF:-1,Два\r\n\
+            #EXTVLCOPT:http-user-agent=x\r\n\
+            http://10.0.0.1:16060/two/index.m3u8\r\n";
+        let entries = m3u_entries(text, Path::new(""));
+        let one = Channel {
+            title: Some("Один, канал".into()),
+            logo: Some("https://e/one.png".into()),
+            group: Some("Новости".into()),
+        };
+        let two = Channel {
+            title: Some("Два".into()),
+            ..Channel::default()
+        };
+        assert_eq!(entries[0].1.as_ref(), Some(&one));
+        assert_eq!(entries[1].1.as_ref(), Some(&two));
+        let mut list = Playlist::default();
+        list.replace(entries.iter().map(|(p, _)| p.clone()).collect());
+        list.describe(
+            entries
+                .into_iter()
+                .filter_map(|(p, c)| Some((p, c?)))
+                .collect(),
+        );
+        assert_eq!(list.title(&list.items()[0].clone()), "Один, канал");
+        // Written back and read again, the same.
+        let again = m3u_entries(&m3u_text(&list), Path::new(""));
+        assert_eq!(again[0].1.as_ref(), Some(&one));
+        assert_eq!(again[1].1.as_ref(), Some(&two));
+        // A line break or a quote in a title cannot break the line.
+        let odd = Channel::parse("-1 tvg-logo=\"a\"b\",x\ny").unwrap();
+        assert!(!odd.line().contains('\n'));
+        assert_eq!(Channel::parse("-1,"), None);
     }
 
     #[test]

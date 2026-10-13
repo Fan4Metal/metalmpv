@@ -538,6 +538,17 @@ fn general(ui: &mut Ui, settings: &mut Settings) {
                 50.0,
                 |ui| switch(ui, &mut settings.fill_playlist),
             );
+            divider(ui);
+            row(
+                ui,
+                tr!("Channel logos", "Логотипы каналов"),
+                Some(tr!(
+                    "The pictures an IPTV list (M3U) gives its channels are fetched from their sites, only over HTTPS and never from the local network, and kept for 30 days.",
+                    "Картинки, которые список IPTV (M3U) указывает для каналов, загружаются с их сайтов — только по HTTPS и не из локальной сети — и хранятся 30 дней."
+                )),
+                50.0,
+                |ui| switch(ui, &mut settings.channel_logos),
+            );
         },
     );
 }
@@ -1363,6 +1374,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.seek_long = d.seek_long;
     settings.hwdec = d.hwdec;
     settings.fill_playlist = d.fill_playlist;
+    settings.channel_logos = d.channel_logos;
     settings.chapter_marks = d.chapter_marks;
     settings.resume_playback = d.resume_playback;
     settings.remember_tracks = d.remember_tracks;

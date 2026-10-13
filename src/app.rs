@@ -71,6 +71,8 @@ pub struct App {
     url_dialog: ui::url::UrlDialog,
     /// The Video, sound and subtitles panel (`U`, `F7`) and the picture's adjustments it edits.
     video_panel: VideoPanel,
+    /// The pictures of IPTV channels (`logos.rs`).
+    logos: crate::logos::Logos,
     adjust: Adjust,
     /// The cover of the file playing, while or once it is looked for.
     cover: Option<CoverSlot>,
@@ -225,6 +227,7 @@ impl App {
             info: InfoWindow::default(),
             url_dialog: ui::url::UrlDialog::default(),
             video_panel: VideoPanel::default(),
+            logos: crate::logos::Logos::default(),
             adjust: Adjust::default(),
             cover: None,
             settings_dialog: SettingsDialog::default(),
@@ -270,7 +273,7 @@ impl App {
     fn open(&mut self, paths: Vec<PathBuf>) {
         // A playlist file is its entries, not one of a folder's files.
         let from_list = paths.iter().any(|p| playlist::is_playlist_file(p));
-        let paths = playlist::expand_lists(paths);
+        let (paths, channels) = playlist::expand_lists(paths);
         let Some(target) = paths.first().cloned() else {
             return;
         };
@@ -281,6 +284,7 @@ impl App {
                 paths
             };
         self.playlist.replace(list);
+        self.playlist.describe(channels);
         let index = self
             .playlist
             .items()
@@ -293,7 +297,9 @@ impl App {
     /// Append `paths` to the playlist; play the first of them if nothing
     /// is playing.
     fn add(&mut self, paths: Vec<PathBuf>) {
-        let first = self.playlist.add(playlist::expand_lists(paths));
+        let (paths, channels) = playlist::expand_lists(paths);
+        self.playlist.describe(channels);
+        let first = self.playlist.add(paths);
         if let Some(first) = first
             && self.state().idle
         {
@@ -424,11 +430,17 @@ impl App {
             log::warn!("cannot make {}: {e}", dir.display());
             return;
         }
-        let stem = self
-            .playlist
-            .current_path()
-            .and_then(Path::file_stem)
-            .map(|s| s.to_string_lossy().into_owned())
+        // A channel's name (a stream's file is all "index"), else the
+        // file's; without the characters a file name cannot hold.
+        let current = self.playlist.current_path();
+        let stem = current
+            .and_then(|p| self.playlist.channel(p)?.title.clone())
+            .or_else(|| {
+                current
+                    .and_then(Path::file_stem)
+                    .map(|s| s.to_string_lossy().into_owned())
+            })
+            .map(|s| s.replace(['\\', '/', ':', '*', '?', '"', '<', '>', '|'], "_"))
             .unwrap_or_else(|| "frame".into());
         let time = crate::format::time(state.time, true).replace(':', "-");
         let mut path = dir.join(format!("{stem} {time}.png"));
@@ -465,7 +477,7 @@ impl App {
             dialog = dialog.set_directory(dir);
         }
         if let Some(target) = dialog.save_file()
-            && let Err(e) = std::fs::write(&target, playlist::m3u_text(self.playlist.items()))
+            && let Err(e) = std::fs::write(&target, playlist::m3u_text(&self.playlist))
         {
             log::warn!("cannot save the playlist to {}: {e}", target.display());
             self.osd.show(Osd::Text(tr!(
@@ -1312,8 +1324,7 @@ impl App {
         }
         self.playlist
             .current_path()
-            .and_then(Path::file_name)
-            .map(|n| n.to_string_lossy().into_owned())
+            .map(|p| self.playlist.title(p))
             .or_else(|| state.title.clone())
             .unwrap_or_else(|| crate::APP_NAME.to_owned())
     }
@@ -2188,9 +2199,11 @@ impl eframe::App for App {
                     .size_range(160.0..=600.0)
                     .frame(egui::Frame::NONE.fill(style::PANEL_BG).inner_margin(6))
                     .show(root_ui, |ui| {
+                        let logos = self.settings.channel_logos.then_some(&mut self.logos);
                         cmds.extend(ui::playlist::panel(
                             ui,
                             &mut self.playlist,
+                            logos,
                             self.settings.repeat,
                             &state.chapters,
                             state.time,

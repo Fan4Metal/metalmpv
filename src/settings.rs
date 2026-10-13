@@ -26,6 +26,7 @@ const SEEK_SHORT: &str = "seek_short";
 const SEEK_LONG: &str = "seek_long";
 const HWDEC: &str = "hwdec";
 const FILL_PLAYLIST: &str = "fill_playlist_from_folder";
+const CHANNEL_LOGOS: &str = "channel_logos";
 const PLAYLIST_VISIBLE: &str = "playlist_visible";
 const CHAPTER_MARKS: &str = "chapter_marks";
 const TIME_DISPLAY: &str = "time_display";
@@ -195,6 +196,8 @@ pub struct Settings {
     pub hwdec: bool,
     /// Opening one file lists the media files of its folder.
     pub fill_playlist: bool,
+    /// The pictures of an M3U list's channels are fetched (`logos.rs`).
+    pub channel_logos: bool,
     pub playlist_visible: bool,
     /// Marks at the chapters' starts on the seek bar.
     pub chapter_marks: bool,
@@ -268,6 +271,7 @@ impl Default for Settings {
             seek_long: 60.0,
             hwdec: true,
             fill_playlist: false,
+            channel_logos: true,
             playlist_visible: false,
             chapter_marks: true,
             time_mode: TimeMode::Both,
@@ -349,6 +353,7 @@ impl Settings {
             seek_long: number(SEEK_LONG, 0.1..=MAX_STEP, d.seek_long),
             hwdec: flag(HWDEC, d.hwdec),
             fill_playlist: flag(FILL_PLAYLIST, d.fill_playlist),
+            channel_logos: flag(CHANNEL_LOGOS, d.channel_logos),
             playlist_visible: flag(PLAYLIST_VISIBLE, d.playlist_visible),
             chapter_marks: flag(CHAPTER_MARKS, d.chapter_marks),
             time_mode: get(TIME_DISPLAY)
@@ -465,6 +470,7 @@ impl Settings {
         storage.set_string(SEEK_LONG, self.seek_long.to_string());
         storage.set_string(HWDEC, self.hwdec.to_string());
         storage.set_string(FILL_PLAYLIST, self.fill_playlist.to_string());
+        storage.set_string(CHANNEL_LOGOS, self.channel_logos.to_string());
         storage.set_string(PLAYLIST_VISIBLE, self.playlist_visible.to_string());
         storage.set_string(CHAPTER_MARKS, self.chapter_marks.to_string());
         storage.set_string(TIME_DISPLAY, self.time_mode.name().into());
@@ -566,6 +572,7 @@ mod tests {
             seek_long: 30.5,
             hwdec: false,
             fill_playlist: true,
+            channel_logos: false,
             playlist_visible: true,
             chapter_marks: false,
             time_mode: TimeMode::Remaining,
