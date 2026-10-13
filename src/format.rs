@@ -24,6 +24,68 @@ pub fn time(seconds: Option<f64>, long: bool) -> String {
     }
 }
 
+/// A time typed in the Go to time window: `1:23:45`, `83:20`, `5000`
+/// (seconds), a fraction after `.` or `,` (`1:23,5`), a share of the
+/// duration (`50%`), or a move from `now` with `+` or `-` (`+30`,
+/// `-1:00`, `+10%`). Within the file: from 0 to `duration` when known.
+/// `None` when it is not a time, or names what is not known (a share of
+/// an unknown duration, a move without a position).
+pub fn parse_time(text: &str, now: Option<f64>, duration: Option<f64>) -> Option<f64> {
+    let text: String = text
+        .trim()
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .map(|c| if c == ',' { '.' } else { c })
+        .collect();
+    let (sign, rest) = match text.chars().next()? {
+        '+' => (Some(1.0), &text[1..]),
+        '-' => (Some(-1.0), &text[1..]),
+        _ => (None, text.as_str()),
+    };
+    let amount = match rest.strip_suffix('%') {
+        Some(share) => {
+            let share = number(share)?;
+            (share <= 100.0).then_some(())?;
+            duration.filter(|d| *d > 0.0)? * share / 100.0
+        }
+        None => {
+            let parts: Vec<&str> = rest.split(':').collect();
+            if parts.len() > 3 {
+                return None;
+            }
+            let (last, whole) = parts.split_last()?;
+            let mut seconds = 0.0;
+            for (i, part) in whole.iter().enumerate() {
+                (!part.is_empty() && part.bytes().all(|b| b.is_ascii_digit())).then_some(())?;
+                let value: f64 = part.parse().ok()?;
+                // Minutes after hours stay under 60.
+                (i == 0 || value < 60.0).then_some(())?;
+                seconds = seconds * 60.0 + value;
+            }
+            let last = number(last)?;
+            (whole.is_empty() || last < 60.0).then_some(())?;
+            seconds * 60.0 + last
+        }
+    };
+    let target = match sign {
+        Some(sign) => now? + sign * amount,
+        None => amount,
+    };
+    let target = target.max(0.0);
+    let target = duration
+        .filter(|d| *d > 0.0)
+        .map_or(target, |d| target.min(d));
+    target.is_finite().then_some(target)
+}
+
+/// A number of digits with an optional fraction (`12`, `12.5`, `.5`).
+fn number(text: &str) -> Option<f64> {
+    let digits = text.bytes().filter(u8::is_ascii_digit).count();
+    let dots = text.bytes().filter(|b| *b == b'.').count();
+    (digits > 0 && dots <= 1 && digits + dots == text.len()).then_some(())?;
+    text.parse().ok()
+}
+
 /// The position and the duration, both with hours when the file is an hour
 /// or longer: `01:23 / 45:00`, `0:01:23 / 1:45:00`.
 pub fn position(time_pos: Option<f64>, duration: Option<f64>) -> String {
@@ -503,6 +565,36 @@ mod tests {
         assert_eq!(step_in(Lang::Ru, 0.5), "0,5 сек");
         assert_eq!(step_in(Lang::En, 60.0), "1 min");
         assert_eq!(step_in(Lang::Ru, 90.0), "1:30 мин");
+    }
+
+    #[test]
+    fn times_typed() {
+        let d = Some(2.0 * 3600.0);
+        let now = Some(600.0);
+        let at = |text: &str| parse_time(text, now, d);
+        assert_eq!(at("1:23:45"), Some(5025.0));
+        assert_eq!(at(" 83:20 "), Some(5000.0));
+        assert_eq!(at("5000"), Some(5000.0));
+        assert_eq!(at("1:23,5"), Some(83.5));
+        assert_eq!(at("0:05.25"), Some(5.25));
+        assert_eq!(at("50%"), Some(3600.0));
+        assert_eq!(at("+30"), Some(630.0));
+        assert_eq!(at("-1:00"), Some(540.0));
+        assert_eq!(at("+10%"), Some(1320.0));
+        // Kept within the file.
+        assert_eq!(at("-20:00"), Some(0.0));
+        assert_eq!(at("5:00:00"), Some(7200.0));
+        // Not times.
+        for text in [
+            "", "abc", "1:60", "1:2:3:4", "1::2", ":30", "1.5:00", "150%", "1e3", "--5", "1.2.3",
+        ] {
+            assert_eq!(at(text), None, "{text:?}");
+        }
+        // What is not known.
+        assert_eq!(parse_time("50%", now, None), None);
+        assert_eq!(parse_time("+30", None, d), None);
+        // A stream without a duration: any time on.
+        assert_eq!(parse_time("3:00:00", now, None), Some(10800.0));
     }
 
     #[test]

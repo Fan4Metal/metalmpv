@@ -5,6 +5,7 @@
 pub mod about;
 pub mod assoc;
 pub mod controls;
+pub mod goto;
 pub mod icons;
 pub mod info;
 pub mod licenses;

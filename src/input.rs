@@ -44,6 +44,8 @@ pub enum Cmd {
     Open,
     /// Ask for an address to play (`Ctrl+U`).
     OpenUrl,
+    /// Ask for a time in the file to go to (`Ctrl+G`).
+    GoToTime,
     TogglePlaylist,
     /// The playlist in a window of its own, or back in the player's.
     TogglePlaylistWindow,

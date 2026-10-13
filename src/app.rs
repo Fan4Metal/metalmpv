@@ -72,6 +72,7 @@ pub struct App {
     info: InfoWindow,
     /// The address to play (`Ctrl+U`).
     url_dialog: ui::url::UrlDialog,
+    goto_dialog: ui::goto::GoToDialog,
     /// The Video, sound and subtitles panel (`U`, `F7`) and the picture's adjustments it edits.
     video_panel: VideoPanel,
     /// The pictures of IPTV channels (`logos.rs`).
@@ -255,6 +256,7 @@ impl App {
             about: AboutDialog::default(),
             info: InfoWindow::default(),
             url_dialog: ui::url::UrlDialog::default(),
+            goto_dialog: ui::goto::GoToDialog::default(),
             video_panel: VideoPanel::default(),
             logos: crate::logos::Logos::default(),
             adjust: Adjust::default(),
@@ -963,6 +965,11 @@ impl App {
             }
             Cmd::Open => self.pick_files(frame, false),
             Cmd::OpenUrl => self.url_dialog.open(),
+            Cmd::GoToTime => {
+                if !state.idle {
+                    self.goto_dialog.open(state.time, state.duration);
+                }
+            }
             Cmd::TogglePlaylist => self.settings.playlist_visible = !self.settings.playlist_visible,
             Cmd::TogglePlaylistWindow => {
                 self.settings.playlist_detached = !self.settings.playlist_detached;
@@ -2192,6 +2199,13 @@ fn context_menu(
     };
     item(ui, pause.into(), Cmd::TogglePause);
     item(ui, tr!("Stop", "Стоп").into(), Cmd::Stop);
+    if !state.idle {
+        item(
+            ui,
+            tr!("Go to time…", "Перейти ко времени…").into(),
+            Cmd::GoToTime,
+        );
+    }
     item(
         ui,
         tr!("Previous file", "Предыдущий файл").into(),
@@ -2568,7 +2582,10 @@ impl eframe::App for App {
 
         // The keys are the player's: no widget keeps the focus to take
         // Space or Enter as a click. A modal takes the keys while open.
-        let keys = !self.about.open && !self.settings_dialog.open && !self.url_dialog.is_open();
+        let keys = !self.about.open
+            && !self.settings_dialog.open
+            && !self.url_dialog.is_open()
+            && !self.goto_dialog.is_open();
         if keys && !egui::Popup::is_any_open(&ctx) {
             if let Some(id) = ctx.memory(|m| m.focused()) {
                 ctx.memory_mut(|m| m.surrender_focus(id));
@@ -2724,6 +2741,10 @@ impl eframe::App for App {
         self.about.show(&ctx);
         if let Some(url) = self.url_dialog.show(&ctx) {
             self.open(vec![PathBuf::from(url)]);
+        }
+        if let Some(time) = self.goto_dialog.show(&ctx, state.time, state.duration) {
+            // Exact: the time typed is the frame wanted.
+            self.seek_to(time, Seek::Exact);
         }
         self.update_cover(&ctx, &state);
         let cover = self

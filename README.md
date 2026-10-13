@@ -81,6 +81,10 @@ The Subtitles tab starts with ready-made looks: standard, yellow, bold with a th
 
 When the file has chapters, the seek bar is cut at the start of each, and the tooltip over the bar names the chapter under the pointer. The marks are turned off and on in the **Chapters** submenu of the picture's context menu or in the settings (**Playback**). Under the playlist, the **Chapters** section lists them with their starts, the playing one highlighted; a click goes to a chapter, and a click on the header folds the section. The same list is in the **Chapters** submenu. The move is reported on the screen with the chapter's number and title.
 
+### Go to time
+
+`Ctrl+G` or **Go to time…** in the picture's context menu opens a window with the position playing in its field, selected, so that a time typed replaces it. The field takes `1:23:45`, `83:20`, a number of seconds (`5000`), a fraction after a point or a comma (`1:23,5`), a share of the file (`50%`), or a move from the position playing (`+30`, `-1:00`, `+10%`); under the field the window shows the time this names, with its share of the file, or says that the text is not a time in this file. `Enter` or **Go** moves there to the exact frame; a time past the end goes to the end.
+
 ### A-B repeat
 
 `[` marks the start of a stretch at the position playing and `]` its end; from then on, playback goes back to the start each time it reaches the end, until `\` turns the repeat off. An end marked without a start repeats from the beginning of the file, and an end before the start swaps the two. The points appear as yellow ticks on the seek bar with the stretch between them highlighted, the on-screen message gives them to a tenth of a second, and the **A-B repeat** submenu of the picture's context menu does the same. The points belong to the file: another file starts without them.
@@ -162,6 +166,7 @@ The keys below are the defaults. In the settings, the **Keyboard shortcuts** cat
 | `U`, `F7` | The Video, sound and subtitles panel |
 | `Ctrl+E` | Save the frame into Pictures\MetalMPV |
 | `O` | Shows the position, the duration and the chapter playing on the screen |
+| `Ctrl+G` | Go to time: a window for a time in the file |
 | `A` | Next audio track |
 | `S`, `J` | Next subtitles; after the last, none |
 | `V` | Subtitles off, and on again |

@@ -273,6 +273,7 @@ actions! {
     Slower "slower" Playback Cmd::Speed(-1), [Chord::key(Key::X)];
     NormalSpeed "normal_speed" Playback Cmd::Speed(0), [Chord::key(Key::Z)];
     Position "position" Playback Cmd::ShowPosition, [Chord::key(Key::O)];
+    GoToTime "go_to_time" Playback Cmd::GoToTime, [Chord::ctrl(Key::G)];
     Repeat "repeat" Playback Cmd::CycleRepeat, [Chord::key(Key::R)];
     LoopA "loop_a" Playback Cmd::LoopA, [Chord::key(Key::OpenBracket)];
     LoopB "loop_b" Playback Cmd::LoopB, [Chord::key(Key::CloseBracket)];
@@ -360,6 +361,7 @@ impl Action {
                 "Position and chapter on the screen",
                 "Позиция и глава на экране"
             ),
+            Action::GoToTime => tr!("Go to time…", "Перейти ко времени…"),
             Action::Repeat => tr!(
                 "Repeat: off, the file, the list",
                 "Повтор: выключен, файл, плейлист"
