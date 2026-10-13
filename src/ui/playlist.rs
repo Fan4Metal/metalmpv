@@ -3,9 +3,9 @@
 //! an entry, a double click plays it. Under it, when the playing file has
 //! chapters, a section of them that folds: a click goes to a chapter.
 
-use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Response, Sense, Ui, pos2, vec2};
+use egui::{Align2, FontId, Response, Sense, Ui, pos2, vec2};
 
-use super::{icons, style};
+use super::{icons, style, tool};
 use crate::chapters::{self, Chapter};
 use crate::input::Cmd;
 use crate::playlist::Playlist;
@@ -276,37 +276,4 @@ fn chapters_list(ui: &mut Ui, chapters: &[Chapter], time: Option<f64>, out: &mut
                 }
             });
     });
-}
-
-/// A small button with no frame and an icon painted by `paint(painter,
-/// centre, colour)`; its name is in the tooltip. Not focusable.
-fn tool(
-    ui: &mut Ui,
-    tip: &str,
-    enabled: bool,
-    paint: impl FnOnce(&Painter, Pos2, Color32),
-) -> Response {
-    let sense = if enabled {
-        Sense::CLICK
-    } else {
-        Sense::hover()
-    };
-    let (rect, response): (Rect, Response) = ui.allocate_exact_size(vec2(26.0, 24.0), sense);
-    let color = if !enabled {
-        style::TEXT_WEAK.gamma_multiply(0.5)
-    } else if response.hovered() {
-        style::TEXT_BRIGHT
-    } else {
-        style::TEXT
-    };
-    if enabled && response.hovered() {
-        let fill = if response.is_pointer_button_down_on() {
-            style::PRESSED
-        } else {
-            style::HOVER
-        };
-        ui.painter().rect_filled(rect, 4.0, fill);
-    }
-    paint(ui.painter(), rect.center(), color);
-    response.on_hover_text(tip)
 }

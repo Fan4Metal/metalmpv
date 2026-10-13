@@ -1,6 +1,6 @@
 //! User interface pieces: the app icon as a texture, the update button, the
-//! close cross of a dialog, and the parts of the window in modules of their
-//! own.
+//! icon buttons of the panels, the close cross of a dialog, and the parts
+//! of the window in modules of their own.
 
 pub mod about;
 pub mod assoc;
@@ -98,6 +98,39 @@ pub fn update_button(ui: &mut Ui, tag: &str) -> Response {
         );
     }
     response
+}
+
+/// A small button with no frame and an icon painted by `paint(painter,
+/// centre, colour)`; its name is in the tooltip. Not focusable.
+pub fn tool(
+    ui: &mut Ui,
+    tip: &str,
+    enabled: bool,
+    paint: impl FnOnce(&egui::Painter, egui::Pos2, egui::Color32),
+) -> Response {
+    let sense = if enabled {
+        egui::Sense::CLICK
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(26.0, 24.0), sense);
+    let color = if !enabled {
+        style::TEXT_WEAK.gamma_multiply(0.5)
+    } else if response.hovered() {
+        style::TEXT_BRIGHT
+    } else {
+        style::TEXT
+    };
+    if enabled && response.hovered() {
+        let fill = if response.is_pointer_button_down_on() {
+            style::PRESSED
+        } else {
+            style::HOVER
+        };
+        ui.painter().rect_filled(rect, 4.0, fill);
+    }
+    paint(ui.painter(), rect.center(), color);
+    response.on_hover_text(tip)
 }
 
 /// A cross that closes a dialog or a panel; true when clicked.

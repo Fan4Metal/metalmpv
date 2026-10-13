@@ -277,3 +277,57 @@ pub fn trash(p: &Painter, o: Pos2, s: f32, c: Color32) {
     p.line_segment([at(-1.5, -0.5), at(-1.3, 4.5)], rib);
     p.line_segment([at(1.5, -0.5), at(1.3, 4.5)], rib);
 }
+
+/// Two sheets, one over the other: copy.
+pub fn copy(p: &Painter, o: Pos2, s: f32, c: Color32) {
+    let stroke = Stroke::new(1.4, c);
+    let front = egui::Rect::from_min_max(o + vec2(-s * 0.4, -s * 0.4), o + vec2(s, s));
+    p.rect_stroke(front, 1.5, stroke, egui::StrokeKind::Middle);
+    // Of the sheet behind, only what the front one leaves.
+    p.add(Shape::line(
+        vec![
+            o + vec2(-s * 0.4, s * 0.4),
+            o + vec2(-s, s * 0.4),
+            o + vec2(-s, -s),
+            o + vec2(s * 0.4, -s),
+            o + vec2(s * 0.4, -s * 0.4),
+        ],
+        stroke,
+    ));
+}
+
+/// An arrow down into a tray: save.
+pub fn save(p: &Painter, o: Pos2, s: f32, c: Color32) {
+    let stroke = Stroke::new(1.5, c);
+    let tip = o + vec2(0.0, s * 0.35);
+    p.line_segment([o + vec2(0.0, -s), tip], stroke);
+    p.add(Shape::line(
+        vec![
+            tip + vec2(-s * 0.5, -s * 0.5),
+            tip,
+            tip + vec2(s * 0.5, -s * 0.5),
+        ],
+        stroke,
+    ));
+    p.add(Shape::line(
+        vec![
+            o + vec2(-s, s * 0.15),
+            o + vec2(-s, s),
+            o + vec2(s, s),
+            o + vec2(s, s * 0.15),
+        ],
+        stroke,
+    ));
+}
+
+/// A tick: done.
+pub fn check(p: &Painter, o: Pos2, s: f32, c: Color32) {
+    p.add(Shape::line(
+        vec![
+            o + vec2(-s * 0.85, 0.0),
+            o + vec2(-s * 0.25, s * 0.6),
+            o + vec2(s * 0.9, -s * 0.65),
+        ],
+        Stroke::new(1.8, c),
+    ));
+}

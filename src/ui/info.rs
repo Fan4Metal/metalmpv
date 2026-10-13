@@ -5,11 +5,12 @@
 //! click on the cover shows it big.
 
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use egui::collapsing_header::CollapsingState;
 use egui::{Align, Color32, Layout, Rect, RichText, Sense, TextureHandle, Ui, vec2};
 
-use super::style;
+use super::{icons, style, tool};
 use crate::cover::{Cover, Source};
 use crate::i18n::lang;
 use crate::info;
@@ -27,11 +28,16 @@ const WIDTH: f32 = 520.0;
 /// a little in from the edge.
 const CORNER: egui::Vec2 = vec2(-23.0, 46.0);
 
+/// How long Copy all shows a tick after a click.
+const COPIED_TICK: Duration = Duration::from_millis(1500);
+
 #[derive(Default)]
 pub struct InfoWindow {
     pub open: bool,
     /// The cover is shown big over everything.
     zoom: bool,
+    /// When Copy all was last clicked.
+    copied: Option<Instant>,
 }
 
 /// The cover as the window gets it: the picture and its texture.
@@ -112,13 +118,39 @@ impl InfoWindow {
                 self.header(ui, state, cover.as_ref());
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    if ui.button(tr!("Copy all", "Копировать всё")).clicked() {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    let s = 6.0;
+                    let copied = self
+                        .copied
+                        .map(|t| t.elapsed())
+                        .filter(|e| *e < COPIED_TICK);
+                    if let Some(e) = copied {
+                        ui.ctx().request_repaint_after(COPIED_TICK - e);
+                    }
+                    let copy = tool(
+                        ui,
+                        tr!("Copy all", "Копировать всё"),
+                        true,
+                        |p, o, c| {
+                            if copied.is_some() {
+                                icons::check(p, o, s, c);
+                            } else {
+                                icons::copy(p, o, s, c);
+                            }
+                        },
+                    );
+                    if copy.clicked() {
                         ui.ctx().copy_text(info::report_in(lang(), path, state));
+                        self.copied = Some(Instant::now());
                     }
                     if cover.is_some()
-                        && ui
-                            .button(tr!("Save the cover…", "Сохранить обложку…"))
-                            .clicked()
+                        && tool(
+                            ui,
+                            tr!("Save the cover…", "Сохранить обложку…"),
+                            true,
+                            |p, o, c| icons::save(p, o, s, c),
+                        )
+                        .clicked()
                     {
                         out.push(Cmd::SaveCover);
                     }
