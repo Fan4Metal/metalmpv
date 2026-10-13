@@ -10,7 +10,7 @@
   <a href="https://github.com/Fan4Metal/metalmpv/releases/latest"><img src="https://img.shields.io/github/v/release/Fan4Metal/metalmpv?label=release" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/Windows-10%2B-0078D6" alt="Windows 10 or later">
   <img src="https://img.shields.io/badge/Rust-B7410E?logo=rust&logoColor=white" alt="Rust">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+  <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20%2B%20GPL--3.0-blue" alt="MIT license, GPL-3.0 with libmpv"></a>
 </p>
 
 <p align="center"><b>English</b> | <a href="README.ru.md">Русский</a></p>
@@ -45,7 +45,7 @@ MetalMPV is a video player for Windows with a classic layout: the picture fills 
 
 The installer and the portable archive are on the [Releases](https://github.com/Fan4Metal/metalmpv/releases) page.
 
-The installer, `MetalMPV_<version>_Setup.exe`, needs no administrator rights: the program is placed in `%LOCALAPPDATA%\Programs\MetalMPV`. The installed program keeps its settings in `%APPDATA%\MetalMPV`. Its **File types** task, on by default, registers the player for its formats (see [File types](#file-types)); on the last page it offers to open Windows Settings to choose the player as the default. Uninstalling removes the registration.
+The installer, `MetalMPV_<version>_Setup.exe`, needs no administrator rights: the program is placed in `%LOCALAPPDATA%\Programs\MetalMPV`. The installed program keeps its settings in `%APPDATA%\MetalMPV`. Its **File types** task, on by default, registers the player for its formats (see [File types](#file-types)); on the last page it offers to open Windows Settings to choose the player as the default. Uninstalling removes the registration; the settings in `%APPDATA%\MetalMPV` (with the remembered positions and the channel logos) are kept.
 
 The portable archive, `MetalMPV_<version>_portable.zip`, holds the program in a `MetalMPV` folder and runs without installation. It also holds an empty `metalmpv.ron`. While that file is next to `metalmpv.exe` and the folder is writable, the settings are kept in it, so the program can be carried on a removable drive. Without the file, the program keeps them in `%APPDATA%\MetalMPV`, as the installed program does. The About window shows where the settings are kept.
 
@@ -55,7 +55,7 @@ The executables are not code-signed, so Windows SmartScreen may warn about an un
 
 ## Usage
 
-A file is opened with the **Open** button (the eject symbol, `Ctrl+O`), by dropping it onto the window, from Explorer (**Open with**), or from the command line: `metalmpv.exe file.mkv [more files]`. Several files make a playlist; at the end of a file the next one starts. An M3U or M3U8 playlist opened, dropped or given on the command line is replaced by its entries (relative paths are from the playlist's folder). An IPTV list's `#EXTINF` lines name the entries: the playlist, the window title and saved frames show the channel's name instead of the stream's file name, the tooltip of an entry shows its group, and the channel's logo (`tvg-logo`) is shown beside the name (see **Channel logos** in the settings); **Save the list** writes the names, logos and groups back. `Ctrl+U` or **Open an address…** in the context menu plays a direct link to a video or a stream (http, https, rtsp, rtmp, udp and others; an address on the command line works too); pages of YouTube and other sites are not supported, since the player does not use yt-dlp. While nothing plays, the start screen lists the files played last under the RECENT heading, centred under the hint (up to eight, as many as the window's height allows); a click plays one, and **Clear the list** empties it, as does **Forget all** under Resume in the settings. With **Remember the recent files** off, no files are kept. The taskbar button shows the position as its progress (yellow while paused), and its thumbnail has the buttons **Previous file**, **Play**/**Pause** and **Next file**. While a video plays, the display does not turn off and the computer does not sleep; while only sound plays, the computer does not sleep, and when playback pauses or ends, Windows' power settings apply again.
+A file is opened with the **Open** button (the eject symbol, `Ctrl+O`), by dropping it onto the window, from Explorer (**Open with**), or from the command line: `metalmpv.exe file.mkv [more files]`. Several files make a playlist; at the end of a file the next one starts. An M3U or M3U8 playlist opened, dropped or given on the command line is replaced by its entries (relative paths are from the playlist's folder); so is a playlist at an address (`http://…/list.m3u`) and one listed inside another, once mpv has read it. An IPTV list's `#EXTINF` lines name the entries: the playlist, the window title and saved frames show the channel's name instead of the stream's file name, the tooltip of an entry shows its group, and the channel's logo (`tvg-logo`) is shown beside the name (see **Channel logos** in the settings); **Save the list** writes the names, logos and groups back. `Ctrl+U` or **Open an address…** in the context menu plays a direct link to a video or a stream (http, https, rtsp, rtmp, udp and others; an address on the command line works too); pages of YouTube and other sites are not supported, since the player does not use yt-dlp. While nothing plays, the start screen lists the files played last under the RECENT heading, centred under the hint (up to eight, as many as the window's height allows); a click plays one, and **Clear the list** empties it, as does **Forget all** under Resume in the settings. With **Remember the recent files** off, no files are kept. The taskbar button shows the position as its progress (yellow while paused), and its thumbnail has the buttons **Previous file**, **Play**/**Pause** and **Next file**. While a video plays, the display does not turn off and the computer does not sleep; while only sound plays, the computer does not sleep, and when playback pauses or ends, Windows' power settings apply again.
 
 The window has its own title row: it is moved by dragging the title, the picture or the free space of the control bar, resized by its edges, and maximised by a double click on the title. A double click on the picture or `Enter` switches to fullscreen, where only the picture is left; the control bar at the bottom and the file's name at the top appear over it independently, each while the pointer is near its edge, and the pointer itself hides after half a second of rest away from them. The strip with the name can be turned off, and the transparency of both is set in the settings.
 
@@ -87,7 +87,7 @@ The button with a speech bubble left of the volume (`T`) opens a window with the
 
 ### File information
 
-`I`, the **i** button in the title row or **File information** in the picture's context menu opens a window over the player; playback and the keys go on while it is open, and `I` or `Esc` closes it. At the top it shows the cover with the title, the artist and the album; a click on the cover shows it as big as the window allows. A channel of an IPTV list is shown by the list's name and group, with its logo in place of the cover once fetched. Below come the file (name, folder, size, container, duration, overall bitrate, number of chapters; a click on the folder shows the file in Explorer), its tags (the common ones first, named in the interface's language, then the others as the file names them) and its tracks, each with a line of its format, size, frame rate, bit depth, HDR, channels, sampling rate and bitrate. A click on a track unfolds its details: the codec's profile, the aspect ratio, the channel layout, the stream's estimated size, the track's flags and tags, and for the video on screen also the chroma subsampling, the scan, the color range, primaries, transfer and matrix, the HDR light levels and whether it is decoded in hardware. Two icon buttons under the header, named in their tooltips, act on it: **Copy all** (two sheets) puts the whole of it on the clipboard as text and shows a tick for a moment, and **Save the cover…** (an arrow into a tray) saves the picture as it is stored. The window stays at the player's top right corner, also when the player's window is resized; with **Pin the information window** turned off in the settings, it is moved by its title and stays where it was left. Its bottom edge can be dragged to make it taller or shorter.
+`I`, the **i** button in the title row or **File information** in the picture's context menu opens a window over the player; playback and the keys go on while it is open, and `I` or `Esc` closes it. At the top it shows the cover with the title, the artist and the album; a click on the cover shows it as big as the window allows. A channel of an IPTV list is shown by the list's name and group, with its logo in place of the cover once fetched. Below come the file (name, folder, size, container, duration, overall bitrate, number of chapters; a click on the folder shows the file in Explorer), its tags (the common ones first, named in the interface's language, then the others as the file names them) and its tracks, each with a line of its format, size, frame rate, bit depth, HDR, channels, sampling rate and bitrate. A click on a track unfolds its details: the codec's profile, the aspect ratio, the channel layout, the stream's estimated size, the track's flags and tags, and for the video on screen also the chroma subsampling, the scan, the color range, primaries, transfer and matrix, the HDR light levels and whether it is decoded in hardware. Two icon buttons under the header, named in their tooltips, act on it: **Copy all** (two sheets) puts the whole of it on the clipboard as text and shows a tick for a moment, and **Save the cover…** (an arrow into a tray) saves the picture as it is stored. The window stays at the player's top right corner, also when the player's window is resized; with **Pin the panels** turned off in the settings, it is moved by its title and stays where it was left. Its bottom edge can be dragged to make it taller or shorter.
 
 The cover is taken from the file's tags (MP3, FLAC, OGG, Opus, M4A, MP4, WAV, APE and others) or from its attachments (MKV, MKA, WebM); for an audio file without one, a picture named `cover`, `folder` or `front` next to it is used. While an audio file plays, its cover fills the picture with the title, the artist and the album under it.
 
@@ -105,7 +105,7 @@ The installer and other scripts can do the same from the command line: `metalmpv
 
 ### Settings
 
-The settings window (`F5` or the gear button) lists the categories on the left and shows the settings of the chosen one on the right in groups: each row names a setting, explains it underneath and holds its control on the right. **Reset** under the list puts every setting back to its default.
+The settings window (`F5` or the gear button) lists the categories on the left and shows the settings of the chosen one on the right in groups: each row names a setting, explains it underneath and holds its control on the right. **Reset** under the list puts the settings of the window and the equalizer back to their defaults; the remembered positions, the recent files, the repeat mode and the playlist's place are kept.
 
 | Category | Setting | Default | Meaning |
 |---|---|---|---|
@@ -114,7 +114,6 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | General | Pin the panels | on | The information window and the Video, sound and subtitles panel stay at the player's top right corner, the panel left of the information when both are open; off, they are moved by their titles and keep their places |
 | General | Over the other windows | never | Never, always, or while a file plays (not paused); `Ctrl+T` switches it |
 | General | Snap to the screen's centre | on | While the window is moved, its centre is drawn to the screen's centre, across or up and down, when it comes within 8 pixels of it, as in GOM Player; moved on, it comes away |
-| Updates | Check at start-up | off | See [Update check and privacy](#update-check-and-privacy); **Check now** asks at once |
 | General | Add the folder's files | off | One opened file brings the media files of its folder into the playlist |
 | General | Channel logos | on | The pictures an IPTV list gives its channels are fetched from their sites for the visible rows of the playlist, only over HTTPS and never from the local network, at most 512 KB each, PNG or JPEG only, and kept for 30 days in the `logos` folder next to the settings |
 | Playback | Go on from where it stopped | on | A file of 5 minutes or more opened again starts where it was left, with a message on the screen; `Home` goes to the beginning. A file watched to its last 30 seconds, or stopped in its first 10 seconds, starts from the beginning. The last 200 files are remembered; **Forget all** clears the list |
@@ -136,12 +135,13 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | Subtitles and OSD | Subtitles: size | 100 % | The size of all subtitles, 50–300 % |
 | Subtitles and OSD | On-screen messages: font | default | A font installed in Windows, for the yellow line in the top left corner |
 | Subtitles and OSD | On-screen messages: size | 100 % | 50–200 % of the usual size, which follows the height of the picture |
+| Updates | Check at start-up | off | See [Update check and privacy](#update-check-and-privacy); **Check now** asks at once |
 
 The list of fonts has a search field at its top. The **Keyboard shortcuts** category lists every action with its keys, which can be changed (see [Keyboard shortcuts](#keyboard-shortcuts)). The volume, the window and the playlist's visibility and width are remembered between runs.
 
 ## Keyboard shortcuts
 
-The keys below are the defaults. In the settings, the **Keyboard shortcuts** category lists the actions in groups, each with its keys: a click on a key waits for the key combination (or the mouse's back or forward button, with `Ctrl`, `Alt` or `Shift` if wanted) that takes its place, **+** adds one more, the cross removes it, and `Esc` gives up. A combination another action had is taken from that action, and the page says so. A few actions without a default key can be given one: Stop, Load subtitles, Equalizer, Minimize and Maximize. **Reset the keys** puts them all back. The menus and tooltips show the keys as they are set. The mouse wheel, the double and middle clicks and the media keys stay as described; `Ctrl+V` cannot be chosen.
+The keys below are the defaults. In the settings, the **Keyboard shortcuts** category lists the actions in groups, each with its keys: a click on a key waits for the key combination (or the mouse's back or forward button, with `Ctrl`, `Alt` or `Shift` if wanted) that takes its place, **+** adds one more, the cross removes it, and `Esc` gives up. A combination another action had is taken from that action, and the page says so. A few actions without a default key can be given one: Stop, Load subtitles, Equalizer, Playlist in a window of its own / in the player, Minimize and Maximize. **Reset the keys** puts them all back. The menus and tooltips show the keys as they are set. The mouse wheel, the double and middle clicks and the media keys stay as described; `Ctrl+V` cannot be chosen.
 
 | Key | Action |
 |---|---|
@@ -174,7 +174,7 @@ The keys below are the defaults. In the settings, the **Keyboard shortcuts** cat
 | `` ` `` (`Ё`) | Window fitted to the picture, without black bars |
 | `6` | Fullscreen without black bars (the picture cropped); again, with them |
 | `7` | Only the picture, without the title row, the control bar and the playlist; again, the interface returns |
-| `Esc` | Closes the file information window, else leaves fullscreen, else brings the interface back after `7`, else closes the program |
+| `Esc` | Closes the file information window, else the Video, sound and subtitles panel, else leaves fullscreen, else brings the interface back after `7`, else closes the program |
 | `Ctrl+O` | Open files |
 | `Ctrl+U` | Open an address: a direct link to a video or a stream |
 | `L`, middle click on the picture | Show or hide the playlist |
@@ -236,14 +236,14 @@ python tools/make_release.py --install    # then a silent installation over the 
 
 The script writes the files to `dist` and takes the version from `Cargo.toml`. The installer script is `tools/setup.iss`; `metalmpv.exe --export-icon <file.ico>` writes the installer icon.
 
-Releases on GitHub are built by the **Release** workflow (`.github/workflows/release.yml`). After the version in `Cargo.toml` is updated and committed, pushing a matching tag publishes a release with the installer and the portable archive:
+Releases on GitHub are built by the **Release** workflow (`.github/workflows/release.yml`). Between releases the version in `Cargo.toml` carries `-dev`. A release drops the suffix (after `python tools/notices.py` if `Cargo.lock` has changed: a test checks the notices), is committed as `Version X.Y.Z`, and pushing a matching tag publishes it with the installer and the portable archive; the next version with `-dev` follows:
 
 ```
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The workflow stops if the tag does not match the version in `Cargo.toml`. Running the workflow manually (Actions → Release → Run workflow) builds the files and attaches them to the run, without making a release.
+The workflow stops if the tag does not match the version in `Cargo.toml` or the version still carries a suffix such as `-dev`. Running the workflow manually (Actions → Release → Run workflow) builds the files and attaches them to the run, without making a release.
 
 ## Built with
 

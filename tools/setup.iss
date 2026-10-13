@@ -40,6 +40,8 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+; Windows 10 or later: the DLL and the DWM calls need it.
+MinVersion=10.0
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 ; A running copy is closed (Restart Manager) before its exe is replaced.
@@ -100,4 +102,4 @@ Filename: "{app}\{#MyAppExeName}"; Parameters: "--unregister"; RunOnceId: "Unreg
 ; - Asking a running copy to quit through its own --quit ([Code]
 ;   PrepareToInstall and [UninstallRun]) and offering to delete the settings
 ;   on uninstallation (CurUninstallStepChanged): qrec/tools/setup.iss.
-; - MinVersion=10.0.19041 when an API needs Windows 10 2004: qrec.
+; - MinVersion=10.0.19041 (here 10.0) when an API needs Windows 10 2004: qrec.

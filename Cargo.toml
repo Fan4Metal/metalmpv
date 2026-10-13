@@ -11,6 +11,8 @@ rust-version = "1.95"
 description = "A fast video player for Windows built on libmpv"
 license = "MIT"
 repository = "https://github.com/Fan4Metal/metalmpv"
+# An application that ships with a GPL DLL: not a crate for crates.io.
+publish = false
 
 [dependencies]
 # glow, not the default wgpu: a smaller binary and a faster start (an OpenGL
@@ -24,7 +26,8 @@ egui = "0.36"
 rfd = { version = "0.17.2", default-features = false }
 raw-window-handle = "0.6"
 log = "0.4"
-env_logger = "0.11"
+# The timestamps of METALMPV_TRACE need humantime; no regex filters, no colours.
+env_logger = { version = "0.11", default-features = false, features = ["humantime"] }
 # The same winit as eframe's, for `WindowExtWindows::set_undecorated_shadow`
 # (the frameless window in fullscreen, see frameless.rs).
 winit = { version = "0.30", default-features = false, features = ["rwh_06"] }

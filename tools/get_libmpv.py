@@ -26,6 +26,11 @@ from pathlib import Path
 LIBMPV_ASSET = "mpv-dev-x86_64-20261012-git-88eb9f2e73.7z"
 LIBMPV_URL = f"https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261012/{LIBMPV_ASSET}"
 LIBMPV_SHA256 = "a739eef92a907dfb8ea997564a3fa565b2a4f376f20a25755e7645d0c70fe5e6"
+# For THIRD_PARTY_LICENSES.md (the GPL's corresponding source): the commit of
+# mpv-winbuild-cmake the release was built from (the tag's), and the FFmpeg
+# commit the DLL reports (av_version_info, "N-127375-gf4012774b").
+LIBMPV_BUILD_COMMIT = "1f8d2e76255abc48f0456d9be99b4cab9c6566e6"
+LIBMPV_FFMPEG_COMMIT = "f4012774b"
 SEVENZIP_URL = "https://github.com/ip7z/7zip/releases/download/26.03/7zr.exe"
 SEVENZIP_SHA256 = "ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d"
 # -------------------------------------------------------------------------------------
