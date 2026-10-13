@@ -120,6 +120,8 @@ pub struct App {
     audio_device_used: String,
     /// What playback last asked Windows to keep on.
     awake: win::Awake,
+    /// The taskbar button's progress and thumbnail buttons.
+    taskbar: Option<crate::taskbar::Taskbar>,
     /// The window is over the other windows now (`settings.on_top`).
     on_top: bool,
 }
@@ -245,6 +247,7 @@ impl App {
             pending_picture: None,
             audio_device_used: String::new(),
             awake: win::Awake::No,
+            taskbar: hwnd.and_then(crate::taskbar::Taskbar::new),
             on_top: false,
         };
         app.open(files);
@@ -1025,7 +1028,24 @@ impl App {
             .as_ref()
             .is_none_or(|p| p.state.paused || p.state.idle);
         for hooked in win::take_hooked() {
-            let win::Hooked::Media(key) = hooked;
+            let key = match hooked {
+                win::Hooked::Media(key) => key,
+                win::Hooked::TaskbarButton => {
+                    if let Some(taskbar) = &mut self.taskbar {
+                        taskbar.button_created();
+                    }
+                    continue;
+                }
+                win::Hooked::Thumb(id) => {
+                    self.pending.extend(match id {
+                        crate::taskbar::PREVIOUS => Some(Cmd::Prev),
+                        crate::taskbar::PLAY_PAUSE => Some(Cmd::TogglePause),
+                        crate::taskbar::NEXT => Some(Cmd::Next),
+                        _ => None,
+                    });
+                    continue;
+                }
+            };
             let cmd = match key {
                 win::MediaKey::PlayPause => Some(Cmd::TogglePause),
                 win::MediaKey::Play => paused.then_some(Cmd::TogglePause),
@@ -1041,6 +1061,26 @@ impl App {
     /// Keep the display on while a picture plays in sight and the computer
     /// awake while sound plays; let them sleep when paused, stopped or
     /// idle.
+    /// The position as the taskbar button's progress (yellow when paused)
+    /// and the thumbnail buttons' state.
+    fn show_on_taskbar(&mut self) {
+        let Some(taskbar) = &mut self.taskbar else {
+            return;
+        };
+        let state = self.player.as_ref().map(|p| &p.state);
+        let progress = state
+            .filter(|s| !s.idle)
+            .and_then(|s| s.fraction())
+            .map(|p| (p * 1000.0).round() as u64);
+        let repeat = self.settings.repeat;
+        taskbar.show(crate::taskbar::Shown {
+            progress,
+            paused: state.is_none_or(|s| s.paused || s.idle),
+            has_previous: self.playlist.prev_in(repeat).is_some(),
+            has_next: self.playlist.next_in(repeat).is_some(),
+        });
+    }
+
     fn follow_on_top(&mut self, ctx: &egui::Context) {
         let playing = self
             .player
@@ -1992,6 +2032,7 @@ impl eframe::App for App {
         let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         self.keep_awake(minimized);
         self.follow_on_top(ctx);
+        self.show_on_taskbar();
     }
 
     fn ui(&mut self, root_ui: &mut egui::Ui, frame: &mut eframe::Frame) {

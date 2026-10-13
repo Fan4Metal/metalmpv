@@ -381,7 +381,15 @@ pub enum MediaKey {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hooked {
     Media(MediaKey),
+    /// The taskbar button exists (`TaskbarButtonCreated`): the thumbnail
+    /// buttons can be added (`taskbar.rs`).
+    TaskbarButton,
+    /// A thumbnail button was clicked (its id).
+    Thumb(u16),
 }
+
+/// `TaskbarButtonCreated`, registered by [`hook_window`].
+static TASKBAR_CREATED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 /// Subclass the window once: media keys (`WM_KEYDOWN` with a
 /// `VK_MEDIA_*` key, which egui drops, and `WM_APPCOMMAND`, which headsets
@@ -393,6 +401,10 @@ pub fn hook_window(hwnd: isize, wake: impl Fn() + Send + Sync + 'static) {
     use windows_sys::Win32::UI::Shell::SetWindowSubclass;
     static SUBCLASSED: Once = Once::new();
     SUBCLASSED.call_once(|| {
+        use windows_sys::Win32::UI::WindowsAndMessaging::RegisterWindowMessageW;
+        let name = wide("TaskbarButtonCreated");
+        let message = unsafe { RegisterWindowMessageW(name.as_ptr()) };
+        TASKBAR_CREATED.store(message, std::sync::atomic::Ordering::Relaxed);
         let _ = WAKE.set(Box::new(wake));
         unsafe { SetWindowSubclass(hwnd as _, Some(window_proc), 1, 0) };
     });
@@ -456,8 +468,19 @@ unsafe extern "system" fn window_proc(
 ) -> windows_sys::Win32::Foundation::LRESULT {
     use std::sync::atomic::Ordering;
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{WM_APPCOMMAND, WM_KEYDOWN, WM_MOVING};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        WM_APPCOMMAND, WM_COMMAND, WM_KEYDOWN, WM_MOVING,
+    };
+    // THBN_CLICKED in WM_COMMAND's high word.
+    const THBN_CLICKED: usize = 0x1800;
+    if msg != 0 && msg == TASKBAR_CREATED.load(Ordering::Relaxed) {
+        hook(Hooked::TaskbarButton);
+    }
     match msg {
+        WM_COMMAND if (wparam >> 16) & 0xFFFF == THBN_CLICKED => {
+            hook(Hooked::Thumb((wparam & 0xFFFF) as u16));
+            return 0;
+        }
         WM_MOVING if lparam != 0 && SNAP.load(Ordering::Relaxed) => {
             if unsafe { snap(hwnd as isize, lparam) } {
                 return 1;
