@@ -14,7 +14,7 @@ The complete corresponding source code of the DLL is available from:
 - FFmpeg: <https://github.com/FFmpeg/FFmpeg> (commit `f4012774b`, version `N-127375-gf4012774b` as the DLL reports it);
 - the build scripts, which fetch the other libraries it includes: <https://github.com/shinchiro/mpv-winbuild-cmake>, commit [`1f8d2e76255abc48f0456d9be99b4cab9c6566e6`](https://github.com/shinchiro/mpv-winbuild-cmake/tree/1f8d2e76255abc48f0456d9be99b4cab9c6566e6) (release `20261012`, built by [workflow run 38186342240](https://github.com/shinchiro/mpv-winbuild-cmake/actions/runs/38186342240), its `packages/` folder naming every library and its source).
 
-`tools/get_libmpv.py` downloads exactly this build and checks its SHA-256 (`a739eef92a907dfb8ea997564a3fa565b2a4f376f20a25755e7645d0c70fe5e6`).
+The archive is also kept unchanged in this repository's pre-release [libmpv-20261012](https://github.com/Fan4Metal/metalmpv/releases/tag/libmpv-20261012), since the original release page keeps only its latest builds. `tools/get_libmpv.py` downloads exactly this build (from that copy, else from the original) and checks its SHA-256 (`a739eef92a907dfb8ea997564a3fa565b2a4f376f20a25755e7645d0c70fe5e6`).
 
 ## egui / eframe
 

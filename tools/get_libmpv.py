@@ -5,7 +5,9 @@ The player loads libmpv-2.dll from its own folder at run time (src/mpv/sys.rs),
 so the build itself needs nothing; build.py, tools/make_release.py and the
 release workflow call this script and copy the DLL next to the exe. The
 package is a pinned build of shinchiro/mpv-winbuild-cmake, checked against
-its SHA-256. It is packed with the BCJ2 filter, which neither py7zr nor the
+its SHA-256. shinchiro keeps only the last 30 builds (about two months), so
+the archive is mirrored unchanged in a pre-release of this repository
+(tag libmpv-<date>), tried first; the original is the fallback. It is packed with the BCJ2 filter, which neither py7zr nor the
 tar of Windows can unpack, so the standalone 7zr.exe of 7-Zip (pinned and
 checked as well) is fetched next to it. A second run does nothing when the
 DLL of the pinned build is already there.
@@ -19,12 +21,19 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 # --- The pinned builds --------------------------------------------------------------
 LIBMPV_ASSET = "mpv-dev-x86_64-20261012-git-88eb9f2e73.7z"
-LIBMPV_URL = f"https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261012/{LIBMPV_ASSET}"
+# The mirror first (a pre-release of this repository, made when the build is
+# pinned: gh release create libmpv-<date> --prerelease ... <archive>), then
+# the original, which goes away after about two months.
+LIBMPV_URLS = [
+    f"https://github.com/Fan4Metal/metalmpv/releases/download/libmpv-20261012/{LIBMPV_ASSET}",
+    f"https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261012/{LIBMPV_ASSET}",
+]
 LIBMPV_SHA256 = "a739eef92a907dfb8ea997564a3fa565b2a4f376f20a25755e7645d0c70fe5e6"
 # For THIRD_PARTY_LICENSES.md (the GPL's corresponding source): the commit of
 # mpv-winbuild-cmake the release was built from (the tag's), and the FFmpeg
@@ -52,18 +61,39 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+class DownloadError(Exception):
+    pass
+
+
 def download(url: str, to: Path, expected: str) -> None:
-    """Download `url` to `to` and check its SHA-256; a mismatch leaves nothing behind."""
+    """Download `url` to `to` and check its SHA-256; a failure leaves nothing behind."""
     print(f"Downloading {url}", flush=True)
     request = urllib.request.Request(url, headers={"User-Agent": "metalmpv-get_libmpv"})
     partial = to.with_suffix(to.suffix + ".part")
-    with urllib.request.urlopen(request, timeout=60) as answer, partial.open("wb") as out:
-        shutil.copyfileobj(answer, out, 1 << 20)
+    try:
+        with urllib.request.urlopen(request, timeout=60) as answer, partial.open("wb") as out:
+            shutil.copyfileobj(answer, out, 1 << 20)
+    except (urllib.error.URLError, OSError) as e:
+        partial.unlink(missing_ok=True)
+        raise DownloadError(f"cannot download {url}: {e}") from e
     actual = sha256(partial)
     if actual != expected:
         partial.unlink()
-        raise SystemExit(f"ERROR: SHA-256 mismatch for {url}\n  expected {expected}\n  got      {actual}")
+        raise DownloadError(f"SHA-256 mismatch for {url}\n  expected {expected}\n  got      {actual}")
     partial.replace(to)
+
+
+def download_any(urls: list[str], to: Path, expected: str) -> None:
+    """Download from the first of `urls` that gives the file with the expected SHA-256."""
+    errors = []
+    for url in urls:
+        try:
+            download(url, to, expected)
+            return
+        except DownloadError as e:
+            print(f"  {e}", flush=True)
+            errors.append(str(e))
+    raise SystemExit("ERROR: no source gave the file:\n  " + "\n  ".join(errors))
 
 
 def main() -> int:
@@ -77,11 +107,11 @@ def main() -> int:
 
     VENDOR.mkdir(exist_ok=True)
     if not SEVENZIP.is_file() or sha256(SEVENZIP) != SEVENZIP_SHA256:
-        download(SEVENZIP_URL, SEVENZIP, SEVENZIP_SHA256)
+        download_any([SEVENZIP_URL], SEVENZIP, SEVENZIP_SHA256)
 
     with tempfile.TemporaryDirectory(dir=VENDOR) as tmp:
         archive = Path(tmp) / LIBMPV_ASSET
-        download(LIBMPV_URL, archive, LIBMPV_SHA256)
+        download_any(LIBMPV_URLS, archive, LIBMPV_SHA256)
         extracted = Path(tmp) / "x"
         result = subprocess.run(
             [str(SEVENZIP), "x", "-y", f"-o{extracted}", str(archive), "libmpv-2.dll", "include"],
