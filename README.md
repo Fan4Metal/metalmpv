@@ -152,6 +152,8 @@ The list of fonts has a search field at its top. The **Keys** category lists the
 | `C` / `X` / `Z` | Faster / slower / normal speed (0.25× to 4×, the voice keeps its pitch; also the **Speed** submenu of the context menu) |
 | `Ctrl+=` / `Ctrl+-` | Sound later / earlier by 100 ms against the picture |
 | `Ctrl+0` | Sound back in sync |
+| `Shift+.` / `Shift+,` | Subtitles later / earlier by 100 ms (`>` and `<`) |
+| `Shift+0` | Subtitles back in sync |
 | `Page Up` / `Page Down` | Previous / next file of the playlist |
 | Media keys | Play/Pause, Stop, Previous and Next of a keyboard, a headset or a remote, while the player's window is active |
 | `Enter`, `F11`, double click | Fullscreen |

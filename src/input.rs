@@ -26,6 +26,9 @@ pub enum Cmd {
     /// the picture (`Ctrl+=` later, `Ctrl+-` earlier); 0 puts it back
     /// (`Ctrl+0`).
     AudioDelay(f64),
+    /// Move the subtitles by this many steps of `audio::DELAY_STEP`
+    /// (`Shift+.` later, `Shift+,` earlier); 0 puts them back (`Shift+0`).
+    SubDelay(f64),
     /// The playback speed by this many steps of `format::SPEEDS` (`C`
     /// faster, `X` slower), 0 for normal (`Z`), as in GOM Player.
     Speed(i32),
@@ -121,6 +124,10 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
         Key::ArrowLeft => Cmd::SeekShort(-1.0),
         Key::ArrowRight => Cmd::SeekShort(1.0),
         Key::Comma if ctrl => Cmd::Settings,
+        // `<` and `>`: egui has no such keys and passes the physical ones.
+        Key::Comma if m.shift => Cmd::SubDelay(-1.0),
+        Key::Period if m.shift => Cmd::SubDelay(1.0),
+        Key::Num0 if m.shift && !ctrl => Cmd::SubDelay(0.0),
         // As in mpv: Ctrl with + and -.
         Key::Plus | Key::Equals if ctrl => Cmd::AudioDelay(1.0),
         Key::Minus if ctrl => Cmd::AudioDelay(-1.0),
@@ -172,6 +179,7 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
             | Cmd::Frame { .. }
             | Cmd::Volume(_)
             | Cmd::AudioDelay(_)
+            | Cmd::SubDelay(_)
     );
     (!repeat || repeats).then_some(cmd)
 }
@@ -232,6 +240,18 @@ mod tests {
         assert_eq!(
             command(Key::Period, Modifiers::NONE, true),
             Some(Cmd::Frame { forward: true })
+        );
+    }
+
+    #[test]
+    fn shift_comma_period_move_the_subtitles() {
+        let shift = Modifiers::SHIFT;
+        assert_eq!(command(Key::Comma, shift, false), Some(Cmd::SubDelay(-1.0)));
+        assert_eq!(command(Key::Period, shift, true), Some(Cmd::SubDelay(1.0)));
+        assert_eq!(command(Key::Num0, shift, false), Some(Cmd::SubDelay(0.0)));
+        assert_eq!(
+            command(Key::Comma, Modifiers::NONE, false),
+            Some(Cmd::Frame { forward: false })
         );
     }
 

@@ -1099,7 +1099,7 @@ fn update_status(ui: &mut Ui, updates: &Updates) {
 
 /// The keys, as in the README.
 fn keys(ui: &mut Ui) {
-    let rows: [(&str, &str); 29] = [
+    let rows: [(&str, &str); 30] = [
         (
             tr!("Space", "Пробел"),
             tr!("Play / pause", "Воспроизведение / пауза"),
@@ -1209,6 +1209,13 @@ fn keys(ui: &mut Ui) {
             tr!(
                 "Faster / slower / normal speed",
                 "Быстрее / медленнее / обычная скорость"
+            ),
+        ),
+        (
+            "Shift+. / Shift+, / Shift+0",
+            tr!(
+                "Subtitles later / earlier by 100 ms / in sync",
+                "Субтитры позже / раньше на 100 мс / как было"
             ),
         ),
         (

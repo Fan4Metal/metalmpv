@@ -222,6 +222,8 @@ pub enum Osd {
     Aspect(Option<String>),
     /// The sound against the picture, in seconds (later when positive).
     AudioDelay(f64),
+    /// The subtitles against the picture, in seconds.
+    SubDelay(f64),
     /// The playback speed.
     Speed(f64),
     /// Free text: a file name, an error.
@@ -365,17 +367,18 @@ impl Osd {
                     format!("[ Speed {s} ]")
                 }
             }
-            Osd::AudioDelay(seconds) => {
+            Osd::AudioDelay(seconds) | Osd::SubDelay(seconds) => {
                 let ms = (seconds * 1000.0).round();
                 let ms = if ms == 0.0 {
                     "0".to_owned()
                 } else {
                     format!("{ms:+.0}")
                 };
-                if ru {
-                    format!("[ Задержка звука {ms} мс ]")
-                } else {
-                    format!("[ Audio delay {ms} ms ]")
+                match (matches!(self, Osd::SubDelay(_)), ru) {
+                    (false, true) => format!("[ Задержка звука {ms} мс ]"),
+                    (false, false) => format!("[ Audio delay {ms} ms ]"),
+                    (true, true) => format!("[ Задержка субтитров {ms} мс ]"),
+                    (true, false) => format!("[ Subtitle delay {ms} ms ]"),
                 }
             }
             Osd::Text(t) => t.clone(),
@@ -537,6 +540,10 @@ mod tests {
         assert_eq!(
             Osd::AudioDelay(-0.0).text_in(Lang::En),
             "[ Audio delay 0 ms ]"
+        );
+        assert_eq!(
+            Osd::SubDelay(-0.2).text_in(Lang::Ru),
+            "[ Задержка субтитров -200 мс ]"
         );
     }
 }

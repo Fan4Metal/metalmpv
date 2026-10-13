@@ -763,6 +763,17 @@ impl App {
                     self.osd.show(Osd::Speed(speed));
                 }
             }
+            Cmd::SubDelay(steps) => {
+                if let Some(player) = &mut self.player {
+                    let delay = if steps == 0.0 {
+                        0.0
+                    } else {
+                        player.state.sub_delay + steps * crate::audio::DELAY_STEP
+                    };
+                    player.set_sub_delay(delay);
+                    self.osd.show(Osd::SubDelay(player.state.sub_delay));
+                }
+            }
             Cmd::AudioDelay(steps) => {
                 if let Some(player) = &mut self.player {
                     let delay = if steps == 0.0 {
