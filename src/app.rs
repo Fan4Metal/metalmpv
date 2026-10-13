@@ -107,6 +107,9 @@ pub struct App {
     /// Fullscreen with the picture filling the screen, cropped (`6`,
     /// mpv's `panscan`); ends with fullscreen.
     fill: bool,
+    /// The right button went down on the picture: the context menu opens
+    /// when it is let go.
+    menu_press: bool,
     /// The video area of the last frame, in points.
     picture_area: Rect,
     /// The title row, the control bar and the playlist around the video
@@ -242,6 +245,7 @@ impl App {
             pick_tracks: false,
             pick_ready: false,
             fill: false,
+            menu_press: false,
             picture_area: Rect::NOTHING,
             chrome: egui::Vec2::ZERO,
             pending_picture: None,
@@ -1370,9 +1374,44 @@ impl App {
             repeat: self.settings.repeat,
             on_top: self.settings.on_top,
         };
-        response.context_menu(|ui| {
-            context_menu(ui, state, playlist_visible, chapter_marks, marks, cmds)
+        // As Windows' menus do: the right button opens the menu when let go
+        // and a press anywhere off the menus closes it, however the pointer
+        // moves meanwhile (egui's click allows 6 points: a click on the
+        // move was lost). The press closes it before it is shown, so that
+        // the right button let go there opens it anew, once the old one is
+        // gone (egui closes a menu shown in the last frame on any click).
+        let menu = egui::Popup::default_response_id(&response);
+        let ctx = ui.ctx().clone();
+        let (pressed, right_pressed, right_down, pos) = ui.input(|i| {
+            (
+                i.pointer.any_pressed(),
+                i.pointer.button_pressed(egui::PointerButton::Secondary),
+                i.pointer.button_down(egui::PointerButton::Secondary),
+                i.pointer.interact_pos(),
+            )
         });
+        let on_menus = pos
+            .and_then(|p| ctx.layer_id_at(p))
+            .is_some_and(|layer| layer.order == egui::Order::Foreground);
+        if pressed && !on_menus && egui::Popup::is_id_open(&ctx, menu) {
+            egui::Popup::close_id(&ctx, menu);
+        }
+        if right_pressed {
+            self.menu_press = response.contains_pointer();
+        }
+        let let_go = self.menu_press && !right_down;
+        let old_shown = ctx.read_response(menu).is_some();
+        if let_go && old_shown {
+            ctx.request_repaint();
+        }
+        let open = let_go && !old_shown;
+        if open {
+            self.menu_press = false;
+        }
+        egui::Popup::menu(&response)
+            .open_memory(open.then_some(egui::SetOpenCommand::Bool(true)))
+            .at_pointer_fixed()
+            .show(|ui| context_menu(ui, state, playlist_visible, chapter_marks, marks, cmds));
         if ui.input(|i| !i.raw.hovered_files.is_empty()) {
             ui.painter()
                 .rect_filled(rect.shrink(12.0), 8.0, Color32::from_black_alpha(160));
