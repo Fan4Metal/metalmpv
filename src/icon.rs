@@ -95,10 +95,29 @@ const SCREEN_RADIUS: f32 = 0.076;
 const PLAY: [(f32, f32); 3] = [(0.390, 0.360), (0.642, 0.5), (0.390, 0.640)];
 const PLAY_ROUND: f32 = 0.031;
 
+/// The colours of the screen: its top left and bottom right (a gradient),
+/// and the soft shadow under Play; `0xRRGGBB`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Screen {
+    pub light: u32,
+    pub dark: u32,
+    pub shade: u32,
+}
+
+impl Screen {
+    /// The icon's own blue, embedded in the executable.
+    pub const BLUE: Screen = Screen {
+        light: 0x4fa3ff,
+        dark: 0x2a4fd8,
+        shade: 0x0b1f6b,
+    };
+}
+
 /// The colour of the icon at `(x, y)`, both in 0..1 of the icon's side, for
-/// an icon of `size` pixels: a graphite film frame whose screen is blue with a
-/// white Play. Below 25 px the frame has no holes (they would be noise).
-fn sample(x: f32, y: f32, size: u32) -> Rgba {
+/// an icon of `size` pixels: a graphite film frame whose screen is coloured
+/// (blue by default) with a white Play. Below 25 px the frame has no holes
+/// (they would be noise).
+fn sample(x: f32, y: f32, size: u32, colours: Screen) -> Rgba {
     // Anti-aliasing width in icon units: a pixel at any size (a fixed width
     // in icon units blurs the edges of the large sizes).
     let aa = 0.5 / size as f32;
@@ -143,7 +162,10 @@ fn sample(x: f32, y: f32, size: u32) -> Rgba {
     let st = (x - sx0) / (sx1 - sx0) * 0.4 + (y - sy0) / (sy1 - sy0) * 0.6;
     c = over(
         c,
-        with_alpha(mix(hex(0x4fa3ff), hex(0x2a4fd8), st), cover(screen)),
+        with_alpha(
+            mix(hex(colours.light), hex(colours.dark), st),
+            cover(screen),
+        ),
     );
 
     // Play, white, with a soft shadow below it.
@@ -152,7 +174,7 @@ fn sample(x: f32, y: f32, size: u32) -> Rgba {
         triangle(x, y, a, b, p) - PLAY_ROUND
     };
     let shade = (-play(0.012).max(0.0) / 0.02).exp() * cover(screen);
-    c = over(c, with_alpha(hex(0x0b1f6b), shade * 0.45));
+    c = over(c, with_alpha(hex(colours.shade), shade * 0.45));
     c = over(c, with_alpha(hex(0xffffff), cover(play(0.0))));
     c
 }
@@ -160,6 +182,11 @@ fn sample(x: f32, y: f32, size: u32) -> Rgba {
 /// Straight (non-premultiplied) RGBA pixels, `size * size * 4` bytes, row
 /// major from the top. 4x4 supersampling gives smooth edges.
 pub fn rgba(size: u32) -> Vec<u8> {
+    rgba_with(size, Screen::BLUE)
+}
+
+/// As [`rgba`], with the screen in `colours`.
+pub fn rgba_with(size: u32, colours: Screen) -> Vec<u8> {
     const SS: u32 = 4;
     let n = size as usize;
     let mut out = vec![0u8; n * n * 4];
@@ -171,7 +198,7 @@ pub fn rgba(size: u32) -> Vec<u8> {
                 for sx in 0..SS {
                     let x = (px as f32 + (sx as f32 + 0.5) / SS as f32) / size as f32;
                     let y = (py as f32 + (sy as f32 + 0.5) / SS as f32) / size as f32;
-                    let c = sample(x, y, size);
+                    let c = sample(x, y, size, colours);
                     for i in 0..3 {
                         acc[i] += c[i] * c[3];
                     }

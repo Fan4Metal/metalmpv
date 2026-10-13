@@ -10,7 +10,7 @@ use egui::{
     Stroke, Ui, pos2, vec2,
 };
 
-use super::style;
+use super::style::{self, Accent};
 use crate::audio::{BOOSTS, Channels, Device, Passthrough, boost_label};
 use crate::fonts::Family;
 use crate::i18n::LangChoice;
@@ -136,6 +136,8 @@ pub struct Changed {
     pub passthrough: bool,
     /// The keys (`keymap::publish`).
     pub keys: bool,
+    /// The accent colour (`style::set_accent`, the window icon).
+    pub accent: bool,
 }
 
 impl SettingsDialog {
@@ -266,7 +268,7 @@ impl SettingsDialog {
                                 bottom: 18,
                             })
                             .show(ui, |ui| match self.page {
-                                Page::General => general(ui, settings),
+                                Page::General => general(ui, settings, &mut changed),
                                 Page::Updates => updates_page(ui, updates),
                                 Page::Playback => playback(ui, settings, &mut changed),
                                 Page::Video => changed.hwdec |= video(ui, settings, hwdec_current),
@@ -314,7 +316,7 @@ impl SettingsDialog {
                 // A short accent bar at the left edge marks the page.
                 let bar =
                     Rect::from_center_size(pos2(row.left() + 3.0, row.center().y), vec2(3.0, 16.0));
-                ui.painter().rect_filled(bar, 1.5, style::ACCENT);
+                ui.painter().rect_filled(bar, 1.5, style::accent());
             }
             let color = if selected {
                 style::TEXT_BRIGHT
@@ -443,6 +445,144 @@ pub(super) fn row<R>(
     control(&mut ui)
 }
 
+/// The width of the accent colours' row.
+const ACCENTS_WIDTH: f32 = 250.0;
+/// The size of an accent's swatch.
+const SWATCH: f32 = 22.0;
+
+/// The accent colours as round swatches, the chosen one ringed, and last
+/// one's own colour, picked in a popup; whether one was chosen.
+fn accents(ui: &mut Ui, accent: &mut Accent) -> bool {
+    let mut chosen = false;
+    ui.spacing_mut().item_spacing.x = 5.0;
+    // Right to left: the own colour first, then the ready ones from the last.
+    chosen |= own_accent(ui, accent);
+    for a in Accent::ALL.into_iter().rev() {
+        let (rect, response) = ui.allocate_exact_size(vec2(SWATCH, SWATCH), Sense::click());
+        let response = response.on_hover_text(a.label());
+        let selected = *accent == a;
+        swatch(ui, rect, selected, response.hovered(), |p, centre, r| {
+            p.circle_filled(centre, r, a.palette().accent);
+        });
+        if response.clicked() && !selected {
+            *accent = a;
+            chosen = true;
+        }
+    }
+    chosen
+}
+
+/// A round swatch in `rect`: ringed when chosen, a little bigger under the
+/// pointer; `fill` paints the inside at a centre and a radius.
+fn swatch(
+    ui: &Ui,
+    rect: Rect,
+    selected: bool,
+    hovered: bool,
+    fill: impl FnOnce(&egui::Painter, egui::Pos2, f32),
+) {
+    let painter = ui.painter();
+    let centre = rect.center();
+    let radius = SWATCH / 2.0;
+    if selected {
+        painter.circle_stroke(centre, radius - 1.0, Stroke::new(2.0, style::TEXT_BRIGHT));
+        fill(painter, centre, radius - 4.5);
+    } else {
+        let grow = if hovered { 1.0 } else { 0.0 };
+        fill(painter, centre, radius - 3.0 + grow);
+    }
+}
+
+/// The own colour's swatch: a colour wheel, or the colour once chosen; a
+/// click opens the picker with a field for `#RRGGBB`, which starts from
+/// the accent in use.
+fn own_accent(ui: &mut Ui, accent: &mut Accent) -> bool {
+    let (rect, response) = ui.allocate_exact_size(vec2(SWATCH, SWATCH), Sense::click());
+    let response = response.on_hover_text(tr!("Your own colour…", "Свой цвет…"));
+    let own = matches!(accent, Accent::Custom(_));
+    let current = accent.palette().accent;
+    swatch(ui, rect, own, response.hovered(), |p, centre, r| {
+        if own {
+            p.circle_filled(centre, r, current);
+        } else {
+            colour_wheel(p, centre, r);
+        }
+    });
+    let mut chosen = false;
+    egui::Popup::menu(&response)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            let mut colour = accent.palette().accent;
+            if egui::color_picker::color_picker_color32(
+                ui,
+                &mut colour,
+                egui::color_picker::Alpha::Opaque,
+            ) {
+                *accent = custom(colour.to_array()[..3].try_into().expect("three"));
+                chosen = true;
+            }
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(tr!("Hex", "Код"));
+                // Kept as typed while the field has the focus.
+                let id = ui.id().with("accent_hex");
+                let mut text = ui
+                    .data_mut(|d| d.get_temp::<String>(id))
+                    .unwrap_or_else(|| format!("#{:06X}", accent.base()));
+                let field = ui.add(
+                    egui::TextEdit::singleline(&mut text)
+                        .desired_width(80.0)
+                        .char_limit(7),
+                );
+                if field.changed() {
+                    let typed = text.trim().trim_start_matches('#');
+                    if let Some(rgb) = crate::sub_style::parse_hex(&format!("#{typed}")) {
+                        *accent = custom(rgb);
+                        chosen = true;
+                    }
+                }
+                if field.has_focus() {
+                    ui.data_mut(|d| d.insert_temp(id, text));
+                } else {
+                    ui.data_mut(|d| d.remove::<String>(id));
+                }
+            });
+        });
+    chosen
+}
+
+fn custom([r, g, b]: [u8; 3]) -> Accent {
+    Accent::Custom(u32::from_be_bytes([0, r, g, b]))
+}
+
+/// A disc of all the hues round its centre.
+fn colour_wheel(painter: &egui::Painter, centre: egui::Pos2, radius: f32) {
+    const SLICES: usize = 36;
+    let point = |i: usize| {
+        let angle = i as f32 / SLICES as f32 * std::f32::consts::TAU;
+        centre + radius * vec2(angle.cos(), angle.sin())
+    };
+    for i in 0..SLICES {
+        let hue = (i as f32 + 0.5) / SLICES as f32;
+        let colour = Color32::from(egui::ecolor::Hsva::new(hue, 0.75, 0.95, 1.0));
+        painter.add(egui::Shape::convex_polygon(
+            vec![centre, point(i), point(i + 1)],
+            colour,
+            Stroke::new(0.6, colour),
+        ));
+    }
+}
+
+/// The hint of the on-top row: the key that switches it, if any.
+fn on_top_hint() -> String {
+    let key = crate::keymap::shortcut(crate::input::Cmd::CycleOnTop);
+    if key.is_empty() {
+        String::new()
+    } else {
+        tr!(format!("{key} switches it."), format!("{key} переключает."))
+    }
+}
+
 /// An on/off switch.
 fn switch(ui: &mut Ui, on: &mut bool) -> Response {
     let size = vec2(40.0, 20.0);
@@ -461,9 +601,9 @@ fn switch(ui: &mut Ui, on: &mut bool) -> Response {
         let painter = ui.painter();
         if *on {
             let fill = if hovered {
-                style::ACCENT_HOVER
+                style::accent_hover()
             } else {
-                style::ACCENT
+                style::accent()
             };
             painter.rect_filled(rect, radius, fill);
         } else {
@@ -480,7 +620,7 @@ fn switch(ui: &mut Ui, on: &mut bool) -> Response {
     response
 }
 
-fn general(ui: &mut Ui, settings: &mut Settings) {
+fn general(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
     section(ui, tr!("Interface", "Интерфейс"), |ui| {
         row(
             ui,
@@ -509,6 +649,17 @@ fn general(ui: &mut Ui, settings: &mut Settings) {
         divider(ui);
         row(
             ui,
+            tr!("Accent colour", "Акцентный цвет"),
+            Some(tr!(
+                "The Play button, the seek bar, the switches, the playing file and the icon of the window.",
+                "Кнопка воспроизведения, полоса перемотки, переключатели, текущий файл и значок окна."
+            )),
+            ACCENTS_WIDTH,
+            |ui| changed.accent |= accents(ui, &mut settings.accent),
+        );
+        divider(ui);
+        row(
+            ui,
             tr!("Pin the panels", "Закрепить панели"),
             Some(tr!(
                 "The file information and the Video, sound and subtitles panel. On, they stay at the player's top right corner, the panel left of the information when both are open; off, they are moved by their titles and keep their places.",
@@ -532,7 +683,9 @@ fn general(ui: &mut Ui, settings: &mut Settings) {
         row(
             ui,
             tr!("Over the other windows", "Поверх других окон"),
-            Some(tr!("Ctrl+T switches it.", "Ctrl+T переключает.")),
+            Some(&on_top_hint())
+                .filter(|h| !h.is_empty())
+                .map(String::as_str),
             230.0,
             |ui| {
                 egui::ComboBox::from_id_salt("settings_on_top")
@@ -1360,7 +1513,7 @@ fn key_chip(ui: &mut Ui, id: (Action, usize), label: &str, waiting: bool) -> Opt
     });
     let hovered = key.hovered() || cross.as_ref().is_some_and(Response::hovered);
     let fill = if waiting {
-        style::ACCENT
+        style::accent()
     } else if hovered {
         KEY_HOVER
     } else {
@@ -1432,6 +1585,8 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.panels_pinned = d.panels_pinned;
     settings.snap_to_centre = d.snap_to_centre;
     settings.on_top = d.on_top;
+    changed.accent |= settings.accent != d.accent;
+    settings.accent = d.accent;
     changed.keys |= settings.keys != d.keys;
     settings.keys = d.keys;
     changed.audio_channels |= settings.audio_channels != d.audio_channels;

@@ -119,7 +119,7 @@ fn row(ui: &mut Ui, selected: bool, name: &str, badges: &[String], tip: Option<&
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::CLICK);
     let painter = ui.painter_at(rect);
     if selected {
-        painter.rect_filled(rect, 4.0, style::SELECTED_BG);
+        painter.rect_filled(rect, 4.0, style::selected_bg());
     } else if response.hovered() {
         painter.rect_filled(rect, 4.0, style::HOVER);
     }
@@ -138,13 +138,13 @@ fn row(ui: &mut Ui, selected: bool, name: &str, badges: &[String], tip: Option<&
 
     let mark = pos2(rect.left() + 12.0, name_y);
     let ring = if selected {
-        style::ACCENT_HOVER
+        style::accent_hover()
     } else {
         style::TEXT_WEAK
     };
     painter.circle_stroke(mark, 5.5, Stroke::new(1.3, ring));
     if selected {
-        painter.circle_filled(mark, 2.8, style::ACCENT_HOVER);
+        painter.circle_filled(mark, 2.8, style::accent_hover());
     }
 
     let name_galley = ui.fonts_mut(|f| {

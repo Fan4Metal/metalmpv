@@ -216,7 +216,7 @@ impl InfoWindow {
                     ui.painter().rect_stroke(
                         image,
                         0.0,
-                        egui::Stroke::new(1.0, style::ACCENT),
+                        egui::Stroke::new(1.0, style::accent()),
                         egui::StrokeKind::Outside,
                     );
                 }
@@ -309,7 +309,7 @@ fn body(
             row_with(ui, &label, |ui| {
                 if ui
                     .add(
-                        egui::Label::new(RichText::new(&value).color(style::ACCENT_HOVER))
+                        egui::Label::new(RichText::new(&value).color(style::accent_hover()))
                             .sense(Sense::click())
                             .wrap(),
                     )

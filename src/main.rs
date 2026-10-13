@@ -177,7 +177,7 @@ fn main() -> eframe::Result {
             .with_decorations(false)
             .with_resizable(true)
             .with_drag_and_drop(true)
-            .with_icon(window_icon()),
+            .with_icon(window_icon(ui::style::Accent::Blue)),
         renderer: eframe::Renderer::Glow,
         // Centre only on the first run; later runs restore the saved window.
         centered: !stored.has_saved(),
@@ -247,10 +247,16 @@ fn normalize(arg: &str) -> PathBuf {
     std::path::absolute(&path).unwrap_or(path)
 }
 
-/// The icon of the window, from the embedded 64-pixel rendering.
-pub fn window_icon() -> Arc<egui::IconData> {
+/// The icon of the window: the embedded 64-pixel rendering, or drawn in
+/// another accent (~3 ms).
+pub fn window_icon(accent: ui::style::Accent) -> Arc<egui::IconData> {
+    let rgba = if accent == ui::style::Accent::Blue {
+        embedded_icon(64).expect("embedded").to_vec()
+    } else {
+        icon::rgba_with(64, accent.palette().icon)
+    };
     Arc::new(egui::IconData {
-        rgba: embedded_icon(64).expect("embedded").to_vec(),
+        rgba,
         width: 64,
         height: 64,
     })

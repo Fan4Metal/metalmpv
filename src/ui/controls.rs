@@ -272,7 +272,7 @@ fn underline(ui: &Ui, r: Rect) {
             pos2(r.center().x - 6.0, r.bottom() - 3.0),
             pos2(r.center().x + 6.0, r.bottom() - 3.0),
         ],
-        egui::Stroke::new(2.0, style::ACCENT),
+        egui::Stroke::new(2.0, style::accent()),
     );
 }
 
@@ -312,11 +312,11 @@ fn flat(
 fn play_button(ui: &mut Ui, rect: Rect, state: &State) -> Response {
     let response = ui.allocate_rect(rect, Sense::CLICK);
     let fill = if response.is_pointer_button_down_on() {
-        style::ACCENT
+        style::accent()
     } else if response.hovered() {
-        style::ACCENT_HOVER
+        style::accent_hover()
     } else {
-        style::ACCENT
+        style::accent()
     };
     let painter = ui.painter();
     painter.circle_filled(rect.center(), rect.width() / 2.0, fill);
@@ -403,7 +403,7 @@ fn seek_bar(
             track.left_top(),
             pos2(track.left() + track.width() * fraction, track.bottom()),
         );
-        painter.rect_filled(done, 3.0, style::ACCENT);
+        painter.rect_filled(done, 3.0, style::accent());
     }
     // The chapters' starts as gaps in the bar (not the first, at the
     // start, nor one at the very end).
@@ -459,7 +459,7 @@ fn volume_slider(ui: &mut Ui, rect: Rect, state: &State) -> Option<Cmd> {
         if state.mute {
             style::TEXT_WEAK
         } else {
-            style::ACCENT
+            style::accent()
         },
     );
     if max > 100.0 {

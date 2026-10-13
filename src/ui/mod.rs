@@ -22,31 +22,41 @@ use egui::{Response, TextureHandle, TextureOptions, Ui};
 /// The app icon as a texture of exactly `points` at the display's pixel
 /// density, so that it is never scaled (a scaled icon is blurred): an
 /// embedded rendering when there is one of that size, else drawn now
-/// (a millisecond or two). Kept in `cache`, one per place it is shown, and
-/// replaced when the size in pixels changes.
-pub fn app_icon(
-    ctx: &egui::Context,
-    points: f32,
-    cache: &mut Option<TextureHandle>,
-) -> TextureHandle {
+/// (a millisecond or two; ~30 ms at 224 px). The embedded ones are blue,
+/// another accent's are drawn. Kept in `cache`, one per place it is shown,
+/// and replaced when the size in pixels or the accent changes.
+pub fn app_icon(ctx: &egui::Context, points: f32, cache: &mut IconCache) -> TextureHandle {
     let px = (points * ctx.pixels_per_point()).round().max(1.0) as u32;
     let n = px as usize;
-    if cache.as_ref().is_none_or(|t| t.size() != [n, n]) {
+    let accent = style::accent_choice();
+    // A colour dragged in the picker: the icon follows once it is let go
+    // (a big one takes ~30 ms to draw).
+    let dragging = ctx.input(|i| i.pointer.any_down());
+    if cache
+        .as_ref()
+        .is_none_or(|(t, a)| t.size() != [n, n] || (*a != accent && !dragging))
+    {
         let drawn;
-        let rgba = match crate::embedded_icon(px) {
+        let embedded = crate::embedded_icon(px).filter(|_| accent == style::Accent::Blue);
+        let rgba = match embedded {
             Some(rgba) => rgba,
             None => {
                 let start = std::time::Instant::now();
-                drawn = crate::icon::rgba(px);
+                drawn = crate::icon::rgba_with(px, accent.palette().icon);
                 log::debug!("icon drawn at {px} px in {:?}", start.elapsed());
                 &drawn
             }
         };
         let image = egui::ColorImage::from_rgba_unmultiplied([n, n], rgba);
-        *cache = Some(ctx.load_texture(format!("app_icon_{px}"), image, TextureOptions::LINEAR));
+        let name = format!("app_icon_{px}_{}", accent.name());
+        let texture = ctx.load_texture(name, image, TextureOptions::LINEAR);
+        *cache = Some((texture, accent));
     }
-    cache.clone().expect("set above")
+    cache.as_ref().expect("set above").0.clone()
 }
+
+/// The app icon of one place, with the accent it was drawn in.
+pub type IconCache = Option<(TextureHandle, style::Accent)>;
 
 /// Paint `icon` (from `app_icon`) pixel for pixel, centred on `centre` as
 /// near as the pixel grid allows; its rectangle.

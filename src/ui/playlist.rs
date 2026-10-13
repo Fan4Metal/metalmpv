@@ -90,7 +90,7 @@ pub fn panel(
                 let c = if repeat == Repeat::Off {
                     c
                 } else {
-                    style::ACCENT
+                    style::accent()
                 };
                 icons::repeat(p, o, s, c, repeat == Repeat::One)
             })
@@ -165,11 +165,15 @@ fn files_list(
                     let (rect, response) =
                         ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
                     if selected {
-                        ui.painter().rect_filled(rect, 2.0, style::SELECTED_BG);
+                        ui.painter().rect_filled(rect, 2.0, style::selected_bg());
                     } else if response.hovered() {
                         ui.painter().rect_filled(rect, 2.0, style::HOVER);
                     }
-                    let color = if current { style::CURRENT } else { style::TEXT };
+                    let color = if current {
+                        style::current()
+                    } else {
+                        style::TEXT
+                    };
                     let number = format!("{}.", i + 1);
                     let painter = ui.painter_at(rect.shrink2(vec2(4.0, 0.0)));
                     let font = egui::FontId::proportional(13.0);
@@ -307,7 +311,7 @@ fn chapters_list(ui: &mut Ui, chapters: &[Chapter], time: Option<f64>, out: &mut
                         ui.painter().rect_filled(rect, 2.0, style::HOVER);
                     }
                     let color = if current == Some(i) {
-                        style::CURRENT
+                        style::current()
                     } else {
                         style::TEXT
                     };

@@ -82,8 +82,10 @@ pub struct App {
     hwnd: Option<isize>,
     /// The app icon of the title row and of the start screen, each at its
     /// size.
-    icon: Option<TextureHandle>,
-    start_icon: Option<TextureHandle>,
+    icon: ui::IconCache,
+    start_icon: ui::IconCache,
+    /// The accent of the window's icon (blue from `main`).
+    window_icon: style::Accent,
     /// The seek bar is being dragged: the position under the pointer.
     seek_drag: Option<f64>,
     /// When the last file came from another start.
@@ -162,6 +164,7 @@ impl App {
             settings.osd_font_file = None;
         }
         style::set_fonts(ctx, osd);
+        style::set_accent(settings.accent);
         style::apply(ctx);
         ctx.options_mut(|o| {
             o.zoom_with_keyboard = false;
@@ -244,6 +247,7 @@ impl App {
             hwnd,
             icon: None,
             start_icon: None,
+            window_icon: style::Accent::Blue,
             seek_drag: None,
             last_received: None,
             shown_title: String::new(),
@@ -1507,7 +1511,7 @@ impl App {
             ui.painter().rect_stroke(
                 rect.shrink(12.0),
                 8.0,
-                egui::Stroke::new(2.0, style::ACCENT),
+                egui::Stroke::new(2.0, style::accent()),
                 egui::StrokeKind::Inside,
             );
             ui.painter().text(
@@ -1687,7 +1691,11 @@ impl App {
             if hovered {
                 ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
             }
-            let color = if hovered { style::ACCENT } else { style::TEXT };
+            let color = if hovered {
+                style::accent()
+            } else {
+                style::TEXT
+            };
             painter.galley_with_override_text_color(name_rect.min, name, color);
             painter.galley(folder_rect.min, folder, style::TEXT_WEAK);
             if response.clicked() {
@@ -1703,7 +1711,7 @@ impl App {
         let clear_rect = centred(y + 4.0, clear.size());
         let response = ui.interact(clear_rect, ui.id().with("recent_clear"), Sense::CLICK);
         let color = if response.hovered() {
-            style::ACCENT
+            style::accent()
         } else {
             style::TEXT_WEAK
         };
@@ -2333,6 +2341,17 @@ impl eframe::App for App {
         );
         if changed.keys {
             crate::keymap::publish(&self.settings.keys);
+        }
+        if changed.accent {
+            style::set_accent(self.settings.accent);
+            style::apply(&ctx);
+        }
+        // Not while a colour is dragged in the picker: once let go.
+        if self.window_icon != self.settings.accent && !ctx.input(|i| i.pointer.any_down()) {
+            self.window_icon = self.settings.accent;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Icon(Some(crate::window_icon(
+                self.window_icon,
+            ))));
         }
         if changed.hwdec
             && let Some(player) = &mut self.player

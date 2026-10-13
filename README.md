@@ -108,6 +108,7 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | Category | Setting | Default | Meaning |
 |---|---|---|---|
 | General | Language | as in Windows | "System" follows the language of Windows |
+| General | Accent colour | blue | Blue, teal, green, orange, red, pink, purple, graphite, or a colour of one's own (the last swatch, a colour wheel: a picker with a field for `#RRGGBB`): the Play button, the seek bar and the volume, the switches, the playing file of the playlist and the selection, and the screen of the icon in the window, on the taskbar button of the running player and on the start screen (the icon of the program's file and of its shortcuts stays blue) |
 | General | Pin the panels | on | The information window and the Video, sound and subtitles panel stay at the player's top right corner, the panel left of the information when both are open; off, they are moved by their titles and keep their places |
 | General | Over the other windows | never | Never, always, or while a file plays (not paused); `Ctrl+T` switches it |
 | General | Snap to the screen's centre | on | While the window is moved, its centre is drawn to the screen's centre, across or up and down, when it comes within 8 pixels of it, as in GOM Player; moved on, it comes away |

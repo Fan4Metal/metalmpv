@@ -4,7 +4,7 @@
 //! engine and where the settings are kept. The language and the update
 //! check are in the settings only.
 
-use egui::{Key, TextureHandle};
+use egui::Key;
 
 use super::licenses::LicensesView;
 
@@ -21,7 +21,7 @@ pub struct AboutDialog {
     pub open: bool,
     /// Opened this frame: the key that opened it must not close it.
     pub fresh: bool,
-    icon: Option<TextureHandle>,
+    icon: super::IconCache,
     /// The Licenses window is shown in place of the dialog; closed, it
     /// gives way to the dialog again.
     licenses: Option<LicensesView>,
