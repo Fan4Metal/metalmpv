@@ -13,6 +13,7 @@ use std::sync::OnceLock;
 use crate::audio::{self, Channels, Passthrough};
 use crate::format::TimeMode;
 use crate::i18n::LangChoice;
+use crate::playlist::Repeat;
 use crate::tracks::Likeness;
 
 const LANGUAGE: &str = "language";
@@ -31,6 +32,7 @@ const FULLSCREEN_TRANSPARENCY: &str = "fullscreen_transparency";
 const FULLSCREEN_TITLE: &str = "fullscreen_title";
 const INFO_PINNED: &str = "info_pinned";
 const SNAP_TO_CENTRE: &str = "snap_to_centre";
+const REPEAT: &str = "repeat";
 const AUDIO_DEVICE: &str = "audio_device";
 const AUDIO_CHANNELS: &str = "audio_channels";
 const VOLUME_MAX: &str = "volume_max";
@@ -151,6 +153,8 @@ pub struct Settings {
     pub info_pinned: bool,
     /// The window, being moved, is drawn to the screen's centre lines.
     pub snap_to_centre: bool,
+    /// What plays after the end of a file (`R`, the playlist's button).
+    pub repeat: Repeat,
     /// The output device as mpv names it; empty for Windows' default.
     pub audio_device: String,
     pub audio_channels: Channels,
@@ -205,6 +209,7 @@ impl Default for Settings {
             fullscreen_title: true,
             info_pinned: true,
             snap_to_centre: true,
+            repeat: Repeat::Off,
             audio_device: String::new(),
             audio_channels: Channels::Auto,
             volume_max: 100.0,
@@ -288,6 +293,10 @@ impl Settings {
             fullscreen_title: flag(FULLSCREEN_TITLE, d.fullscreen_title),
             info_pinned: flag(INFO_PINNED, d.info_pinned),
             snap_to_centre: flag(SNAP_TO_CENTRE, d.snap_to_centre),
+            repeat: get(REPEAT)
+                .as_deref()
+                .and_then(Repeat::from_name)
+                .unwrap_or(d.repeat),
             audio_device: get(AUDIO_DEVICE).unwrap_or_default(),
             audio_channels: get(AUDIO_CHANNELS)
                 .as_deref()
@@ -347,6 +356,7 @@ impl Settings {
         storage.set_string(FULLSCREEN_TITLE, self.fullscreen_title.to_string());
         storage.set_string(INFO_PINNED, self.info_pinned.to_string());
         storage.set_string(SNAP_TO_CENTRE, self.snap_to_centre.to_string());
+        storage.set_string(REPEAT, self.repeat.name().into());
         storage.set_string(AUDIO_DEVICE, self.audio_device.clone());
         storage.set_string(AUDIO_CHANNELS, self.audio_channels.name().into());
         storage.set_string(VOLUME_MAX, format!("{:.0}", self.volume_max));
@@ -428,6 +438,7 @@ mod tests {
             fullscreen_title: false,
             info_pinned: false,
             snap_to_centre: false,
+            repeat: Repeat::All,
             audio_device: "wasapi/{0.0.0.00000000}.{abc}".into(),
             audio_channels: Channels::Surround51,
             volume_max: 150.0,

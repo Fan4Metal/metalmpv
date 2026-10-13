@@ -63,7 +63,7 @@ The window has its own title row: it is moved by dragging the title, the picture
 
 The control bar holds the seek bar (a click or a drag moves there; the time under the pointer is shown), the time (a click on it switches between the position with the duration, the position alone and the time remaining; the choice is kept), the buttons **Open**, **Stop**, **Previous file**, **Play/Pause**, **Next file**, **Settings** and **Playlist**, the volume and the fullscreen button. A right click on the picture opens a menu with the same commands.
 
-The playlist (`L`) lists the files with the current one highlighted; a double click plays an entry. The icon buttons above the list add files (**+**), remove the selected entry (**−**, `Delete`), sort the list by name, numbers by value (the bars with an arrow), and clear it (the bin); their names are shown in the tooltips.
+The playlist (`L`) lists the files with the current one highlighted; a double click plays an entry. The icon buttons above the list add files (**+**), remove the selected entry (**−**, `Delete`), sort the list by name, numbers by value (the bars with an arrow), clear it (the bin) and shuffle it (crossing arrows; the current file plays on); their names are shown in the tooltips. The loop button on the right, `R` or the **Repeat** submenu of the context menu switches the repeat mode, which is kept: off, the file (played again without a gap) or the list (the first file after the last; **Next** and **Previous** go round).
 
 ### Video panel
 
@@ -164,6 +164,7 @@ The list of fonts has a search field at its top. The **Keys** category lists the
 | `Esc` | Closes the file information window, else leaves fullscreen, else closes the program |
 | `Ctrl+O` | Open files |
 | `L`, middle click on the picture | Show or hide the playlist |
+| `R` | Repeat: off, the file, the list |
 | `Delete` | Remove the selected playlist entry |
 | `F5` | Settings |
 | `F1` | About |

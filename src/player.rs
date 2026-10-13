@@ -692,6 +692,12 @@ impl Player {
     }
 
     /// The sound against the picture, in seconds; kept between files.
+    /// Play the file again and again without a gap (`loop-file`), or once.
+    pub fn set_loop_file(&mut self, on: bool) {
+        let value = if on { "inf" } else { "no" };
+        self.mpv.set("loop-file", &Value::Str(value.into()));
+    }
+
     /// The playback speed (mpv keeps the voice's pitch); kept between files.
     pub fn set_speed(&mut self, speed: f64) {
         self.mpv.set("speed", &Value::Double(speed));

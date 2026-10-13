@@ -1099,7 +1099,7 @@ fn update_status(ui: &mut Ui, updates: &Updates) {
 
 /// The keys, as in the README.
 fn keys(ui: &mut Ui) {
-    let rows: [(&str, &str); 30] = [
+    let rows: [(&str, &str); 31] = [
         (
             tr!("Space", "Пробел"),
             tr!("Play / pause", "Воспроизведение / пауза"),
@@ -1204,6 +1204,13 @@ fn keys(ui: &mut Ui) {
             ),
         ),
         ("V", tr!("Subtitles off / on", "Субтитры выкл. / вкл.")),
+        (
+            "R",
+            tr!(
+                "Repeat: off, the file, the list",
+                "Повтор: выключен, файл, список"
+            ),
+        ),
         (
             "C / X / Z",
             tr!(

@@ -1,5 +1,6 @@
 //! The playlist panel on the right: a row of icon buttons (add, remove,
-//! sort, clear; their names in the tooltips) and the list; a click selects
+//! sort, shuffle, clear, and on the right the repeat mode; their names in
+//! the tooltips) and the list; a click selects
 //! an entry, a double click plays it. Under it, when the playing file has
 //! chapters, a section of them that folds: a click goes to a chapter.
 
@@ -8,7 +9,7 @@ use egui::{Align2, FontId, Response, Sense, Ui, pos2, vec2};
 use super::{icons, style, tool};
 use crate::chapters::{self, Chapter};
 use crate::input::Cmd;
-use crate::playlist::Playlist;
+use crate::playlist::{Playlist, Repeat};
 
 const ROW: f32 = 22.0;
 /// The height of the chapters' header.
@@ -18,6 +19,7 @@ const HEADER: f32 = 26.0;
 pub fn panel(
     ui: &mut Ui,
     playlist: &mut Playlist,
+    repeat: Repeat,
     chapters: &[Chapter],
     time: Option<f64>,
 ) -> Vec<Cmd> {
@@ -58,6 +60,33 @@ pub fn panel(
         {
             out.push(Cmd::PlaylistClear);
         }
+        let shuffle = tr!("Shuffle the list", "Перемешать список");
+        if tool(ui, shuffle, playlist.len() > 1, |p, o, c| {
+            icons::shuffle(p, o, s, c)
+        })
+        .clicked()
+        {
+            out.push(Cmd::PlaylistShuffle);
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let tip = match repeat {
+                Repeat::Off => tr!("Repeat: off (R)", "Повтор: выключен (R)"),
+                Repeat::One => tr!("Repeat: the file (R)", "Повтор: файл (R)"),
+                Repeat::All => tr!("Repeat: the list (R)", "Повтор: список (R)"),
+            };
+            if tool(ui, tip, true, |p, o, c| {
+                let c = if repeat == Repeat::Off {
+                    c
+                } else {
+                    style::ACCENT
+                };
+                icons::repeat(p, o, s, c, repeat == Repeat::One)
+            })
+            .clicked()
+            {
+                out.push(Cmd::CycleRepeat);
+            }
+        });
     });
     ui.add_space(2.0);
     // The chapters take up to half of the height, the files the rest.

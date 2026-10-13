@@ -22,6 +22,52 @@ pub fn is_media(path: &Path) -> bool {
         .is_some_and(|e| MEDIA_EXTENSIONS.iter().any(|m| m.eq_ignore_ascii_case(e)))
 }
 
+/// What plays after the end of a file.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Repeat {
+    /// The next file, none after the last.
+    #[default]
+    Off,
+    /// The same file again (mpv's `loop-file`).
+    One,
+    /// The next file, the first after the last.
+    All,
+}
+
+impl Repeat {
+    pub const ALL: [Repeat; 3] = [Repeat::Off, Repeat::One, Repeat::All];
+
+    /// The stored name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Repeat::Off => "off",
+            Repeat::One => "one",
+            Repeat::All => "all",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|r| r.name() == name)
+    }
+
+    /// Off, then the file, then the list (`R`).
+    pub fn next(self) -> Self {
+        match self {
+            Repeat::Off => Repeat::One,
+            Repeat::One => Repeat::All,
+            Repeat::All => Repeat::Off,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Repeat::Off => tr!("Off", "Выкл."),
+            Repeat::One => tr!("The file", "Файл"),
+            Repeat::All => tr!("The list", "Список"),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Playlist {
     items: Vec<PathBuf>,
@@ -132,6 +178,43 @@ impl Playlist {
     pub fn prev(&self) -> Option<usize> {
         self.current.and_then(|c| c.checked_sub(1))
     }
+
+    /// The entry after the current one; with the list repeated, the first
+    /// after the last.
+    pub fn next_in(&self, repeat: Repeat) -> Option<usize> {
+        self.next()
+            .or_else(|| (repeat == Repeat::All && !self.items.is_empty()).then_some(0))
+    }
+
+    /// The entry before the current one; with the list repeated, the last
+    /// before the first.
+    pub fn prev_in(&self, repeat: Repeat) -> Option<usize> {
+        self.prev().or_else(|| {
+            (repeat == Repeat::All && !self.items.is_empty()).then(|| self.items.len() - 1)
+        })
+    }
+
+    /// Put the entries in a random order (`seed` picks it); the current and
+    /// the selected entries follow their files.
+    pub fn shuffle(&mut self, seed: u64) {
+        let current = self.current_path().map(Path::to_path_buf);
+        let selected = self.selected.and_then(|i| self.items.get(i)).cloned();
+        // xorshift64*, enough to deal a list.
+        let mut state = seed | 1;
+        let mut random = || {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            state.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        };
+        for i in (1..self.items.len()).rev() {
+            let j = (random() % (i as u64 + 1)) as usize;
+            self.items.swap(i, j);
+        }
+        let find = |p: Option<PathBuf>| p.and_then(|p| self.items.iter().position(|i| *i == p));
+        self.current = find(current);
+        self.selected = find(selected);
+    }
 }
 
 /// The media files of the folder `file` is in, sorted, `file` among them
@@ -230,6 +313,34 @@ mod tests {
         let mut p = Playlist::default();
         p.replace(names.iter().map(PathBuf::from).collect());
         p
+    }
+
+    #[test]
+    fn repeat_wraps_the_list() {
+        let mut p = list(&["a", "b", "c"]);
+        p.set_current(2);
+        assert_eq!(p.next_in(Repeat::Off), None);
+        assert_eq!(p.next_in(Repeat::One), None);
+        assert_eq!(p.next_in(Repeat::All), Some(0));
+        p.set_current(0);
+        assert_eq!(p.prev_in(Repeat::All), Some(2));
+        assert_eq!(p.prev_in(Repeat::Off), None);
+        assert_eq!(Repeat::Off.next().next().next(), Repeat::Off);
+    }
+
+    #[test]
+    fn shuffle_keeps_the_entries_and_the_current() {
+        let names: Vec<String> = (0..20).map(|i| format!("f{i}")).collect();
+        let mut p = list(&names.iter().map(String::as_str).collect::<Vec<_>>());
+        p.set_current(5);
+        p.shuffle(12345);
+        let mut items: Vec<String> = p.items().iter().map(|i| i.display().to_string()).collect();
+        assert_ne!(items, names);
+        assert_eq!(p.current_path(), Some(Path::new("f5")));
+        items.sort();
+        let mut sorted = names.clone();
+        sorted.sort();
+        assert_eq!(items, sorted);
     }
 
     #[test]

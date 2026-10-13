@@ -24,7 +24,7 @@ use crate::frameless;
 use crate::input::{self, Cmd};
 use crate::mpv::Mpv;
 use crate::player::{Happened, Player, Seek, State};
-use crate::playlist::{self, Playlist};
+use crate::playlist::{self, Playlist, Repeat};
 use crate::resume::{Positions, Tracks};
 use crate::settings::Settings;
 use crate::sizing;
@@ -172,6 +172,9 @@ impl App {
                 let mut player = Player::new(mpv, ctx, &settings.audio_setup());
                 if !settings.hwdec {
                     player.set_hwdec(false);
+                }
+                if settings.repeat == Repeat::One {
+                    player.set_loop_file(true);
                 }
                 if !settings.sub_font.is_empty() || settings.sub_scale != 100.0 {
                     player.set_sub_style(&settings.sub_font, settings.sub_scale);
@@ -814,12 +817,12 @@ impl App {
                 }
             }
             Cmd::Next => {
-                if let Some(i) = self.playlist.next() {
+                if let Some(i) = self.playlist.next_in(self.settings.repeat) {
                     self.play(i);
                 }
             }
             Cmd::Prev => {
-                if let Some(i) = self.playlist.prev() {
+                if let Some(i) = self.playlist.prev_in(self.settings.repeat) {
                     self.play(i);
                 }
             }
@@ -839,6 +842,20 @@ impl App {
             Cmd::PlaylistRemove(i) => self.playlist.remove(i),
             Cmd::PlaylistSort => self.playlist.sort(),
             Cmd::PlaylistClear => self.playlist.clear(),
+            Cmd::PlaylistShuffle => {
+                let seed = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(1, |d| d.as_nanos() as u64);
+                self.playlist.shuffle(seed);
+            }
+            Cmd::CycleRepeat => self.run(ctx, frame, Cmd::SetRepeat(self.settings.repeat.next())),
+            Cmd::SetRepeat(repeat) => {
+                self.settings.repeat = repeat;
+                if let Some(player) = &mut self.player {
+                    player.set_loop_file(repeat == Repeat::One);
+                }
+                self.osd.show(Osd::Repeat(repeat));
+            }
             Cmd::ToggleTracks => {
                 if !state.idle {
                     egui::Popup::toggle_id(ctx, crate::ui::tracks::popup_id());
@@ -1072,7 +1089,7 @@ impl App {
                     self.pick_ready = self.pick_tracks;
                 }
                 Happened::Eof => {
-                    if let Some(i) = self.playlist.next() {
+                    if let Some(i) = self.playlist.next_in(self.settings.repeat) {
                         self.play(i);
                     }
                 }
@@ -1212,15 +1229,15 @@ impl App {
                 cmds.push(Cmd::Volume(notches as f64 * input::VOLUME_STEP));
             }
         }
-        let (playlist_visible, chapter_marks, fill, aspect) = (
-            self.settings.playlist_visible,
-            self.settings.chapter_marks,
-            self.fill,
-            self.adjust.aspect,
-        );
+        let (playlist_visible, chapter_marks) =
+            (self.settings.playlist_visible, self.settings.chapter_marks);
+        let marks = Marks {
+            fill: self.fill,
+            aspect: self.adjust.aspect,
+            repeat: self.settings.repeat,
+        };
         response.context_menu(|ui| {
-            let picture = Picture { fill, aspect };
-            context_menu(ui, state, playlist_visible, chapter_marks, picture, cmds)
+            context_menu(ui, state, playlist_visible, chapter_marks, marks, cmds)
         });
         if ui.input(|i| !i.raw.hovered_files.is_empty()) {
             ui.painter()
@@ -1408,8 +1425,8 @@ impl App {
             state,
             playlist_visible: false,
             fullscreen: true,
-            has_prev: self.playlist.prev().is_some(),
-            has_next: self.playlist.next().is_some(),
+            has_prev: self.playlist.prev_in(self.settings.repeat).is_some(),
+            has_next: self.playlist.next_in(self.settings.repeat).is_some(),
             chapter_marks: self.settings.chapter_marks,
             time_mode: self.settings.time_mode,
             drag: &mut self.seek_drag,
@@ -1523,7 +1540,7 @@ fn context_menu(
     state: &State,
     playlist_visible: bool,
     chapter_marks: bool,
-    picture: Picture,
+    marks: Marks,
     cmds: &mut Vec<Cmd>,
 ) {
     // Gathered apart: `item` holds `cmds` until its last use.
@@ -1583,9 +1600,10 @@ fn context_menu(
         "Enter",
         Cmd::ToggleFullscreen,
     );
-    zoom_menu(ui, state, picture.fill, &mut menu_cmds);
-    aspect_menu(ui, state, picture.aspect, &mut menu_cmds);
+    zoom_menu(ui, state, marks.fill, &mut menu_cmds);
+    aspect_menu(ui, state, marks.aspect, &mut menu_cmds);
     speed_menu(ui, state, &mut menu_cmds);
+    repeat_menu(ui, marks.repeat, &mut menu_cmds);
     let list = if playlist_visible {
         tr!("Hide the playlist", "Скрыть список")
     } else {
@@ -1612,16 +1630,27 @@ fn context_menu(
     cmds.extend(menu_cmds);
 }
 
-/// The picture's size: the window for 50 % to 200 % of the video, the
-/// largest window without black bars, the window to the picture shown,
-/// and the picture filling the window.
-/// What the context menu marks of the picture.
-struct Picture {
+/// What the context menu marks as chosen.
+struct Marks {
     fill: bool,
     aspect: crate::adjust::Aspect,
+    repeat: Repeat,
 }
 
-/// The picture's shape: the file's or a standard one, the current marked.
+/// Repeat off, the file or the list, the current marked.
+fn repeat_menu(ui: &mut egui::Ui, current: Repeat, out: &mut Vec<Cmd>) {
+    ui.menu_button(tr!("Repeat", "Повтор"), |ui| {
+        for r in Repeat::ALL {
+            if ui.radio(current == r, r.label()).clicked() {
+                out.push(Cmd::SetRepeat(r));
+                ui.close();
+            }
+        }
+        ui.separator();
+        ui.weak(tr!("R switches it", "R переключает"));
+    });
+}
+
 /// The playback speed: the steps of `format::SPEEDS`, the current marked,
 /// with the keys that change it.
 fn speed_menu(ui: &mut egui::Ui, state: &State, out: &mut Vec<Cmd>) {
@@ -1642,6 +1671,7 @@ fn speed_menu(ui: &mut egui::Ui, state: &State, out: &mut Vec<Cmd>) {
     });
 }
 
+/// The picture's shape: the file's or a standard one, the current marked.
 fn aspect_menu(
     ui: &mut egui::Ui,
     state: &State,
@@ -1662,6 +1692,9 @@ fn aspect_menu(
     });
 }
 
+/// The picture's size: the window for 50 % to 200 % of the video, the
+/// largest window without black bars, the window to the picture shown,
+/// and fullscreen without black bars.
 fn zoom_menu(ui: &mut egui::Ui, state: &State, fill: bool, out: &mut Vec<Cmd>) {
     ui.menu_button(tr!("Zoom", "Масштаб"), |ui| {
         let video = video_size(state).is_some();
@@ -1833,8 +1866,8 @@ impl eframe::App for App {
                 state: &state,
                 playlist_visible: self.settings.playlist_visible,
                 fullscreen: false,
-                has_prev: self.playlist.prev().is_some(),
-                has_next: self.playlist.next().is_some(),
+                has_prev: self.playlist.prev_in(self.settings.repeat).is_some(),
+                has_next: self.playlist.next_in(self.settings.repeat).is_some(),
                 chapter_marks: self.settings.chapter_marks,
                 time_mode: self.settings.time_mode,
                 drag: &mut self.seek_drag,
@@ -1863,6 +1896,7 @@ impl eframe::App for App {
                         cmds.extend(ui::playlist::panel(
                             ui,
                             &mut self.playlist,
+                            self.settings.repeat,
                             &state.chapters,
                             state.time,
                         ))

@@ -58,6 +58,11 @@ pub enum Cmd {
     PlaylistRemove(usize),
     PlaylistSort,
     PlaylistClear,
+    /// Put the playlist in a random order.
+    PlaylistShuffle,
+    /// Repeat off, the file, the list (`R`).
+    CycleRepeat,
+    SetRepeat(crate::playlist::Repeat),
     /// Open or close the tracks window (`T`).
     ToggleTracks,
     /// The next audio track (`A`), the next subtitles or none (`S`, `J`),
@@ -158,6 +163,7 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
         // S as in subtitles; J as in mpv.
         Key::S | Key::J if !ctrl => Cmd::CycleSubs,
         Key::V if !ctrl => Cmd::ToggleSubs,
+        Key::R if !ctrl && !m.alt => Cmd::CycleRepeat,
         Key::C if !ctrl && !m.alt => Cmd::Speed(1),
         Key::X if !ctrl && !m.alt => Cmd::Speed(-1),
         Key::Z if !ctrl && !m.alt => Cmd::Speed(0),

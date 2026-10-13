@@ -226,6 +226,8 @@ pub enum Osd {
     SubDelay(f64),
     /// The playback speed.
     Speed(f64),
+    /// What plays after the end of a file.
+    Repeat(crate::playlist::Repeat),
     /// Free text: a file name, an error.
     Text(String),
 }
@@ -359,6 +361,17 @@ impl Osd {
                 (None, false) => "[ Aspect ratio as in the file ]".into(),
                 (None, true) => "[ Пропорции как в файле ]".into(),
             },
+            Osd::Repeat(repeat) => {
+                use crate::playlist::Repeat;
+                match (repeat, ru) {
+                    (Repeat::Off, false) => "[ Repeat off ]".into(),
+                    (Repeat::One, false) => "[ Repeat the file ]".into(),
+                    (Repeat::All, false) => "[ Repeat the list ]".into(),
+                    (Repeat::Off, true) => "[ Повтор выключен ]".into(),
+                    (Repeat::One, true) => "[ Повтор файла ]".into(),
+                    (Repeat::All, true) => "[ Повтор списка ]".into(),
+                }
+            }
             Osd::Speed(speed) => {
                 let s = speed_in(lang, *speed);
                 if ru {
