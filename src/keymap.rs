@@ -409,8 +409,8 @@ impl Action {
                 "Окно под 200% размера видео"
             ),
             Action::FitScreen => tr!(
-                "Largest window without black bars",
-                "Развернуть без чёрных полос"
+                "Window to the screen",
+                "Окно по экрану"
             ),
             Action::FitWindow => tr!("Window to the picture", "Окно по размеру картинки"),
             Action::Fill => tr!(

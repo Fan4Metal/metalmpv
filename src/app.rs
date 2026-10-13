@@ -2460,8 +2460,8 @@ fn zoom_menu(ui: &mut egui::Ui, state: &State, fill: bool, out: &mut Vec<Cmd>) {
         item(
             ui,
             tr!(
-                "Largest window without black bars",
-                "Развернуть без чёрных полос"
+                "Window to the screen",
+                "Окно по экрану"
             ),
             false,
             Cmd::FitScreen,

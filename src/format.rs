@@ -424,8 +424,8 @@ impl Osd {
                 }
             }
             Osd::FitScreen => match ru {
-                false => "[ Largest window without black bars ]".into(),
-                true => "[ Развёрнуто без чёрных полос ]".into(),
+                false => "[ Window to the screen ]".into(),
+                true => "[ Окно по экрану ]".into(),
             },
             Osd::FitWindow => match ru {
                 false => "[ Window fitted to the picture ]".into(),
