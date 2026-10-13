@@ -63,7 +63,7 @@ pub struct App {
     player: Option<Player>,
     video: Option<Video>,
     /// Why there is no player or no picture (libmpv missing, …).
-    engine_error: Option<String>,
+    engine_error: Option<crate::player::EngineError>,
     /// Why the last file could not be played.
     file_error: Option<String>,
     playlist: Playlist,
@@ -159,7 +159,7 @@ pub struct App {
 impl App {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
-        boot: JoinHandle<Result<Mpv, String>>,
+        boot: JoinHandle<Result<Mpv, crate::player::EngineError>>,
         files: Vec<PathBuf>,
     ) -> Self {
         log::debug!("window created at {:.0} ms", crate::since_start());
@@ -227,7 +227,9 @@ impl App {
                     }
                     None => Err("no OpenGL context".into()),
                 };
-                let video = video.map_err(|e| engine_error = Some(e)).ok();
+                let video = video
+                    .map_err(|e| engine_error = Some(crate::player::EngineError::Failed(e)))
+                    .ok();
                 (Some(player), video)
             }
             Ok(Err(e)) => {
@@ -235,7 +237,9 @@ impl App {
                 (None, None)
             }
             Err(_) => {
-                engine_error = Some("the mpv thread failed".into());
+                engine_error = Some(crate::player::EngineError::Failed(
+                    "the mpv thread failed".into(),
+                ));
                 (None, None)
             }
         };
@@ -1598,7 +1602,9 @@ impl App {
                 }
                 Happened::Restarted => {}
                 Happened::Shutdown => {
-                    self.engine_error = Some("mpv has shut down".into());
+                    self.engine_error = Some(crate::player::EngineError::Failed(
+                        "mpv has shut down".into(),
+                    ));
                 }
             }
         }
@@ -1659,7 +1665,8 @@ impl App {
 
     /// The name of what is playing, for the title row and the window.
     fn title(&self, state: &State) -> String {
-        if state.idle && self.playlist.current_path().is_none() {
+        // Nothing plays without the engine: no file's name.
+        if self.engine_error.is_some() || (state.idle && self.playlist.current_path().is_none()) {
             return crate::APP_NAME.to_owned();
         }
         self.playlist
@@ -1807,17 +1814,7 @@ impl App {
         let icon_rect = ui::paint_icon(&painter, &icon, centre, tint);
         let below = icon_rect.center_bottom() + egui::vec2(0.0, 14.0);
         let (text, color) = if let Some(e) = &self.engine_error {
-            (
-                tr!(
-                    format!(
-                        "The player cannot work: {e}.\nlibmpv-2.dll must be next to metalmpv.exe."
-                    ),
-                    format!(
-                        "Воспроизведение невозможно: {e}.\nРядом с metalmpv.exe нужна libmpv-2.dll."
-                    )
-                ),
-                style::ERROR,
-            )
+            (e.message(), style::ERROR)
         } else if let Some(e) = self.file_error.as_ref().filter(|_| state.idle) {
             (
                 tr!(
@@ -1830,13 +1827,17 @@ impl App {
             // An audio file: its title.
             (state.title.clone().unwrap_or_default(), style::TEXT)
         };
-        painter.text(
-            below,
-            Align2::CENTER_TOP,
+        // Wrapped to the area, each line centred: an error may be long.
+        let mut job = egui::text::LayoutJob::simple(
             text,
             FontId::proportional(14.0),
             color,
+            (rect.width() - 48.0).clamp(120.0, 640.0),
         );
+        job.halign = egui::Align::Center;
+        let galley = painter.layout_job(job);
+        let at = below - egui::vec2(galley.rect.center().x, galley.rect.top());
+        painter.galley(at, galley, color);
         None
     }
 

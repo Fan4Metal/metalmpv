@@ -199,25 +199,42 @@ api! {
     mpv_render_context_free: fn(*mut mpv_render_context);
 }
 
+/// Why libmpv could not be loaded.
+#[derive(Debug)]
+pub enum LoadError {
+    /// No DLL in the places it is looked for.
+    NotFound { looked_in: Vec<PathBuf> },
+    /// A DLL is there but cannot be used (not a 64-bit DLL, a function or
+    /// the client API version missing); the reason, technical.
+    Unusable(String),
+}
+
+impl std::fmt::Display for LoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LoadError::NotFound { looked_in } => {
+                let places: Vec<String> =
+                    looked_in.iter().map(|p| p.display().to_string()).collect();
+                write!(f, "{DLL_NAME} not found (looked in {})", places.join(", "))
+            }
+            LoadError::Unusable(reason) => f.write_str(reason),
+        }
+    }
+}
+
 /// libmpv, loaded on first use; the error says why it could not be.
-pub fn api() -> Result<&'static Api, &'static str> {
-    static API: OnceLock<Result<Api, String>> = OnceLock::new();
+pub fn api() -> Result<&'static Api, &'static LoadError> {
+    static API: OnceLock<Result<Api, LoadError>> = OnceLock::new();
     API.get_or_init(|| {
         let candidates = dll_candidates();
-        let mut tried = Vec::new();
-        for path in &candidates {
-            if path.is_file() {
-                return load(path);
-            }
-            tried.push(path.display().to_string());
+        match candidates.iter().find(|p| p.is_file()) {
+            Some(path) => load(path).map_err(LoadError::Unusable),
+            None => Err(LoadError::NotFound {
+                looked_in: candidates,
+            }),
         }
-        Err(format!(
-            "{DLL_NAME} not found (looked in {})",
-            tried.join(", ")
-        ))
     })
     .as_ref()
-    .map_err(String::as_str)
 }
 
 /// Next to the exe; a debug build also takes the one `tools/get_libmpv.py`

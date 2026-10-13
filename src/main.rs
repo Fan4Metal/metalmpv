@@ -157,8 +157,9 @@ fn main() -> eframe::Result {
         .spawn(|| {
             let started = Instant::now();
             let mpv = player::boot(true);
+            let outcome = if mpv.is_ok() { "started" } else { "failed" };
             log::debug!(
-                "mpv started in {:.0} ms (at {:.0} ms)",
+                "mpv {outcome} in {:.0} ms (at {:.0} ms)",
                 started.elapsed().as_secs_f64() * 1e3,
                 since_start()
             );

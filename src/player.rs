@@ -82,8 +82,11 @@ fn hwdec_value(on: bool, copy: bool) -> &'static str {
 /// Start an mpv core with [`options`]. Slow enough (loading the DLL, the
 /// core's threads, audio) to be run on a thread of its own while the window
 /// is being made.
-pub fn boot(hwdec: bool) -> Result<Mpv, String> {
-    let api = sys::api().map_err(str::to_owned)?;
+pub fn boot(hwdec: bool) -> Result<Mpv, EngineError> {
+    let api = sys::api().map_err(|e| match e {
+        sys::LoadError::NotFound { .. } => EngineError::NoDll(e.to_string()),
+        sys::LoadError::Unusable(reason) => EngineError::BadDll(reason.clone()),
+    })?;
     let mut options = options(hwdec);
     // METALMPV_MPV="name=value;name=value": more options, for
     // measurements and diagnostics; later ones win.
@@ -94,8 +97,54 @@ pub fn boot(hwdec: bool) -> Result<Mpv, String> {
         .map(|(n, v)| (n.trim().to_owned(), v.trim().to_owned()))
         .collect();
     options.extend(extra.iter().map(|(n, v)| (n.as_str(), v.as_str())));
-    let mpv = Mpv::new(api, &options)?;
+    let mpv = Mpv::new(api, &options).map_err(EngineError::Failed)?;
     Ok(mpv)
+}
+
+/// Why nothing can be played: each with its technical detail (English,
+/// for the log) and a message for the window ([`EngineError::message`]).
+#[derive(Clone, Debug, PartialEq)]
+pub enum EngineError {
+    /// No libmpv-2.dll in the program's folder.
+    NoDll(String),
+    /// A libmpv-2.dll that cannot be used (another build, a damaged file).
+    BadDll(String),
+    /// The core or its video output did not start, or the core stopped.
+    Failed(String),
+}
+
+impl std::fmt::Display for EngineError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EngineError::NoDll(detail)
+            | EngineError::BadDll(detail)
+            | EngineError::Failed(detail) => f.write_str(detail),
+        }
+    }
+}
+
+impl EngineError {
+    /// What the window says: what happened and what puts it right; the
+    /// paths looked in stay in the log.
+    pub fn message(&self) -> String {
+        match self {
+            EngineError::NoDll(_) => tr!(
+                "The playback engine, libmpv-2.dll, was not found.\nIt belongs in the same folder as metalmpv.exe; reinstalling the program or unpacking the archive again restores it.",
+                "Не найден движок воспроизведения libmpv-2.dll.\nФайл должен находиться в одной папке с metalmpv.exe; переустановка программы или повторная распаковка архива восстановит его."
+            )
+            .to_owned(),
+            // The reason (a path, a Windows error, a version) is the log's.
+            EngineError::BadDll(_) => tr!(
+                "The playback engine, libmpv-2.dll, is damaged or does not suit this version of the program.\nReinstalling the program or unpacking the archive again restores the right one.",
+                "Движок воспроизведения libmpv-2.dll повреждён или не подходит к этой версии программы.\nПереустановка программы или повторная распаковка архива восстановит нужный файл."
+            )
+            .to_owned(),
+            EngineError::Failed(detail) => tr!(
+                format!("The playback engine did not work: {detail}."),
+                format!("Движок воспроизведения не работает: {detail}.")
+            ),
+        }
+    }
 }
 
 /// Observed properties, by their number in [`Event::Property`].
@@ -941,12 +990,27 @@ mod tests {
     }
 
     #[test]
+    fn engine_messages_say_what_to_do() {
+        // Whatever the language: the window names the file, not the
+        // paths looked in or Windows' words, which stay in the log.
+        let missing = EngineError::NoDll("libmpv-2.dll not found (looked in C:/x)".into());
+        assert!(missing.message().contains("libmpv-2.dll"));
+        assert!(!missing.message().contains("C:/x"));
+        let bad = EngineError::BadDll("cannot load C:/x/libmpv-2.dll: os error 193".into());
+        assert!(!bad.message().contains("os error"));
+        assert!(bad.to_string().contains("os error 193"));
+        let failed = EngineError::Failed("video output: no OpenGL".into());
+        assert!(failed.message().contains("video output: no OpenGL"));
+    }
+
+    #[test]
     fn boot_without_the_dll_fails_cleanly() {
         // Test builds run from target\debug\deps; the DLL may be found in
         // vendor\libmpv, in which case the core starts.
         match boot(false) {
             Ok(_) => {}
-            Err(e) => assert!(e.contains(sys::DLL_NAME), "{e}"),
+            Err(EngineError::NoDll(detail)) => assert!(detail.contains(sys::DLL_NAME), "{detail}"),
+            Err(e) => panic!("{e:?}"),
         }
     }
 
