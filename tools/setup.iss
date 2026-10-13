@@ -34,7 +34,9 @@ OutputDir=..\dist
 OutputBaseFilename={#MyAppFileStem}_{#MyAppVersion}_Setup
 SetupIconFile={#AppIcon}
 UninstallDisplayIcon={app}\{#MyAppExeName}
-LicenseFile=..\LICENSE
+; No licence to accept: the GPL v3, under which the program goes with
+; libmpv, asks for no acceptance. A page before the installation says
+; which licences apply (InfoBeforeFile in [Languages]).
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -46,8 +48,8 @@ CloseApplications=yes
 ChangesAssociations=yes
 
 [Languages]
-Name: "english"; MessagesFile: "compiler:Default.isl"
-Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
+Name: "english"; MessagesFile: "compiler:Default.isl"; InfoBeforeFile: "installer_notice.en.txt"
+Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"; InfoBeforeFile: "installer_notice.ru.txt"
 
 [CustomMessages]
 english.AssocGroup=File types:
@@ -70,6 +72,7 @@ Source: "..\target\release\libmpv-2.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\THIRD_PARTY_LICENSES.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\licenses\GPL-3.0.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
+Source: "..\licenses\THIRD_PARTY_NOTICES.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.ru.md"; DestDir: "{app}"; Flags: ignoreversion
 

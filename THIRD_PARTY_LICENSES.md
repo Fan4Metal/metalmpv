@@ -17,4 +17,4 @@ The complete corresponding source code of the DLL is available from:
 
 ## egui / eframe
 
-The user interface uses [egui and eframe](https://github.com/emilk/egui), licensed under the MIT License or the Apache License 2.0, and further Rust crates under permissive licenses (MIT, Apache 2.0, BSD, Zlib), compiled into `metalmpv.exe`.
+The user interface uses [egui and eframe](https://github.com/emilk/egui), licensed under the MIT License or the Apache License 2.0, and further Rust crates under permissive licenses (MIT, Apache 2.0, BSD, ISC, Zlib, BSL, Unicode), compiled into `metalmpv.exe`, together with the fonts egui embeds (Ubuntu Font Licence, SIL Open Font License 1.1, MIT). Their licence texts and copyright notices are in [licenses/THIRD_PARTY_NOTICES.txt](licenses/THIRD_PARTY_NOTICES.txt), written by `tools/notices.py` from `Cargo.lock`; the program also shows them in its About window (**Licenses…**).

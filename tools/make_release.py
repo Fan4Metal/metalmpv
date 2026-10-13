@@ -30,9 +30,18 @@ EXE_STEM = "metalmpv"
 # The installer's AppId (setup.iss): a new GUID for every app, never reused.
 APP_ID = "{4ABB9378-64A4-4E8E-B41D-B43385F9D268}"
 # Files the installer takes from the repository (see [Files] in setup.iss).
-BUNDLED_FILES = ["LICENSE", "THIRD_PARTY_LICENSES.md", "licenses/GPL-3.0.txt", "README.md", "README.ru.md"]
+BUNDLED_FILES = [
+    "LICENSE",
+    "THIRD_PARTY_LICENSES.md",
+    "licenses/GPL-3.0.txt",
+    "licenses/THIRD_PARTY_NOTICES.txt",
+    "tools/installer_notice.en.txt",
+    "tools/installer_notice.ru.txt",
+    "README.md",
+    "README.ru.md",
+]
 # Licences shipped with the portable archive (the documentation is on GitHub).
-PORTABLE_FILES = ["LICENSE", "THIRD_PARTY_LICENSES.md", "licenses/GPL-3.0.txt"]
+PORTABLE_FILES = ["LICENSE", "THIRD_PARTY_LICENSES.md", "licenses/GPL-3.0.txt", "licenses/THIRD_PARTY_NOTICES.txt"]
 # Must match the settings file the program looks for next to its exe
 # (settings::PORTABLE_FILE).
 PORTABLE_SETTINGS = "metalmpv.ron"

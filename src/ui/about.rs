@@ -1,11 +1,14 @@
 //! The About dialog: icon, name, version, a short description, the author,
-//! the homepage, the license, the engine and where the settings are kept.
-//! The language and the update check are in the settings only.
+//! the homepage, the licence notice (the GPL v3's "Appropriate Legal
+//! Notices": the program goes with libmpv) with the Licenses window, the
+//! engine and where the settings are kept. The language and the update
+//! check are in the settings only.
 
 use egui::{Key, TextureHandle};
 
+use super::licenses::LicensesView;
+
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
-const LICENSE: &str = env!("CARGO_PKG_LICENSE");
 /// Cargo joins several authors with `:`.
 const AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
 /// The home of mpv, whose library plays everything.
@@ -19,6 +22,9 @@ pub struct AboutDialog {
     /// Opened this frame: the key that opened it must not close it.
     pub fresh: bool,
     icon: Option<TextureHandle>,
+    /// The Licenses window is shown in place of the dialog; closed, it
+    /// gives way to the dialog again.
+    licenses: Option<LicensesView>,
 }
 
 impl AboutDialog {
@@ -33,7 +39,15 @@ impl AboutDialog {
         if !self.open {
             return;
         }
+        if let Some(view) = &mut self.licenses {
+            if view.show(ctx) {
+                self.licenses = None;
+                self.fresh = true;
+            }
+            return;
+        }
         let fresh = std::mem::take(&mut self.fresh);
+        let mut show_licenses = false;
         let icon = super::app_icon(ctx, ICON, &mut self.icon);
         let modal = egui::Modal::new(egui::Id::new("about")).show(ctx, |ui| {
             ui.set_width(340.0);
@@ -80,11 +94,12 @@ impl AboutDialog {
                 {
                     log::warn!("could not open {REPOSITORY}");
                 }
-                if !LICENSE.is_empty() {
-                    ui.weak(tr!(
-                        format!("{LICENSE} License"),
-                        format!("Лицензия {LICENSE}")
-                    ));
+                ui.weak(tr!(
+                    "Distributed with libmpv under the GNU GPL v3, without any warranty.",
+                    "Распространяется вместе с libmpv на условиях GNU GPL v3, без каких-либо гарантий."
+                ));
+                if ui.link(tr!("Licenses…", "Лицензии…")).clicked() {
+                    show_licenses = true;
                 }
                 // The engine: the client API of the DLL found, or why none was.
                 let engine = match crate::mpv::sys::api() {
@@ -127,7 +142,9 @@ impl AboutDialog {
             || (!fresh
                 && (ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Enter))
                     || modal.should_close()));
-        if closed {
+        if show_licenses {
+            self.licenses = Some(LicensesView::default());
+        } else if closed {
             self.open = false;
         }
     }

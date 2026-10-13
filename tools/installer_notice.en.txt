@@ -1,0 +1,11 @@
+﻿MetalMPV is a video player built on libmpv, the library of the mpv media player.
+
+What is installed comes under these licences:
+
+- MetalMPV's own code: the MIT License (the file LICENSE).
+
+- libmpv-2.dll: the GNU General Public License, version 3 (licenses\GPL-3.0.txt). Since the program is distributed together with it, MetalMPV as installed here is also distributed under the terms of the GNU GPL v3. Where to get the complete source code of the DLL is in THIRD_PARTY_LICENSES.md.
+
+- The Rust libraries and the fonts compiled into metalmpv.exe: permissive licences (MIT, Apache 2.0, BSD, Zlib, SIL OFL and others), whose texts and copyright notices are in licenses\THIRD_PARTY_NOTICES.txt.
+
+The program is provided without any warranty. Nothing has to be accepted to install or use it; the same texts are in the program's folder and in its About window (Licenses).

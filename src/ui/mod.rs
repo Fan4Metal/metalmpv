@@ -7,6 +7,7 @@ pub mod assoc;
 pub mod controls;
 pub mod icons;
 pub mod info;
+pub mod licenses;
 pub mod osd;
 pub mod picture;
 pub mod playlist;
