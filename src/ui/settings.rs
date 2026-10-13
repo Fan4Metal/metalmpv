@@ -1121,7 +1121,7 @@ fn update_status(ui: &mut Ui, updates: &Updates) {
 
 /// The keys, as in the README.
 fn keys(ui: &mut Ui) {
-    let rows: [(&str, &str); 32] = [
+    let rows: [(&str, &str); 33] = [
         (
             tr!("Space", "Пробел"),
             tr!("Play / pause", "Воспроизведение / пауза"),
@@ -1262,6 +1262,10 @@ fn keys(ui: &mut Ui) {
             ),
         ),
         ("Ctrl+O", tr!("Open files", "Открыть файлы")),
+        (
+            "Ctrl+U",
+            tr!("Open an address (a stream)", "Открыть адрес (поток)"),
+        ),
         (
             tr!("L, middle click", "L, средний щелчок"),
             tr!("Show or hide the playlist", "Показать или скрыть список"),

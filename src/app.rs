@@ -67,6 +67,8 @@ pub struct App {
     about: AboutDialog,
     settings_dialog: SettingsDialog,
     info: InfoWindow,
+    /// The address to play (`Ctrl+U`).
+    url_dialog: ui::url::UrlDialog,
     /// The Video panel (`F7`) and the picture's adjustments it edits.
     video_panel: VideoPanel,
     adjust: Adjust,
@@ -216,6 +218,7 @@ impl App {
             playlist: Playlist::default(),
             about: AboutDialog::default(),
             info: InfoWindow::default(),
+            url_dialog: ui::url::UrlDialog::default(),
             video_panel: VideoPanel::default(),
             adjust: Adjust::default(),
             cover: None,
@@ -360,7 +363,7 @@ impl App {
         let wanted = self
             .playlist
             .current_path()
-            .filter(|_| !state.idle && !state.tracks.is_empty());
+            .filter(|p| !state.idle && !state.tracks.is_empty() && !playlist::is_url(p));
         if let Some(path) = wanted
             && self.cover.as_ref().is_none_or(|c| c.path != path)
         {
@@ -829,7 +832,11 @@ impl App {
             }
             Cmd::SaveCover => self.save_cover(frame),
             Cmd::ShowInFolder => {
-                if let Some(path) = self.playlist.current_path() {
+                if let Some(path) = self
+                    .playlist
+                    .current_path()
+                    .filter(|p| !playlist::is_url(p))
+                {
                     win::show_in_folder(path);
                 }
             }
@@ -844,6 +851,7 @@ impl App {
                 }
             }
             Cmd::Open => self.pick_files(frame, false),
+            Cmd::OpenUrl => self.url_dialog.open(),
             Cmd::TogglePlaylist => self.settings.playlist_visible = !self.settings.playlist_visible,
             Cmd::About => self.about.toggle(),
             Cmd::Settings => self.settings_dialog.toggle(),
@@ -1677,6 +1685,12 @@ fn context_menu(
     item(ui, tr!("Open…", "Открыть…").into(), "Ctrl+O", Cmd::Open);
     item(
         ui,
+        tr!("Open an address…", "Открыть адрес…").into(),
+        "Ctrl+U",
+        Cmd::OpenUrl,
+    );
+    item(
+        ui,
         tr!("File information", "Сведения о файле").into(),
         "I",
         Cmd::ToggleInfo,
@@ -1977,7 +1991,11 @@ impl eframe::App for App {
 
         // The keys are the player's: no widget keeps the focus to take
         // Space or Enter as a click. A modal takes the keys while open.
-        if !self.about.open && !self.settings_dialog.open && !egui::Popup::is_any_open(&ctx) {
+        if !self.about.open
+            && !self.settings_dialog.open
+            && !self.url_dialog.is_open()
+            && !egui::Popup::is_any_open(&ctx)
+        {
             if let Some(id) = ctx.memory(|m| m.focused()) {
                 ctx.memory_mut(|m| m.surrender_focus(id));
             }
@@ -2108,6 +2126,9 @@ impl eframe::App for App {
             style::set_fonts(&ctx, data);
         }
         self.about.show(&ctx);
+        if let Some(url) = self.url_dialog.show(&ctx) {
+            self.open(vec![PathBuf::from(url)]);
+        }
         self.update_cover(&ctx, &state);
         let cover = self
             .cover

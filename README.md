@@ -55,7 +55,7 @@ The executables are not code-signed, so Windows SmartScreen may warn about an un
 
 ## Usage
 
-A file is opened with the **Open** button (the eject symbol, `Ctrl+O`), by dropping it onto the window, from Explorer (**Open with**), or from the command line: `metalmpv.exe file.mkv [more files]`. Several files make a playlist; at the end of a file the next one starts. While nothing plays, the start screen lists the files played last under the RECENT heading (up to eight, as many as the window's height allows); a click plays one, and **Clear the list** empties it, as does **Forget all** under Resume in the settings. While a video plays, the display does not turn off and the computer does not sleep; while only sound plays, the computer does not sleep, and when playback pauses or ends, Windows' power settings apply again.
+A file is opened with the **Open** button (the eject symbol, `Ctrl+O`), by dropping it onto the window, from Explorer (**Open with**), or from the command line: `metalmpv.exe file.mkv [more files]`. Several files make a playlist; at the end of a file the next one starts. `Ctrl+U` or **Open an address…** in the context menu plays a direct link to a video or a stream (http, https, rtsp, rtmp, udp and others; an address on the command line works too); pages of YouTube and other sites are not supported, since the player does not use yt-dlp. While nothing plays, the start screen lists the files played last under the RECENT heading (up to eight, as many as the window's height allows); a click plays one, and **Clear the list** empties it, as does **Forget all** under Resume in the settings. While a video plays, the display does not turn off and the computer does not sleep; while only sound plays, the computer does not sleep, and when playback pauses or ends, Windows' power settings apply again.
 
 The window has its own title row: it is moved by dragging the title, the picture or the free space of the control bar, resized by its edges, and maximised by a double click on the title. A double click on the picture or `Enter` switches to fullscreen, where only the picture is left; the control bar at the bottom and the file's name at the top appear over it independently, each while the pointer is near its edge, and the pointer itself hides after half a second of rest away from them. The strip with the name can be turned off, and the transparency of both is set in the settings.
 
@@ -164,6 +164,7 @@ The list of fonts has a search field at its top. The **Keys** category lists the
 | `6` | Fullscreen without black bars (the picture cropped); again, with them |
 | `Esc` | Closes the file information window, else leaves fullscreen, else closes the program |
 | `Ctrl+O` | Open files |
+| `Ctrl+U` | Open an address: a direct link to a video or a stream |
 | `L`, middle click on the picture | Show or hide the playlist |
 | `R` | Repeat: off, the file, the list |
 | `Ctrl+T` | Over the other windows: never, always, while playing (also in the settings and the context menu) |

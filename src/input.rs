@@ -41,6 +41,8 @@ pub enum Cmd {
     Next,
     Prev,
     Open,
+    /// Ask for an address to play (`Ctrl+U`).
+    OpenUrl,
     TogglePlaylist,
     About,
     Settings,
@@ -155,6 +157,7 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
         Key::Enter | Key::F11 if !ctrl => Cmd::ToggleFullscreen,
         Key::Escape => Cmd::Escape,
         Key::O if ctrl => Cmd::Open,
+        Key::U if ctrl => Cmd::OpenUrl,
         // O as in mpv: where playback is.
         Key::O => Cmd::ShowPosition,
         Key::L if !ctrl => Cmd::TogglePlaylist,

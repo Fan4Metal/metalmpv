@@ -15,6 +15,7 @@ pub mod settings;
 pub mod style;
 pub mod title;
 pub mod tracks;
+pub mod url;
 
 use egui::{Response, TextureHandle, TextureOptions, Ui};
 

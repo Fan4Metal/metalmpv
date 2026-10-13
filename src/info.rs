@@ -611,7 +611,9 @@ pub fn file_rows_in(lang: Lang, path: Option<&Path>, state: &State) -> Vec<(Stri
         if let Some(name) = path.file_name() {
             rows.push((label("Name", "Имя"), name.to_string_lossy().into_owned()));
         }
-        if let Some(dir) = path.parent() {
+        if crate::playlist::is_url(path) {
+            rows.push((label("Address", "Адрес"), path.display().to_string()));
+        } else if let Some(dir) = path.parent() {
             rows.push((label("Folder", "Папка"), dir.display().to_string()));
         }
     }

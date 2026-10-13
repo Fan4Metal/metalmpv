@@ -36,7 +36,7 @@ mod video;
 mod win;
 
 use std::io::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
@@ -226,6 +226,10 @@ fn init_logging() {
 /// bare `C:` means the root, not the current directory of C. Relative paths
 /// become absolute (the running copy may have another current directory).
 fn normalize(arg: &str) -> PathBuf {
+    // An address is passed to mpv as it is.
+    if playlist::is_url(Path::new(arg)) {
+        return PathBuf::from(arg);
+    }
     let arg = match arg.strip_suffix('"') {
         Some(stripped) => format!("{}\\", stripped.trim_end_matches('\\')),
         None => arg.to_string(),

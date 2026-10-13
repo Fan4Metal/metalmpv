@@ -15,6 +15,19 @@ pub const MEDIA_EXTENSIONS: &[&str] = &[
     "dts",
 ];
 
+/// Whether `path` is an address (`https://…`, `rtsp://…`) rather than a
+/// file: a scheme of letters, digits, `+`, `-` or `.` before `://`.
+pub fn is_url(path: &Path) -> bool {
+    let text = path.to_string_lossy();
+    text.split_once("://").is_some_and(|(scheme, _)| {
+        scheme.len() > 1
+            && scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c))
+    })
+}
+
 /// Whether `path` has one of [`MEDIA_EXTENSIONS`].
 pub fn is_media(path: &Path) -> bool {
     path.extension()
@@ -313,6 +326,15 @@ mod tests {
         let mut p = Playlist::default();
         p.replace(names.iter().map(PathBuf::from).collect());
         p
+    }
+
+    #[test]
+    fn urls() {
+        assert!(is_url(Path::new("https://example.com/a.mp4")));
+        assert!(is_url(Path::new("rtsp://10.0.0.1:554/stream")));
+        assert!(!is_url(Path::new(r"C:\Films\a.mkv")));
+        assert!(!is_url(Path::new(r"\\server\share\a.mkv")));
+        assert!(!is_url(Path::new("C://a")));
     }
 
     #[test]
