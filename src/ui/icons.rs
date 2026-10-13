@@ -371,6 +371,26 @@ pub fn shuffle(p: &Painter, o: Pos2, s: f32, c: Color32) {
     }
 }
 
+/// A round arrow turning back (↺): back to the default.
+pub fn reset(p: &Painter, o: Pos2, s: f32, c: Color32) {
+    let stroke = Stroke::new(1.4, c);
+    let r = 0.8 * s;
+    // From the top round the left and the bottom to the right, where the
+    // arrow points up: three quarters of a turn, against the clock.
+    let points: Vec<Pos2> = (0..=18)
+        .map(|i| {
+            let a = (270.0 - 15.0 * i as f32).to_radians();
+            o + vec2(a.cos(), a.sin()) * r
+        })
+        .collect();
+    let tip = o + vec2(r, -0.1 * s);
+    p.add(Shape::line(points, stroke));
+    p.add(Shape::line(
+        vec![tip + vec2(-0.4, 0.4) * s, tip, tip + vec2(0.4, 0.4) * s],
+        stroke,
+    ));
+}
+
 /// A tick: done.
 pub fn check(p: &Painter, o: Pos2, s: f32, c: Color32) {
     p.add(Shape::line(
