@@ -641,6 +641,253 @@ pub fn file_rows_in(lang: Lang, path: Option<&Path>, state: &State) -> Vec<(Stri
     rows
 }
 
+/// What a chip of the header does when clicked.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChipAction {
+    None,
+    /// Plays this audio track.
+    Audio(i64),
+}
+
+/// A short fact of the file in the header, on a light ground: "MKV",
+/// "HEVC", "1920×1080", "AAC 5.1 Русский".
+#[derive(Clone, Debug, PartialEq)]
+pub struct Chip {
+    pub text: String,
+    /// The whole of it, for the tooltip.
+    pub tip: Option<String>,
+    /// The track playing: outlined.
+    pub selected: bool,
+    pub action: ChipAction,
+}
+
+impl Chip {
+    fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            tip: None,
+            selected: false,
+            action: ChipAction::None,
+        }
+    }
+
+    fn tip(mut self, tip: impl Into<String>) -> Self {
+        self.tip = Some(tip.into());
+        self
+    }
+}
+
+/// Audio chips beyond this many are folded into one ("+3").
+const AUDIO_CHIPS: usize = 4;
+
+/// The header's chips in rows: the file (format, size, duration, overall
+/// bitrate), the picture (codec, size, fps, depth, HDR, bitrate), the
+/// sound (a chip per audio track, the playing one marked; the subtitles'
+/// count and language). What the list below says, at a glance.
+pub fn chips_in(lang: Lang, path: Option<&Path>, state: &State) -> Vec<Vec<Chip>> {
+    let ru = lang == Lang::Ru;
+    let mut rows = Vec::new();
+
+    let mut file = Vec::new();
+    if let Some(format) = &state.file_format {
+        let container = container(format);
+        // The extension is what people call the format (MKV, not Matroska).
+        let extension = path
+            .filter(|p| !crate::playlist::is_url(p))
+            .and_then(|p| p.extension())
+            .map(|e| e.to_string_lossy().to_uppercase())
+            .filter(|e| e.len() <= 5);
+        let chip = match extension {
+            Some(e) => Chip::new(e).tip(container),
+            None => Chip::new(container),
+        };
+        file.push(chip);
+    }
+    if let Some(size) = state.file_size {
+        file.push(Chip::new(size_in(lang, size)).tip(if ru {
+            "Размер файла"
+        } else {
+            "File size"
+        }));
+    }
+    if let Some(d) = state.duration {
+        file.push(Chip::new(crate::format::time(Some(d), false)).tip(if ru {
+            "Длительность"
+        } else {
+            "Duration"
+        }));
+        if let Some(size) = state.file_size.filter(|_| d > 0.0) {
+            file.push(
+                Chip::new(bitrate_in(lang, size as f64 * 8.0 / d)).tip(if ru {
+                    "Общий битрейт: размер файла на длительность"
+                } else {
+                    "Overall bitrate: the file's size over its duration"
+                }),
+            );
+        }
+    }
+    if !file.is_empty() {
+        rows.push(file);
+    }
+
+    let video = state
+        .tracks
+        .iter()
+        .find(|t| t.kind == Kind::Video && t.selected && !t.albumart)
+        .or_else(|| {
+            state
+                .tracks
+                .iter()
+                .find(|t| t.kind == Kind::Video && !t.albumart)
+        });
+    if let Some(track) = video {
+        let mut picture = Vec::new();
+        if let Some(codec) = &track.codec {
+            let mut chip = Chip::new(tracks::codec_name(codec));
+            let mut tip = track.codec_desc.clone().unwrap_or_default();
+            if let Some(profile) = &track.profile {
+                if !tip.is_empty() {
+                    tip.push_str(" · ");
+                }
+                tip.push_str(profile);
+            }
+            if !tip.is_empty() {
+                chip = chip.tip(tip);
+            }
+            picture.push(chip);
+        }
+        if let (Some(w), Some(h)) = (track.width, track.height) {
+            picture.push(Chip::new(format!("{w}×{h}")));
+        }
+        if let Some(fps) = track.fps.filter(|f| *f > 0.0) {
+            let decimals = if (fps - fps.round()).abs() < 0.001 {
+                0
+            } else {
+                3
+            };
+            picture.push(Chip::new(format!(
+                "{} fps",
+                decimal_in(lang, fps, decimals)
+            )));
+        }
+        if let Some(params) = state.video_params.as_ref().filter(|_| track.selected) {
+            if let Some((_, bits)) = params
+                .pixel_format
+                .as_deref()
+                .and_then(sampling)
+                .filter(|(_, b)| *b > 8)
+            {
+                picture.push(Chip::new(if ru {
+                    format!("{bits} бит")
+                } else {
+                    format!("{bits}-bit")
+                }));
+            }
+            let hdr = match params.gamma.as_deref() {
+                Some("pq") => Some("HDR (PQ)"),
+                Some("hlg") => Some("HDR (HLG)"),
+                _ => None,
+            };
+            if let Some(hdr) = hdr {
+                let mut chip = Chip::new(hdr);
+                if let Some(tip) = hdr_in(lang, params) {
+                    chip = chip.tip(tip);
+                }
+                picture.push(chip);
+            }
+        }
+        if let Some(bitrate) = track.bitrate.filter(|b| *b > 0) {
+            picture.push(Chip::new(bitrate_in(lang, bitrate as f64)).tip(if ru {
+                "Битрейт видео"
+            } else {
+                "Video bitrate"
+            }));
+        }
+        if !picture.is_empty() {
+            rows.push(picture);
+        }
+    }
+
+    let mut sound = Vec::new();
+    let audio = tracks::of_kind(&state.tracks, Kind::Audio);
+    let shown = if audio.len() > AUDIO_CHIPS {
+        AUDIO_CHIPS - 1
+    } else {
+        audio.len()
+    };
+    for (i, track) in audio.iter().enumerate().take(shown) {
+        let mut parts = Vec::new();
+        if let Some(codec) = &track.codec {
+            parts.push(tracks::codec_name(codec));
+        }
+        if let Some(n) = track.channels {
+            parts.push(tracks::channels_in(lang, n));
+        }
+        if let Some(code) = &track.lang {
+            parts.push(tracks::language_in(lang, code));
+        }
+        let name = track.name_in(lang, i + 1);
+        if parts.is_empty() {
+            parts.push(name.clone());
+        }
+        let tip = format!(
+            "{} {}: {name}\n{}",
+            kind_in(lang, Kind::Audio, false),
+            i + 1,
+            track_details_in(lang, track, state)
+        );
+        sound.push(Chip {
+            text: parts.join(" "),
+            tip: Some(tip.trim_end().to_owned()),
+            selected: track.selected,
+            action: ChipAction::Audio(track.id),
+        });
+    }
+    if shown < audio.len() {
+        let rest: Vec<String> = audio
+            .iter()
+            .enumerate()
+            .skip(shown)
+            .map(|(i, t)| format!("{}. {}", i + 1, t.name_in(lang, i + 1)))
+            .collect();
+        sound.push(Chip {
+            text: format!("+{}", audio.len() - shown),
+            tip: Some(rest.join("\n")),
+            selected: audio.iter().skip(shown).any(|t| t.selected),
+            action: ChipAction::None,
+        });
+    }
+    let subs = tracks::of_kind(&state.tracks, Kind::Sub);
+    if !subs.is_empty() {
+        let label = if ru { "Субтитры" } else { "Subtitles" };
+        let n = subs.len();
+        let text = match subs.iter().position(|t| t.selected) {
+            Some(i) => {
+                let name = subs[i].name_in(lang, i + 1);
+                if n > 1 {
+                    format!("{label}: {name} ({}/{n})", i + 1)
+                } else {
+                    format!("{label}: {name}")
+                }
+            }
+            None => format!("{label}: {n}"),
+        };
+        let all: Vec<String> = subs
+            .iter()
+            .enumerate()
+            .map(|(i, t)| {
+                let mark = if t.selected { "● " } else { "   " };
+                format!("{mark}{}. {}", i + 1, t.name_in(lang, i + 1))
+            })
+            .collect();
+        sound.push(Chip::new(text).tip(all.join("\n")));
+    }
+    if !sound.is_empty() {
+        rows.push(sound);
+    }
+    rows
+}
+
 /// A track's heading: "Audio 2: English — Commentary".
 pub fn track_heading_in(lang: Lang, track: &Track, tracks: &[Track]) -> String {
     let n = track.number(tracks);
@@ -868,5 +1115,123 @@ mod tests {
             Some("HDR10 (PQ) · MaxCLL 1000 cd/m² · MaxFALL 400 cd/m²")
         );
         assert_eq!(color_name("bt.2020-ncl"), "BT.2020 NCL");
+    }
+
+    #[test]
+    fn chips() {
+        let audio = |id, codec: &str, channels, lang: &str, selected| Track {
+            id,
+            kind: Kind::Audio,
+            codec: Some(codec.into()),
+            channels: Some(channels),
+            lang: Some(lang.into()),
+            selected,
+            ..Track::default()
+        };
+        let mut state = State {
+            idle: false,
+            duration: Some(7683.0),
+            file_size: Some(2_287_000_000),
+            file_format: Some("mkv".into()),
+            video_params: Some(VideoParams {
+                pixel_format: Some("yuv420p10".into()),
+                gamma: Some("pq".into()),
+                ..VideoParams::default()
+            }),
+            tracks: vec![
+                Track {
+                    id: 1,
+                    kind: Kind::Video,
+                    codec: Some("hevc".into()),
+                    codec_desc: Some("H.265 / HEVC".into()),
+                    profile: Some("Main 10".into()),
+                    width: Some(1920),
+                    height: Some(1080),
+                    fps: Some(23.976),
+                    selected: true,
+                    ..Track::default()
+                },
+                audio(1, "aac", 6, "rus", true),
+                audio(2, "ac3", 2, "eng", false),
+                Track {
+                    id: 1,
+                    kind: Kind::Sub,
+                    lang: Some("rus".into()),
+                    ..Track::default()
+                },
+                Track {
+                    id: 2,
+                    kind: Kind::Sub,
+                    lang: Some("eng".into()),
+                    selected: true,
+                    ..Track::default()
+                },
+            ],
+            ..State::default()
+        };
+        let path = Path::new(r"D:\Films\La La Land.mkv");
+        let rows = chips_in(Lang::Ru, Some(path), &state);
+        let texts: Vec<Vec<&str>> = rows
+            .iter()
+            .map(|r| r.iter().map(|c| c.text.as_str()).collect())
+            .collect();
+        assert_eq!(
+            texts,
+            [
+                vec!["MKV", "2,13 ГБ", "2:08:03", "2,4 Мбит/с"],
+                vec!["HEVC", "1920×1080", "23,976 fps", "10 бит", "HDR (PQ)"],
+                vec![
+                    "AAC 5.1 Русский",
+                    "AC3 2.0 Английский",
+                    "Субтитры: Английский (2/2)"
+                ],
+            ]
+        );
+        assert_eq!(rows[0][0].tip.as_deref(), Some("Matroska"));
+        assert_eq!(rows[1][0].tip.as_deref(), Some("H.265 / HEVC · Main 10"));
+        assert!(rows[2][0].selected && !rows[2][1].selected);
+        assert_eq!(rows[2][1].action, ChipAction::Audio(2));
+        assert_eq!(rows[2][2].action, ChipAction::None);
+        assert_eq!(
+            rows[2][2].tip.as_deref(),
+            Some("   1. Русский\n● 2. Английский")
+        );
+
+        // Many audio tracks fold into "+N"; no subtitles chosen: the count.
+        state.tracks.truncate(1);
+        for i in 1..=6 {
+            state.tracks.push(audio(i, "aac", 2, "eng", i == 6));
+        }
+        state.tracks.push(Track {
+            id: 1,
+            kind: Kind::Sub,
+            ..Track::default()
+        });
+        let rows = chips_in(Lang::En, Some(path), &state);
+        let sound: Vec<&str> = rows[2].iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(
+            sound,
+            [
+                "AAC 2.0 English",
+                "AAC 2.0 English",
+                "AAC 2.0 English",
+                "+3",
+                "Subtitles: 1"
+            ]
+        );
+        assert!(rows[2][3].selected, "the chosen track is among the folded");
+        assert_eq!(
+            rows[2][3].tip.as_deref(),
+            Some("4. English\n5. English\n6. English")
+        );
+
+        // An address has no extension to show: the container's name.
+        state.file_format = Some("mpegts".into());
+        let rows = chips_in(
+            Lang::En,
+            Some(Path::new("https://x.invalid/live.ts")),
+            &state,
+        );
+        assert_eq!(rows[0][0].text, "MPEG-TS");
     }
 }

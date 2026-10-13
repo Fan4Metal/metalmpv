@@ -13,7 +13,7 @@ use egui::{Align, Color32, Layout, Rect, RichText, Sense, TextureHandle, Ui, vec
 use super::{icons, style, tool};
 use crate::cover::{Cover, Source};
 use crate::i18n::lang;
-use crate::info;
+use crate::info::{self, ChipAction};
 use crate::input::Cmd;
 use crate::player::State;
 use crate::playlist::Channel;
@@ -126,7 +126,7 @@ impl InfoWindow {
                     ui.weak(tr!("No file is open.", "Файл не открыт."));
                     return;
                 }
-                self.header(ui, state, cover.as_ref(), channel.as_ref());
+                self.header(ui, path, state, cover.as_ref(), channel.as_ref(), &mut out);
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
@@ -183,13 +183,16 @@ impl InfoWindow {
         out
     }
 
-    /// The cover and the title, the artist and the album beside it.
+    /// The cover and, beside it, the title, the artist and the album, then
+    /// the chips: the file's main facts at a glance ([`info::chips_in`]).
     fn header(
         &mut self,
         ui: &mut Ui,
+        path: Option<&Path>,
         state: &State,
         cover: Option<&CoverView<'_>>,
         view: Option<&ChannelView<'_>>,
+        out: &mut Vec<Cmd>,
     ) {
         let channel = view.map(|v| v.channel);
         // An IPTV list's channel by the list's name (a stream's title is
@@ -251,6 +254,23 @@ impl InfoWindow {
                 }
                 if let Some(album) = album {
                     ui.add(egui::Label::new(RichText::new(album).color(style::TEXT_WEAK)).wrap());
+                }
+                let rows = info::chips_in(lang(), path, state);
+                if !rows.is_empty() {
+                    ui.add_space(6.0);
+                }
+                for row in rows {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
+                        for c in row {
+                            if chip(ui, &c).clicked() {
+                                match c.action {
+                                    ChipAction::Audio(id) => out.push(Cmd::SelectAudio(id)),
+                                    ChipAction::None => {}
+                                }
+                            }
+                        }
+                    });
                 }
             });
         });
@@ -411,6 +431,59 @@ fn track_entry(ui: &mut Ui, track: &Track, state: &State) {
             row(ui, &label, &value);
         }
     });
+}
+
+/// A chip of the header: plain text on a light ground, as the badges of
+/// the tracks window; the playing track's outlined in the accent colour,
+/// one that does something lit when hovered.
+fn chip(ui: &mut Ui, chip: &info::Chip) -> egui::Response {
+    let clickable = chip.action != ChipAction::None;
+    let color = if chip.selected {
+        style::TEXT_BRIGHT
+    } else {
+        style::TEXT
+    };
+    let galley = ui.fonts_mut(|f| {
+        f.layout_no_wrap(chip.text.clone(), egui::FontId::proportional(12.0), color)
+    });
+    let size = vec2(galley.size().x + 12.0, 19.0);
+    let sense = if clickable {
+        Sense::CLICK
+    } else {
+        Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(size, sense);
+    let painter = ui.painter();
+    let ground = if clickable && response.hovered() {
+        Color32::from_white_alpha(34)
+    } else {
+        Color32::from_white_alpha(18)
+    };
+    painter.rect_filled(rect, 4.0, ground);
+    if chip.selected {
+        painter.rect_stroke(
+            rect,
+            4.0,
+            egui::Stroke::new(1.0, style::accent_hover()),
+            egui::StrokeKind::Inside,
+        );
+    }
+    painter.galley(
+        egui::Align2::CENTER_CENTER
+            .anchor_size(rect.center(), galley.size())
+            .min,
+        galley,
+        color,
+    );
+    let response = if clickable {
+        response.on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else {
+        response
+    };
+    match &chip.tip {
+        Some(tip) => response.on_hover_text(tip),
+        None => response,
+    }
 }
 
 fn heading(ui: &mut Ui, text: &str) {
