@@ -59,17 +59,19 @@ impl InfoWindow {
         true
     }
 
-    /// Draw the window while it is open; the commands of its buttons. The
-    /// window stays at the player's top right corner (anchored, so it
-    /// follows the corner as the player's window changes) with a fixed
-    /// width; only its bottom edge is dragged, and egui's memory keeps the
-    /// height.
+    /// Draw the window while it is open; the commands of its buttons. A
+    /// `pinned` window stays at the player's top right corner (anchored,
+    /// so it follows the corner as the player's window changes); else it
+    /// starts there, is moved by its title and egui's memory keeps its
+    /// place. The width is fixed; only the bottom edge is dragged, and
+    /// egui's memory keeps the height.
     pub fn show(
         &mut self,
         ctx: &egui::Context,
         path: Option<&Path>,
         state: &State,
         cover: Option<CoverView<'_>>,
+        pinned: bool,
     ) -> Vec<Cmd> {
         let mut out = Vec::new();
         if !self.open {
@@ -77,11 +79,19 @@ impl InfoWindow {
         }
         let screen = ctx.content_rect();
         let mut open = true;
-        egui::Window::new(tr!("File information", "Сведения о файле"))
+        let window = egui::Window::new(tr!("File information", "Сведения о файле"))
             .id(egui::Id::new("file_info"))
             .open(&mut open)
-            .collapsible(false)
-            .anchor(egui::Align2::RIGHT_TOP, CORNER)
+            .collapsible(false);
+        let window = if pinned {
+            window.anchor(egui::Align2::RIGHT_TOP, CORNER)
+        } else {
+            // The same pivot as the anchor's: unpinning leaves it in place.
+            window
+                .pivot(egui::Align2::RIGHT_TOP)
+                .default_pos(screen.right_top() + CORNER)
+        };
+        window
             .resizable([false, true])
             .default_height(620.0)
             .min_height(200.0)

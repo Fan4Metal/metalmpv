@@ -1486,9 +1486,13 @@ impl eframe::App for App {
         {
             player.ask_scan();
         }
-        let info_cmds = self
-            .info
-            .show(&ctx, self.playlist.current_path(), &state, cover);
+        let info_cmds = self.info.show(
+            &ctx,
+            self.playlist.current_path(),
+            &state,
+            cover,
+            self.settings.info_pinned,
+        );
         cmds.extend(info_cmds);
 
         for cmd in cmds {

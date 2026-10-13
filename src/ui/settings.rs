@@ -468,6 +468,17 @@ fn general(ui: &mut Ui, settings: &mut Settings) {
                 }
             },
         );
+        divider(ui);
+        row(
+            ui,
+            tr!("Pin the information window", "Закрепить окно сведений"),
+            Some(tr!(
+                "On, it stays at the player's top right corner; off, it is moved by its title and keeps its place.",
+                "Включено — окно стоит в правом верхнем углу плеера; выключено — перетаскивается за заголовок и остаётся там, где его оставили."
+            )),
+            50.0,
+            |ui| switch(ui, &mut settings.info_pinned),
+        );
     });
     section(
         ui,
@@ -1065,6 +1076,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.prefer_last_tracks = d.prefer_last_tracks;
     settings.fullscreen_transparency = d.fullscreen_transparency;
     settings.fullscreen_title = d.fullscreen_title;
+    settings.info_pinned = d.info_pinned;
     settings.sub_font = d.sub_font;
     settings.sub_scale = d.sub_scale;
     settings.osd_font = d.osd_font;

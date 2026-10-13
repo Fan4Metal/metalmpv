@@ -28,6 +28,7 @@ const CHAPTER_MARKS: &str = "chapter_marks";
 const TIME_DISPLAY: &str = "time_display";
 const FULLSCREEN_TRANSPARENCY: &str = "fullscreen_transparency";
 const FULLSCREEN_TITLE: &str = "fullscreen_title";
+const INFO_PINNED: &str = "info_pinned";
 const SUB_FONT: &str = "sub_font";
 const SUB_SCALE: &str = "sub_scale";
 const OSD_FONT: &str = "osd_font";
@@ -138,6 +139,9 @@ pub struct Settings {
     pub fullscreen_transparency: f64,
     /// A strip with the file's name at the top in fullscreen.
     pub fullscreen_title: bool,
+    /// The information window stays at the player's top right corner;
+    /// else it is moved by its title and egui keeps its place.
+    pub info_pinned: bool,
     /// The font family of text subtitles, empty for mpv's.
     pub sub_font: String,
     /// The size of subtitles, in percent (mpv's `sub-scale`).
@@ -181,6 +185,7 @@ impl Default for Settings {
             time_mode: TimeMode::Both,
             fullscreen_transparency: 12.0,
             fullscreen_title: true,
+            info_pinned: true,
             sub_font: String::new(),
             sub_scale: 100.0,
             osd_font: String::new(),
@@ -245,6 +250,7 @@ impl Settings {
                 d.fullscreen_transparency,
             ),
             fullscreen_title: flag(FULLSCREEN_TITLE, d.fullscreen_title),
+            info_pinned: flag(INFO_PINNED, d.info_pinned),
             sub_font: get(SUB_FONT).unwrap_or_default(),
             sub_scale: number(SUB_SCALE, SUB_SCALE_RANGE, d.sub_scale),
             osd_font: osd_font
@@ -288,6 +294,7 @@ impl Settings {
             format!("{:.0}", self.fullscreen_transparency),
         );
         storage.set_string(FULLSCREEN_TITLE, self.fullscreen_title.to_string());
+        storage.set_string(INFO_PINNED, self.info_pinned.to_string());
         storage.set_string(SUB_FONT, self.sub_font.clone());
         storage.set_string(SUB_SCALE, format!("{:.0}", self.sub_scale));
         match &self.osd_font_file {
@@ -362,6 +369,7 @@ mod tests {
             time_mode: TimeMode::Remaining,
             fullscreen_transparency: 40.0,
             fullscreen_title: false,
+            info_pinned: false,
             sub_font: "Arial".into(),
             sub_scale: 150.0,
             osd_font: "Segoe UI".into(),
