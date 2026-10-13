@@ -134,9 +134,11 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | Subtitles and OSD | On-screen messages: font | default | A font installed in Windows, for the yellow line in the top left corner |
 | Subtitles and OSD | On-screen messages: size | 100 % | 50–200 % of the usual size, which follows the height of the picture |
 
-The list of fonts has a search field at its top. The **Keys** category lists the keyboard shortcuts for reference. The volume, the window and the playlist's visibility and width are remembered between runs.
+The list of fonts has a search field at its top. The **Keys** category lists every action with its keys, which can be changed (see [Keyboard shortcuts](#keyboard-shortcuts)). The volume, the window and the playlist's visibility and width are remembered between runs.
 
 ## Keyboard shortcuts
+
+The keys below are the defaults. In the settings, the **Keys** category lists the actions in groups, each with its keys: a click on a key waits for the key combination (or the mouse's back or forward button, with `Ctrl`, `Alt` or `Shift` if wanted) that takes its place, **+** adds one more, the cross removes it, and `Esc` gives up. A combination another action had is taken from that action, and the page says so. A few actions without a default key can be given one: Stop, Load subtitles, Equalizer, Minimize and Maximize. **Reset the keys** puts them all back. The menus and tooltips show the keys as they are set. The mouse wheel, the double and middle clicks and the media keys stay as described; `Ctrl+V` cannot be chosen.
 
 | Key | Action |
 |---|---|
@@ -163,7 +165,7 @@ The list of fonts has a search field at its top. The **Keys** category lists the
 | `Shift+0` | Subtitles back in sync |
 | `Page Up` / `Page Down` | Previous / next file of the playlist |
 | Media keys | Play/Pause, Stop, Previous and Next of a keyboard, a headset or a remote, while the player's window is active |
-| `Enter`, `F11`, double click | Fullscreen |
+| `Enter`, `Alt+Enter`, `F11`, double click | Fullscreen |
 | `1` / `2` / `3` / `4` | Window for the picture at 50 % / 100 % / 150 % / 200 % of the video's size |
 | `5` | The largest window the screen holds, without black bars |
 | `` ` `` (`Ё`) | Window fitted to the picture, without black bars |
@@ -176,7 +178,7 @@ The list of fonts has a search field at its top. The **Keys** category lists the
 | `R` | Repeat: off, the file, the list |
 | `Ctrl+T` | Over the other windows: never, always, while playing (also in the settings and the context menu) |
 | `Delete` | Remove the selected playlist entry |
-| `F5` | Settings |
+| `F5`, `Ctrl+,` | Settings |
 | `F1` | About |
 
 A seek on keyframes is instant, since nothing has to be decoded before the frame shown; it lands on the keyframe nearest to the target, and the on-screen line reports where. An exact seek decodes from the previous keyframe up to the target frame.
@@ -213,7 +215,7 @@ The C++ workload of the Build Tools ("Desktop development with C++") is selected
 | `src/app.rs` | The window: layout, commands, events |
 | `src/mpv/` | libmpv's C API and its safe wrapper |
 | `src/player.rs`, `src/video.rs` | Playback state and commands; rendering into the window |
-| `src/playlist.rs`, `src/input.rs`, `src/format.rs` | Playlist, keys, texts of times and of the on-screen line |
+| `src/playlist.rs`, `src/input.rs`, `src/keymap.rs`, `src/format.rs` | Playlist, commands and keys, texts of times and of the on-screen line |
 | `src/ui/` | Title row, control bar, playlist, on-screen line, dialogs |
 | `tools/` | libmpv download, release script, installer script, icon export |
 

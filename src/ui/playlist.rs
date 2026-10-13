@@ -81,11 +81,12 @@ pub fn panel(
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let tip = match repeat {
-                Repeat::Off => tr!("Repeat: off (R)", "Повтор: выключен (R)"),
-                Repeat::One => tr!("Repeat: the file (R)", "Повтор: файл (R)"),
-                Repeat::All => tr!("Repeat: the list (R)", "Повтор: список (R)"),
+                Repeat::Off => tr!("Repeat: off", "Повтор: выключен"),
+                Repeat::One => tr!("Repeat: the file", "Повтор: файл"),
+                Repeat::All => tr!("Repeat: the list", "Повтор: список"),
             };
-            if tool(ui, tip, true, |p, o, c| {
+            let tip = crate::keymap::with_key(tip, Cmd::CycleRepeat);
+            if tool(ui, &tip, true, |p, o, c| {
                 let c = if repeat == Repeat::Off {
                     c
                 } else {

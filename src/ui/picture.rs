@@ -232,7 +232,8 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, has_video: bool, out: &mut Vec<Cm
     heading(ui, tr!("Frame", "Кадр"));
     let [save, folder] = pair(
         ui,
-        egui::Button::new(tr!("Save the frame", "Сохранить кадр")).shortcut_text("Ctrl+E"),
+        egui::Button::new(tr!("Save the frame", "Сохранить кадр"))
+            .shortcut_text(crate::keymap::shortcut(Cmd::SaveFrame)),
         egui::Button::new(tr!("Open the folder", "Открыть папку")),
         has_video,
     );

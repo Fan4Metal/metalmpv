@@ -33,19 +33,20 @@ pub fn row(
     );
 
     let buttons = [
-        (Cmd::Close, tr!("Close", "Закрыть")),
+        (Cmd::Close, tr!("Close", "Закрыть").to_owned()),
         (
             Cmd::ToggleMaximize,
             if maximized {
                 tr!("Restore down", "Свернуть в окно")
             } else {
                 tr!("Maximize", "Развернуть")
-            },
+            }
+            .to_owned(),
         ),
-        (Cmd::Minimize, tr!("Minimize", "Свернуть")),
+        (Cmd::Minimize, tr!("Minimize", "Свернуть").to_owned()),
         (
             Cmd::ToggleInfo,
-            tr!("File information (I)", "Сведения о файле (I)"),
+            crate::keymap::with_key(tr!("File information", "Сведения о файле"), Cmd::ToggleInfo),
         ),
     ];
     let mut right = rect.right();
@@ -58,7 +59,7 @@ pub fn row(
             r
         };
         right = r.left();
-        let response = ui.interact(r, ui.id().with(("title_button", tip)), Sense::CLICK);
+        let response = ui.interact(r, ui.id().with(("title_button", &tip)), Sense::CLICK);
         let hovered = response.hovered();
         if hovered {
             let fill = if kind == Cmd::Close {

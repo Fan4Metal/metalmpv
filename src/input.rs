@@ -1,8 +1,9 @@
-//! Keys of the player. `Event::Key::key` is the logical key, or the
-//! physical one for a letter of a non-Latin layout (egui-winit), so `M`
-//! and `,` `.` work in the Russian layout too.
+//! The commands of the player and the keys that give them (`keymap.rs`).
+//! `Event::Key::key` is the logical key, or the physical one for a letter
+//! of a non-Latin layout (egui-winit), so `M` and `,` `.` work in the
+//! Russian layout too.
 
-use egui::{Event, Key, Modifiers};
+use crate::keymap::{Chord, Keymap};
 
 /// What a key, a button or a menu asks for.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -132,163 +133,87 @@ pub enum Cmd {
 /// The step of the volume keys and of a wheel notch, in percent.
 pub const VOLUME_STEP: f64 = 5.0;
 
-/// The command of `key` with `m` held; `repeat` is a key held down, which
-/// repeats seeking, frame steps and the volume only.
-pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
-    let ctrl = m.command;
-    let cmd = match key {
-        Key::Space if !ctrl => Cmd::TogglePause,
-        Key::ArrowLeft if m.shift => Cmd::SeekExact(-1.0),
-        Key::ArrowRight if m.shift => Cmd::SeekExact(1.0),
-        Key::ArrowLeft if ctrl => Cmd::SeekLong(-1.0),
-        Key::ArrowRight if ctrl => Cmd::SeekLong(1.0),
-        Key::ArrowLeft => Cmd::SeekShort(-1.0),
-        Key::ArrowRight => Cmd::SeekShort(1.0),
-        Key::Comma if ctrl => Cmd::Settings,
-        // `<` and `>`: egui has no such keys and passes the physical ones.
-        Key::Comma if m.shift => Cmd::SubDelay(-1.0),
-        Key::Period if m.shift => Cmd::SubDelay(1.0),
-        Key::Num0 if m.shift && !ctrl => Cmd::SubDelay(0.0),
-        // As in mpv: Ctrl with + and -.
-        Key::Plus | Key::Equals if ctrl => Cmd::AudioDelay(1.0),
-        Key::Minus if ctrl => Cmd::AudioDelay(-1.0),
-        Key::Num0 if ctrl => Cmd::AudioDelay(0.0),
-        Key::Comma | Key::D => Cmd::Frame { forward: false },
-        Key::Period | Key::F => Cmd::Frame { forward: true },
-        Key::ArrowUp => Cmd::Volume(VOLUME_STEP),
-        Key::ArrowDown => Cmd::Volume(-VOLUME_STEP),
-        Key::M if !ctrl => Cmd::ToggleMute,
-        Key::Home => Cmd::Start,
-        Key::End => Cmd::End,
-        Key::PageUp => Cmd::Prev,
-        Key::PageDown => Cmd::Next,
-        Key::Enter | Key::F11 if !ctrl => Cmd::ToggleFullscreen,
-        Key::Escape => Cmd::Escape,
-        Key::O if ctrl => Cmd::Open,
-        Key::U if ctrl => Cmd::OpenUrl,
-        // O as in mpv: where playback is.
-        Key::O => Cmd::ShowPosition,
-        Key::L if !ctrl => Cmd::TogglePlaylist,
-        Key::F1 => Cmd::About,
-        Key::F5 => Cmd::Settings,
-        Key::U | Key::F7 => Cmd::ToggleVideoPanel,
-        Key::E if ctrl => Cmd::SaveFrame,
-        Key::Delete => Cmd::Delete,
-        Key::T if ctrl => Cmd::CycleOnTop,
-        Key::T => Cmd::ToggleTracks,
-        Key::I if !ctrl => Cmd::ToggleInfo,
-        Key::A if !ctrl => Cmd::CycleAudio,
-        // S as in subtitles; J as in mpv.
-        Key::S | Key::J if !ctrl => Cmd::CycleSubs,
-        Key::V if !ctrl => Cmd::ToggleSubs,
-        Key::R if !ctrl && !m.alt => Cmd::CycleRepeat,
-        Key::C if !ctrl && !m.alt => Cmd::Speed(1),
-        Key::X if !ctrl && !m.alt => Cmd::Speed(-1),
-        Key::Z if !ctrl && !m.alt => Cmd::Speed(0),
-        Key::Num1 if !ctrl && !m.alt => Cmd::WindowScale(0.5),
-        Key::Num2 if !ctrl && !m.alt => Cmd::WindowScale(1.0),
-        Key::Num3 if !ctrl && !m.alt => Cmd::WindowScale(1.5),
-        Key::Num4 if !ctrl && !m.alt => Cmd::WindowScale(2.0),
-        Key::Num5 if !ctrl && !m.alt => Cmd::FitScreen,
-        // The key left of 1: `Ё` in the Russian layout.
-        Key::Backtick if !ctrl && !m.alt => Cmd::FitWindow,
-        Key::Num6 if !ctrl && !m.alt => Cmd::ToggleFill,
-        Key::Num7 if !ctrl && !m.alt => Cmd::ToggleInterface,
-        _ => return None,
-    };
-    let repeats = matches!(
-        cmd,
-        Cmd::SeekShort(_)
-            | Cmd::SeekLong(_)
-            | Cmd::SeekExact(_)
-            | Cmd::Frame { .. }
-            | Cmd::Volume(_)
-            | Cmd::AudioDelay(_)
-            | Cmd::SubDelay(_)
-    );
-    (!repeat || repeats).then_some(cmd)
+/// The command of `chord` in `map`; `repeat` is a key held down, which
+/// repeats seeking, frame steps, the volume and the delays only.
+pub fn command(map: &Keymap, chord: Chord, repeat: bool) -> Option<Cmd> {
+    let action = map.action(chord)?;
+    (!repeat || action.repeats()).then(|| action.cmd())
 }
 
-/// The commands of this frame's keys, in order. Consumed keys are not
-/// seen by the widgets; call it when no text field has the focus.
-pub fn keys(ctx: &egui::Context) -> Vec<Cmd> {
+/// The commands of this frame's keys and of the mouse's side buttons, in
+/// order. Consumed keys are not seen by the widgets; call it when no text
+/// field has the focus.
+pub fn keys(ctx: &egui::Context, map: &Keymap) -> Vec<Cmd> {
     ctx.input(|i| {
         i.events
             .iter()
-            .filter_map(|e| match e {
-                Event::Key {
-                    key,
-                    pressed: true,
-                    repeat,
-                    modifiers,
-                    ..
-                } => command(*key, *modifiers, *repeat),
-                // The mouse's side buttons as the arrows: back is Left,
-                // forward is Right (with Ctrl and Shift as they go).
-                Event::PointerButton {
-                    button,
-                    pressed: true,
-                    modifiers,
-                    ..
-                } => command(side_button(*button)?, *modifiers, false),
-                _ => None,
+            .filter_map(|e| {
+                let (chord, repeat) = Chord::of_event(e)?;
+                command(map, chord, repeat)
             })
             .collect()
     })
 }
 
-/// The arrow a side button of the mouse stands for.
-fn side_button(button: egui::PointerButton) -> Option<Key> {
-    match button {
-        egui::PointerButton::Extra1 => Some(Key::ArrowLeft),
-        egui::PointerButton::Extra2 => Some(Key::ArrowRight),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui::{Key, Modifiers, PointerButton};
+
+    /// The default command of `key` with `m`.
+    fn default_command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
+        command(&Keymap::default(), Chord::of_key(key, m)?, repeat)
+    }
 
     #[test]
-    fn side_buttons_are_arrows() {
-        use egui::PointerButton;
-        assert_eq!(side_button(PointerButton::Extra1), Some(Key::ArrowLeft));
-        assert_eq!(side_button(PointerButton::Extra2), Some(Key::ArrowRight));
-        assert_eq!(side_button(PointerButton::Primary), None);
+    fn side_buttons_seek() {
+        let map = Keymap::default();
+        let button = |b, m| command(&map, Chord::of_button(b, m).unwrap(), false);
+        assert_eq!(
+            button(PointerButton::Extra1, Modifiers::NONE),
+            Some(Cmd::SeekShort(-1.0))
+        );
+        assert_eq!(
+            button(PointerButton::Extra2, Modifiers::COMMAND),
+            Some(Cmd::SeekLong(1.0))
+        );
+        assert_eq!(
+            button(PointerButton::Extra1, Modifiers::SHIFT),
+            Some(Cmd::SeekExact(-1.0))
+        );
+        assert_eq!(
+            Chord::of_button(PointerButton::Primary, Modifiers::NONE),
+            None
+        );
     }
 
     #[test]
     fn arrows_seek() {
         let none = Modifiers::NONE;
         assert_eq!(
-            command(Key::ArrowRight, none, false),
+            default_command(Key::ArrowRight, none, false),
             Some(Cmd::SeekShort(1.0))
         );
         assert_eq!(
-            command(Key::ArrowLeft, Modifiers::COMMAND, false),
+            default_command(Key::ArrowLeft, Modifiers::COMMAND, false),
             Some(Cmd::SeekLong(-1.0))
         );
         assert_eq!(
-            command(Key::ArrowLeft, Modifiers::SHIFT, true),
-            Some(Cmd::SeekExact(-1.0))
-        );
-        assert_eq!(
-            command(Key::ArrowLeft, Modifiers::SHIFT | Modifiers::COMMAND, false),
+            default_command(Key::ArrowLeft, Modifiers::SHIFT, true),
             Some(Cmd::SeekExact(-1.0))
         );
     }
 
     #[test]
     fn held_keys_repeat_only_motion() {
-        assert_eq!(command(Key::Space, Modifiers::NONE, true), None);
-        assert_eq!(command(Key::Enter, Modifiers::NONE, true), None);
+        assert_eq!(default_command(Key::Space, Modifiers::NONE, true), None);
+        assert_eq!(default_command(Key::Enter, Modifiers::NONE, true), None);
         assert_eq!(
-            command(Key::ArrowUp, Modifiers::NONE, true),
+            default_command(Key::ArrowUp, Modifiers::NONE, true),
             Some(Cmd::Volume(VOLUME_STEP))
         );
         assert_eq!(
-            command(Key::Period, Modifiers::NONE, true),
+            default_command(Key::Period, Modifiers::NONE, true),
             Some(Cmd::Frame { forward: true })
         );
     }
@@ -296,11 +221,20 @@ mod tests {
     #[test]
     fn shift_comma_period_move_the_subtitles() {
         let shift = Modifiers::SHIFT;
-        assert_eq!(command(Key::Comma, shift, false), Some(Cmd::SubDelay(-1.0)));
-        assert_eq!(command(Key::Period, shift, true), Some(Cmd::SubDelay(1.0)));
-        assert_eq!(command(Key::Num0, shift, false), Some(Cmd::SubDelay(0.0)));
         assert_eq!(
-            command(Key::Comma, Modifiers::NONE, false),
+            default_command(Key::Comma, shift, false),
+            Some(Cmd::SubDelay(-1.0))
+        );
+        assert_eq!(
+            default_command(Key::Period, shift, true),
+            Some(Cmd::SubDelay(1.0))
+        );
+        assert_eq!(
+            default_command(Key::Num0, shift, false),
+            Some(Cmd::SubDelay(0.0))
+        );
+        assert_eq!(
+            default_command(Key::Comma, Modifiers::NONE, false),
             Some(Cmd::Frame { forward: false })
         );
     }
@@ -308,11 +242,11 @@ mod tests {
     #[test]
     fn ctrl_t_on_top_t_tracks() {
         assert_eq!(
-            command(Key::T, Modifiers::COMMAND, false),
+            default_command(Key::T, Modifiers::COMMAND, false),
             Some(Cmd::CycleOnTop)
         );
         assert_eq!(
-            command(Key::T, Modifiers::NONE, false),
+            default_command(Key::T, Modifiers::NONE, false),
             Some(Cmd::ToggleTracks)
         );
     }
@@ -320,84 +254,96 @@ mod tests {
     #[test]
     fn c_x_z_set_the_speed() {
         let none = Modifiers::NONE;
-        assert_eq!(command(Key::C, none, false), Some(Cmd::Speed(1)));
-        assert_eq!(command(Key::X, none, false), Some(Cmd::Speed(-1)));
-        assert_eq!(command(Key::Z, none, false), Some(Cmd::Speed(0)));
-        assert_eq!(command(Key::C, Modifiers::COMMAND, false), None);
+        assert_eq!(default_command(Key::C, none, false), Some(Cmd::Speed(1)));
+        assert_eq!(default_command(Key::X, none, false), Some(Cmd::Speed(-1)));
+        assert_eq!(default_command(Key::Z, none, false), Some(Cmd::Speed(0)));
+        assert_eq!(default_command(Key::C, Modifiers::COMMAND, false), None);
     }
 
     #[test]
     fn ctrl_plus_minus_move_the_sound() {
         let ctrl = Modifiers::COMMAND;
         assert_eq!(
-            command(Key::Equals, ctrl, false),
+            default_command(Key::Equals, ctrl, false),
             Some(Cmd::AudioDelay(1.0))
         );
-        assert_eq!(command(Key::Plus, ctrl, true), Some(Cmd::AudioDelay(1.0)));
         assert_eq!(
-            command(Key::Minus, ctrl, false),
+            default_command(Key::Plus, ctrl, true),
+            Some(Cmd::AudioDelay(1.0))
+        );
+        assert_eq!(
+            default_command(Key::Minus, ctrl, false),
             Some(Cmd::AudioDelay(-1.0))
         );
-        assert_eq!(command(Key::Num0, ctrl, false), Some(Cmd::AudioDelay(0.0)));
-        assert_eq!(command(Key::Minus, Modifiers::NONE, false), None);
+        assert_eq!(
+            default_command(Key::Num0, ctrl, false),
+            Some(Cmd::AudioDelay(0.0))
+        );
+        assert_eq!(default_command(Key::Minus, Modifiers::NONE, false), None);
     }
 
     #[test]
     fn digits_size_the_picture() {
         let none = Modifiers::NONE;
-        assert_eq!(command(Key::Num1, none, false), Some(Cmd::WindowScale(0.5)));
-        assert_eq!(command(Key::Num2, none, false), Some(Cmd::WindowScale(1.0)));
-        assert_eq!(command(Key::Num3, none, false), Some(Cmd::WindowScale(1.5)));
-        assert_eq!(command(Key::Num4, none, false), Some(Cmd::WindowScale(2.0)));
-        assert_eq!(command(Key::Num5, none, false), Some(Cmd::FitScreen));
-        assert_eq!(command(Key::Backtick, none, false), Some(Cmd::FitWindow));
-        assert_eq!(command(Key::Num6, none, false), Some(Cmd::ToggleFill));
-        assert_eq!(command(Key::Num7, none, false), Some(Cmd::ToggleInterface));
-        assert_eq!(command(Key::Num4, none, true), None);
-        assert_eq!(command(Key::Num1, Modifiers::COMMAND, false), None);
-        assert_eq!(command(Key::Num1, Modifiers::ALT, false), None);
+        let scale = |key| default_command(key, none, false);
+        assert_eq!(scale(Key::Num1), Some(Cmd::WindowScale(0.5)));
+        assert_eq!(scale(Key::Num2), Some(Cmd::WindowScale(1.0)));
+        assert_eq!(scale(Key::Num3), Some(Cmd::WindowScale(1.5)));
+        assert_eq!(scale(Key::Num4), Some(Cmd::WindowScale(2.0)));
+        assert_eq!(scale(Key::Num5), Some(Cmd::FitScreen));
+        assert_eq!(scale(Key::Backtick), Some(Cmd::FitWindow));
+        assert_eq!(scale(Key::Num6), Some(Cmd::ToggleFill));
+        assert_eq!(scale(Key::Num7), Some(Cmd::ToggleInterface));
+        assert_eq!(default_command(Key::Num4, none, true), None);
+        assert_eq!(default_command(Key::Num1, Modifiers::COMMAND, false), None);
+        assert_eq!(default_command(Key::Num1, Modifiers::ALT, false), None);
     }
 
     #[test]
     fn other_keys() {
-        assert_eq!(command(Key::O, Modifiers::COMMAND, false), Some(Cmd::Open));
+        let none = Modifiers::NONE;
+        let ctrl = Modifiers::COMMAND;
+        assert_eq!(default_command(Key::O, ctrl, false), Some(Cmd::Open));
         assert_eq!(
-            command(Key::F7, Modifiers::NONE, false),
+            default_command(Key::F7, none, false),
             Some(Cmd::ToggleVideoPanel)
         );
         assert_eq!(
-            command(Key::U, Modifiers::NONE, false),
+            default_command(Key::U, none, false),
             Some(Cmd::ToggleVideoPanel)
         );
+        assert_eq!(default_command(Key::U, ctrl, false), Some(Cmd::OpenUrl));
+        assert_eq!(default_command(Key::E, ctrl, false), Some(Cmd::SaveFrame));
+        assert_eq!(default_command(Key::E, none, false), None);
         assert_eq!(
-            command(Key::U, Modifiers::COMMAND, false),
-            Some(Cmd::OpenUrl)
-        );
-        assert_eq!(
-            command(Key::E, Modifiers::COMMAND, false),
-            Some(Cmd::SaveFrame)
-        );
-        assert_eq!(command(Key::E, Modifiers::NONE, false), None);
-        assert_eq!(
-            command(Key::O, Modifiers::NONE, false),
+            default_command(Key::O, none, false),
             Some(Cmd::ShowPosition)
         );
         assert_eq!(
-            command(Key::F11, Modifiers::NONE, false),
+            default_command(Key::F11, none, false),
             Some(Cmd::ToggleFullscreen)
         );
         assert_eq!(
-            command(Key::Comma, Modifiers::COMMAND, false),
+            default_command(Key::Enter, Modifiers::ALT, false),
+            Some(Cmd::ToggleFullscreen)
+        );
+        assert_eq!(
+            default_command(Key::Comma, ctrl, false),
             Some(Cmd::Settings)
         );
-        assert_eq!(
-            command(Key::A, Modifiers::NONE, false),
-            Some(Cmd::CycleAudio)
-        );
-        assert_eq!(command(Key::J, Modifiers::NONE, true), None);
-        assert_eq!(
-            command(Key::S, Modifiers::NONE, false),
-            Some(Cmd::CycleSubs)
-        );
+        assert_eq!(default_command(Key::A, none, false), Some(Cmd::CycleAudio));
+        assert_eq!(default_command(Key::J, none, true), None);
+        assert_eq!(default_command(Key::S, none, false), Some(Cmd::CycleSubs));
+    }
+
+    #[test]
+    fn changed_keys() {
+        let mut map = Keymap::default();
+        let g = Chord::of_key(Key::G, Modifiers::NONE).unwrap();
+        map.assign(crate::keymap::Action::Stop, None, g);
+        assert_eq!(command(&map, g, false), Some(Cmd::Stop));
+        let space = Chord::of_key(Key::Space, Modifiers::NONE).unwrap();
+        map.remove(crate::keymap::Action::Pause, 0);
+        assert_eq!(command(&map, space, false), None);
     }
 }

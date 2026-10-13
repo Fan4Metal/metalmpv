@@ -6,6 +6,7 @@ use egui::{Align2, Color32, FontId, Rect, Response, Sense, Ui, pos2, vec2};
 
 use super::{icons, style};
 use crate::input::Cmd;
+use crate::keymap::with_key;
 use crate::player::State;
 
 /// What the bar shows besides the player's state.
@@ -62,7 +63,7 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
     if flat(
         ui,
         slot(&mut x, SMALL),
-        tr!("Open a file (Ctrl+O)", "Открыть файл (Ctrl+O)"),
+        &with_key(tr!("Open a file", "Открыть файл"), Cmd::Open),
         true,
         |p, o, c, _| icons::eject(p, o, s, c),
     )
@@ -111,7 +112,7 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
     if flat(
         ui,
         slot(&mut x, SMALL),
-        tr!("Settings (F5)", "Настройки (F5)"),
+        &with_key(tr!("Settings", "Настройки"), Cmd::Settings),
         true,
         |p, o, c, fill| icons::gear(p, o, s, c, fill),
     )
@@ -119,8 +120,11 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
     {
         out.push(Cmd::Settings);
     }
-    let list_tip = tr!("Playlist (L)", "Список воспроизведения (L)");
-    let list = flat(ui, slot(&mut x, SMALL), list_tip, true, |p, o, c, _| {
+    let list_tip = with_key(
+        tr!("Playlist", "Список воспроизведения"),
+        Cmd::TogglePlaylist,
+    );
+    let list = flat(ui, slot(&mut x, SMALL), &list_tip, true, |p, o, c, _| {
         icons::list(p, o, s, c)
     });
     if bar.playlist_visible {
@@ -202,11 +206,12 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
             (state.volume / 100.0).min(1.0)
         };
         let tip = if state.mute {
-            tr!("Sound on (M)", "Включить звук (M)")
+            tr!("Sound on", "Включить звук")
         } else {
-            tr!("Mute (M)", "Без звука (M)")
+            tr!("Mute", "Без звука")
         };
-        if flat(ui, speaker, tip, true, |p, o, c, _| {
+        let tip = with_key(tip, Cmd::ToggleMute);
+        if flat(ui, speaker, &tip, true, |p, o, c, _| {
             icons::speaker(p, o, s, c, level, state.mute)
         })
         .clicked()
@@ -243,9 +248,9 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
         let panel = flat(
             ui,
             panel_rect,
-            tr!(
-                "Video, sound and subtitles (U)",
-                "Видео, звук и субтитры (U)"
+            &with_key(
+                tr!("Video, sound and subtitles", "Видео, звук и субтитры"),
+                Cmd::ToggleVideoPanel,
             ),
             true,
             |p, o, c, _| icons::sliders(p, o, s, c),
@@ -327,11 +332,11 @@ fn play_button(ui: &mut Ui, rect: Rect, state: &State) -> Response {
         icons::play(painter, rect.center(), 9.0, style::TEXT_BRIGHT);
     }
     let tip = if playing {
-        tr!("Pause (Space)", "Пауза (Пробел)")
+        tr!("Pause", "Пауза")
     } else {
-        tr!("Play (Space)", "Воспроизвести (Пробел)")
+        tr!("Play", "Воспроизвести")
     };
-    response.on_hover_text(tip)
+    response.on_hover_text(with_key(tip, Cmd::TogglePause))
 }
 
 /// The seek bar: a click or a drag moves there (on a keyframe; the exact

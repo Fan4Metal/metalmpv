@@ -22,6 +22,7 @@ use crate::cover::Cover;
 use crate::format::Osd;
 use crate::frameless;
 use crate::input::{self, Cmd};
+use crate::keymap;
 use crate::mpv::Mpv;
 use crate::player::{Happened, Player, Seek, State};
 use crate::playlist::{self, Playlist, Repeat};
@@ -153,6 +154,7 @@ impl App {
             .unwrap_or_default();
         // Before any text is made.
         crate::i18n::set_lang(settings.language.resolve());
+        crate::keymap::publish(&settings.keys);
         let osd = osd_font(&settings);
         if osd.is_none() {
             // Not chosen, or its file is gone: the interface's font.
@@ -1605,15 +1607,16 @@ impl App {
             13.0,
             style::TEXT_WEAK,
         );
-        let hint = layout(
+        let open = keymap::shortcut(Cmd::Open);
+        let hint = if open.is_empty() {
+            tr!("Drop a file here", "Перетащите файл сюда").to_owned()
+        } else {
             tr!(
-                "Drop a file here, or open one with Ctrl+O",
-                "Перетащите файл сюда или откройте его через Ctrl+O"
+                format!("Drop a file here, or open one with {open}"),
+                format!("Перетащите файл сюда или откройте его через {open}")
             )
-            .to_owned(),
-            14.0,
-            style::TEXT,
-        );
+        };
+        let hint = layout(hint, 14.0, style::TEXT);
         const GAPS: [f32; 3] = [14.0, 2.0, 18.0];
         let base =
             size + GAPS.iter().sum::<f32>() + name.size().y + version.size().y + hint.size().y;
@@ -1884,8 +1887,8 @@ fn context_menu(
 ) {
     // Gathered apart: `item` holds `cmds` until its last use.
     let mut menu_cmds = Vec::new();
-    let mut item = |ui: &mut egui::Ui, text: String, shortcut: &str, cmd: Cmd| {
-        let button = egui::Button::new(text).shortcut_text(shortcut);
+    let mut item = |ui: &mut egui::Ui, text: String, cmd: Cmd| {
+        let button = egui::Button::new(text).shortcut_text(keymap::shortcut(cmd));
         if ui.add(button).clicked() {
             cmds.push(cmd);
             ui.close();
@@ -1896,41 +1899,35 @@ fn context_menu(
         item(
             ui,
             tr!("Show the interface", "Вернуть интерфейс").into(),
-            "7",
             Cmd::ToggleInterface,
         );
         ui.separator();
     }
-    item(ui, tr!("Open…", "Открыть…").into(), "Ctrl+O", Cmd::Open);
+    item(ui, tr!("Open…", "Открыть…").into(), Cmd::Open);
     item(
         ui,
         tr!("Open an address…", "Открыть адрес…").into(),
-        "Ctrl+U",
         Cmd::OpenUrl,
     );
     item(
         ui,
         tr!("File information", "Сведения о файле").into(),
-        "I",
         Cmd::ToggleInfo,
     );
     item(
         ui,
         tr!("Video, sound and subtitles…", "Видео, звук и субтитры…").into(),
-        "U",
         Cmd::ToggleVideoPanel,
     );
     item(
         ui,
         tr!("Equalizer…", "Эквалайзер…").into(),
-        "",
         Cmd::ShowEqualizer,
     );
     if video_size(state).is_some() {
         item(
             ui,
             tr!("Save the frame", "Сохранить кадр").into(),
-            "Ctrl+E",
             Cmd::SaveFrame,
         );
     }
@@ -1940,32 +1937,24 @@ fn context_menu(
     } else {
         tr!("Pause", "Пауза")
     };
-    item(ui, pause.into(), tr!("Space", "Пробел"), Cmd::TogglePause);
-    item(ui, tr!("Stop", "Стоп").into(), "", Cmd::Stop);
+    item(ui, pause.into(), Cmd::TogglePause);
+    item(ui, tr!("Stop", "Стоп").into(), Cmd::Stop);
     item(
         ui,
         tr!("Previous file", "Предыдущий файл").into(),
-        "PgUp",
         Cmd::Prev,
     );
-    item(
-        ui,
-        tr!("Next file", "Следующий файл").into(),
-        "PgDn",
-        Cmd::Next,
-    );
+    item(ui, tr!("Next file", "Следующий файл").into(), Cmd::Next);
     ui.separator();
     item(
         ui,
         tr!("Fullscreen", "Полный экран").into(),
-        "Enter",
         Cmd::ToggleFullscreen,
     );
     if !marks.bare {
         item(
             ui,
             tr!("Only the picture", "Только видео").into(),
-            "7",
             Cmd::ToggleInterface,
         );
     }
@@ -1979,24 +1968,19 @@ fn context_menu(
     } else {
         tr!("Show the playlist", "Показать список")
     };
-    item(ui, list.into(), "L", Cmd::TogglePlaylist);
+    item(ui, list.into(), Cmd::TogglePlaylist);
     let mute = if state.mute {
         tr!("Sound on", "Включить звук")
     } else {
         tr!("Mute", "Без звука")
     };
-    item(ui, mute.into(), "M", Cmd::ToggleMute);
+    item(ui, mute.into(), Cmd::ToggleMute);
     ui.separator();
     crate::ui::tracks::menus(ui, &state.tracks, &mut menu_cmds);
     chapters_menu(ui, state, chapter_marks, &mut menu_cmds);
     ui.separator();
-    item(
-        ui,
-        tr!("Settings…", "Настройки…").into(),
-        "F5",
-        Cmd::Settings,
-    );
-    item(ui, tr!("About", "О программе").into(), "F1", Cmd::About);
+    item(ui, tr!("Settings…", "Настройки…").into(), Cmd::Settings);
+    item(ui, tr!("About", "О программе").into(), Cmd::About);
     cmds.extend(menu_cmds);
 }
 
@@ -2020,9 +2004,21 @@ fn on_top_menu(ui: &mut egui::Ui, current: OnTop, out: &mut Vec<Cmd>) {
                 ui.close();
             }
         }
-        ui.separator();
-        ui.weak(tr!("Ctrl+T switches it", "Ctrl+T переключает"));
+        switches(ui, Cmd::CycleOnTop);
     });
+}
+
+/// The line under a submenu that names the key cycling through it, if
+/// it has one.
+fn switches(ui: &mut egui::Ui, cmd: Cmd) {
+    let key = keymap::shortcut(cmd);
+    if !key.is_empty() {
+        ui.separator();
+        ui.weak(tr!(
+            format!("{key} switches it"),
+            format!("{key} переключает")
+        ));
+    }
 }
 
 /// Repeat off, the file or the list, the current marked.
@@ -2034,8 +2030,7 @@ fn repeat_menu(ui: &mut egui::Ui, current: Repeat, out: &mut Vec<Cmd>) {
                 ui.close();
             }
         }
-        ui.separator();
-        ui.weak(tr!("R switches it", "R переключает"));
+        switches(ui, Cmd::CycleRepeat);
     });
 }
 
@@ -2045,7 +2040,11 @@ fn speed_menu(ui: &mut egui::Ui, state: &State, out: &mut Vec<Cmd>) {
     ui.menu_button(tr!("Speed", "Скорость"), |ui| {
         for speed in crate::format::SPEEDS {
             let text = crate::format::speed_in(crate::i18n::lang(), speed);
-            let key = if speed == 1.0 { "Z" } else { "" };
+            let key = if speed == 1.0 {
+                keymap::shortcut(Cmd::Speed(0))
+            } else {
+                String::new()
+            };
             let button = egui::Button::new(text)
                 .shortcut_text(key)
                 .selected((state.speed - speed).abs() < 1e-9);
@@ -2054,8 +2053,20 @@ fn speed_menu(ui: &mut egui::Ui, state: &State, out: &mut Vec<Cmd>) {
                 ui.close();
             }
         }
-        ui.separator();
-        ui.weak(tr!("C faster, X slower", "C быстрее, X медленнее"));
+        let faster = keymap::shortcut(Cmd::Speed(1));
+        let slower = keymap::shortcut(Cmd::Speed(-1));
+        if !faster.is_empty() || !slower.is_empty() {
+            ui.separator();
+            let line = match (faster.is_empty(), slower.is_empty()) {
+                (false, false) => tr!(
+                    format!("{faster} faster, {slower} slower"),
+                    format!("{faster} быстрее, {slower} медленнее")
+                ),
+                (false, true) => tr!(format!("{faster} faster"), format!("{faster} быстрее")),
+                _ => tr!(format!("{slower} slower"), format!("{slower} медленнее")),
+            };
+            ui.weak(line);
+        }
     });
 }
 
@@ -2086,24 +2097,18 @@ fn aspect_menu(
 fn zoom_menu(ui: &mut egui::Ui, state: &State, fill: bool, out: &mut Vec<Cmd>) {
     ui.menu_button(tr!("Zoom", "Масштаб"), |ui| {
         let video = video_size(state).is_some();
-        let mut item = |ui: &mut egui::Ui, text: &str, key: &str, selected: bool, cmd: Cmd| {
+        let mut item = |ui: &mut egui::Ui, text: &str, selected: bool, cmd: Cmd| {
             let button = egui::Button::new(text)
-                .shortcut_text(key)
+                .shortcut_text(keymap::shortcut(cmd))
                 .selected(selected);
             if ui.add_enabled(video, button).clicked() {
                 out.push(cmd);
                 ui.close();
             }
         };
-        for (n, scale) in [0.5, 1.0, 1.5, 2.0].into_iter().enumerate() {
+        for scale in [0.5, 1.0, 1.5, 2.0] {
             let text = format!("{:.0}%", scale * 100.0);
-            item(
-                ui,
-                &text,
-                &(n + 1).to_string(),
-                false,
-                Cmd::WindowScale(scale),
-            );
+            item(ui, &text, false, Cmd::WindowScale(scale));
         }
         ui.separator();
         item(
@@ -2112,14 +2117,12 @@ fn zoom_menu(ui: &mut egui::Ui, state: &State, fill: bool, out: &mut Vec<Cmd>) {
                 "Largest window without black bars",
                 "Развернуть без чёрных полос"
             ),
-            "5",
             false,
             Cmd::FitScreen,
         );
         item(
             ui,
             tr!("Window to the picture", "Окно по размеру картинки"),
-            tr!("`", "Ё"),
             false,
             Cmd::FitWindow,
         );
@@ -2130,7 +2133,6 @@ fn zoom_menu(ui: &mut egui::Ui, state: &State, fill: bool, out: &mut Vec<Cmd>) {
                 "Fullscreen without black bars (crops)",
                 "Полный экран без чёрных полос (с обрезкой)"
             ),
-            "6",
             fill,
             Cmd::ToggleFill,
         );
@@ -2242,7 +2244,7 @@ impl eframe::App for App {
             if let Some(id) = ctx.memory(|m| m.focused()) {
                 ctx.memory_mut(|m| m.surrender_focus(id));
             }
-            cmds.extend(input::keys(&ctx));
+            cmds.extend(input::keys(&ctx, &self.settings.keys));
         }
 
         if !fullscreen && !maximized {
@@ -2329,6 +2331,9 @@ impl eframe::App for App {
             state.hwdec.as_deref(),
             &state.audio_devices,
         );
+        if changed.keys {
+            crate::keymap::publish(&self.settings.keys);
+        }
         if changed.hwdec
             && let Some(player) = &mut self.player
         {

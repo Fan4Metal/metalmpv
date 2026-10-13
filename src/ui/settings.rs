@@ -14,6 +14,7 @@ use super::style;
 use crate::audio::{BOOSTS, Channels, Device, Passthrough, boost_label};
 use crate::fonts::Family;
 use crate::i18n::LangChoice;
+use crate::keymap::{Action, Chord, Group, Keymap};
 use crate::settings::{MAX_STEP, MAX_TRANSPARENCY, OSD_SCALE_RANGE, OnTop, Settings};
 use crate::update::{Status, Updates, release_url, version_of};
 
@@ -95,8 +96,8 @@ impl Page {
                 "Проверка выхода новой версии на GitHub."
             ),
             Page::Keys => tr!(
-                "The keys of the player (for reference; they cannot be changed).",
-                "Клавиши плеера (для справки; изменить их нельзя)."
+                "The keys of the player and what they do.",
+                "Клавиши плеера и что они делают."
             ),
         }
     }
@@ -110,6 +111,14 @@ pub struct SettingsDialog {
     /// The category shown; kept while the program runs.
     page: Page,
     file_types: super::assoc::FileTypesPage,
+    /// A key being chosen on the Keys page: the action, and which of its
+    /// keys it replaces (`None`: one more).
+    capture: Option<(Action, Option<usize>)>,
+    /// The press that gave the choice up: its click must not start it
+    /// again.
+    gave_up: Option<(Action, Option<usize>)>,
+    /// The last key chosen and the action that lost it.
+    taken: Option<(Chord, Action)>,
 }
 
 /// What changed in the window this frame and has to be applied.
@@ -125,6 +134,8 @@ pub struct Changed {
     pub volume_max: bool,
     pub normalize: bool,
     pub passthrough: bool,
+    /// The keys (`keymap::publish`).
+    pub keys: bool,
 }
 
 impl SettingsDialog {
@@ -149,6 +160,10 @@ impl SettingsDialog {
             return changed;
         }
         let fresh = std::mem::take(&mut self.fresh);
+        if self.page != Page::Keys {
+            self.capture = None;
+        }
+        self.capture_key(ctx, &mut settings.keys, &mut changed);
         let mut close = false;
         let modal = egui::Modal::new(egui::Id::new("settings"))
             .frame(
@@ -208,6 +223,8 @@ impl SettingsDialog {
                     .clicked()
                 {
                     reset(settings, updates, &mut changed);
+                    self.capture = None;
+                    self.taken = None;
                 }
                 close |= child(ui, close_rect)
                     .add_sized(
@@ -258,12 +275,17 @@ impl SettingsDialog {
                                 }
                                 Page::Text => text(ui, settings, &mut changed),
                                 Page::Files => self.file_types.show(ui),
-                                Page::Keys => keys(ui),
+                                Page::Keys => self.keys_page(ui, &mut settings.keys, &mut changed),
                             });
                     });
             });
         if close || (!fresh && modal.should_close()) {
             self.open = false;
+            self.capture = None;
+            self.taken = None;
+        }
+        if !ctx.input(|i| i.pointer.any_down()) {
+            self.gave_up = None;
         }
         changed
     }
@@ -1144,214 +1166,232 @@ fn update_status(ui: &mut Ui, updates: &Updates) {
     }
 }
 
-/// The keys, as in the README.
-fn keys(ui: &mut Ui) {
-    let rows: [(&str, &str); 34] = [
-        (
-            tr!("Space", "Пробел"),
-            tr!("Play / pause", "Воспроизведение / пауза"),
-        ),
-        (
-            "← / →",
-            tr!(
-                "Seek by the short step, keyframes; also the mouse's back and forward buttons",
-                "Перемотка на короткий шаг, по ключевым кадрам; также кнопки мыши «назад» и «вперёд»"
-            ),
-        ),
-        (
-            "Ctrl+← / →",
-            tr!(
-                "Seek by the long step, keyframes",
-                "Перемотка на длинный шаг, по ключевым кадрам"
-            ),
-        ),
-        (
-            "Shift+← / →",
-            tr!("Seek by 1 s, exact", "Перемотка на 1 с, точно"),
-        ),
-        (
-            ", / .  (D / F)",
-            tr!("Previous / next frame", "Предыдущий / следующий кадр"),
-        ),
-        (
-            "Home / End",
-            tr!("Start / end of the file", "Начало / конец файла"),
-        ),
-        (
-            tr!("↑ / ↓, wheel", "↑ / ↓, колесо"),
-            tr!("Volume", "Громкость"),
-        ),
-        ("M", tr!("Mute", "Без звука")),
-        (
-            "PgUp / PgDn",
-            tr!("Previous / next file", "Предыдущий / следующий файл"),
-        ),
-        (
-            tr!("Enter, F11, double click", "Enter, F11, двойной щелчок"),
-            tr!("Fullscreen", "Полный экран"),
-        ),
-        (
-            "1 / 2 / 3 / 4",
-            tr!(
-                "Window for 50% / 100% / 150% / 200% of the video",
-                "Окно под 50% / 100% / 150% / 200% размера видео"
-            ),
-        ),
-        (
-            "5",
-            tr!(
-                "Largest window without black bars",
-                "Развернуть без чёрных полос"
-            ),
-        ),
-        (
-            tr!("`", "Ё"),
-            tr!("Window to the picture", "Окно по размеру картинки"),
-        ),
-        (
-            "6",
-            tr!(
-                "Fullscreen without black bars (crops) / with them",
-                "Полный экран без чёрных полос (с обрезкой) / с полосами"
-            ),
-        ),
-        (
-            "7",
-            tr!(
-                "Only the picture / the interface again",
-                "Только видео / вернуть интерфейс"
-            ),
-        ),
-        (
-            "Esc",
-            tr!(
-                "Leave fullscreen, then bring the interface back; in a window, close the program",
-                "Выйти из полноэкранного режима, затем вернуть интерфейс; в окне — закрыть программу"
-            ),
-        ),
-        (
-            "T",
-            tr!("Audio and subtitles window", "Окно звука и субтитров"),
-        ),
-        ("A", tr!("Next audio track", "Следующая звуковая дорожка")),
-        ("I", tr!("File information", "Сведения о файле")),
-        (
-            "U, F7",
-            tr!(
-                "Video, sound and subtitles panel: colour, rotation, equalizer, subtitles",
-                "Панель видео, звука и субтитров: цвет, поворот, эквалайзер, субтитры"
-            ),
-        ),
-        ("Ctrl+E", tr!("Save the frame", "Сохранить кадр")),
-        (
-            "O",
-            tr!(
-                "Position and chapter on the screen",
-                "Позиция и глава на экране"
-            ),
-        ),
-        (
-            "S / J",
-            tr!(
-                "Next subtitles (then off)",
-                "Следующие субтитры (затем выкл.)"
-            ),
-        ),
-        ("V", tr!("Subtitles off / on", "Субтитры выкл. / вкл.")),
-        (
-            "Ctrl+T",
-            tr!(
-                "Over the other windows: never, always, while playing",
-                "Поверх других окон: никогда, всегда, во время воспроизведения"
-            ),
-        ),
-        (
-            "R",
-            tr!(
-                "Repeat: off, the file, the list",
-                "Повтор: выключен, файл, список"
-            ),
-        ),
-        (
-            "C / X / Z",
-            tr!(
-                "Faster / slower / normal speed",
-                "Быстрее / медленнее / обычная скорость"
-            ),
-        ),
-        (
-            "Shift+. / Shift+, / Shift+0",
-            tr!(
-                "Subtitles later / earlier by 100 ms / in sync",
-                "Субтитры позже / раньше на 100 мс / как было"
-            ),
-        ),
-        (
-            "Ctrl+= / Ctrl+- / Ctrl+0",
-            tr!(
-                "Sound later / earlier by 100 ms / in sync",
-                "Звук позже / раньше на 100 мс / как было"
-            ),
-        ),
-        ("Ctrl+O", tr!("Open files", "Открыть файлы")),
-        (
-            "Ctrl+U",
-            tr!("Open an address (a stream)", "Открыть адрес (поток)"),
-        ),
-        (
-            tr!("L, middle click", "L, средний щелчок"),
-            tr!("Show or hide the playlist", "Показать или скрыть список"),
-        ),
-        (
-            "Delete",
-            tr!(
-                "Remove the selected playlist entry",
-                "Убрать выбранный файл из списка"
-            ),
-        ),
-        (
-            "F5 / F1",
-            tr!("Settings / About", "Настройки / О программе"),
-        ),
-    ];
-    ui.add_space(16.0);
-    card(ui, |ui| {
-        for (i, (key, action)) in rows.into_iter().enumerate() {
-            if i > 0 {
-                divider(ui);
+impl SettingsDialog {
+    /// The next press while a key is being chosen: a key with its
+    /// modifiers, or a side button of the mouse; Esc or another click
+    /// gives up. The keys pressed meanwhile reach no widget and do not
+    /// close the window.
+    fn capture_key(&mut self, ctx: &egui::Context, keys: &mut Keymap, changed: &mut Changed) {
+        let Some((action, slot)) = self.capture else {
+            return;
+        };
+        let events = ctx.input(|i| i.events.clone());
+        for event in &events {
+            match event {
+                egui::Event::Key {
+                    key: egui::Key::Escape,
+                    pressed: true,
+                    ..
+                } => {
+                    self.capture = None;
+                    break;
+                }
+                egui::Event::PointerButton {
+                    button,
+                    pressed: true,
+                    ..
+                } if Chord::of_button(*button, egui::Modifiers::NONE).is_none() => {
+                    self.gave_up = self.capture.take();
+                    break;
+                }
+                _ => {}
             }
-            key_row(ui, key, action);
+            if let Some((chord, false)) = Chord::of_event(event) {
+                self.taken = keys.assign(action, slot, chord).map(|other| (chord, other));
+                self.capture = None;
+                changed.keys = true;
+                break;
+            }
         }
-    });
+        ctx.input_mut(|i| {
+            i.events.retain(|e| {
+                !matches!(
+                    e,
+                    egui::Event::Key { .. }
+                        | egui::Event::Text(_)
+                        | egui::Event::Copy
+                        | egui::Event::Cut
+                        | egui::Event::Paste(_)
+                )
+            });
+        });
+    }
+
+    /// The keys page: every action with its keys; a click on a key waits
+    /// for the one to take its place, `+` for one more, the cross removes
+    /// it.
+    fn keys_page(&mut self, ui: &mut Ui, keys: &mut Keymap, changed: &mut Changed) {
+        section(ui, tr!("Choosing keys", "Выбор клавиш"), |ui| {
+            row(
+                ui,
+                tr!("Default keys", "Клавиши по умолчанию"),
+                Some(tr!(
+                    "A click on a key waits for another to take its place, + for one more; Esc gives up. A key another action had is taken from it.",
+                    "Щелчок по клавише ждёт нажатия новой на её место, «+» — ещё одной; Esc — отмена. Клавиша другого действия переходит к этому."
+                )),
+                150.0,
+                |ui| {
+                    if ui
+                        .add_enabled(
+                            !keys.is_default(),
+                            egui::Button::new(tr!("Reset the keys", "Сбросить клавиши")),
+                        )
+                        .clicked()
+                    {
+                        *keys = Keymap::default();
+                        self.capture = None;
+                        self.taken = None;
+                        changed.keys = true;
+                    }
+                },
+            );
+        });
+        if let Some((chord, other)) = self.taken {
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new(tr!(
+                    format!("{} no longer does “{}”.", chord.label(), other.name()),
+                    format!("{} больше не делает «{}».", chord.label(), other.name())
+                ))
+                .size(12.5)
+                .color(style::OSD),
+            );
+        }
+        for group in Group::ALL {
+            section(ui, group.title(), |ui| {
+                let actions = Action::ALL.iter().filter(|a| a.group() == group);
+                for (i, &action) in actions.enumerate() {
+                    if i > 0 {
+                        divider(ui);
+                    }
+                    row(ui, action.name(), None, KEYS_WIDTH, |ui| {
+                        self.key_chips(ui, keys, action, changed);
+                    });
+                }
+            });
+        }
+        note(
+            ui,
+            tr!(
+                "The mouse wheel changes the volume, a double click switches fullscreen, a middle click shows or hides the playlist; the media keys play, pause, stop and change files. Ctrl+V cannot be chosen.",
+                "Колесо мыши меняет громкость, двойной щелчок переключает полноэкранный режим, средний щелчок показывает или скрывает список; мультимедийные клавиши запускают, приостанавливают, останавливают и переключают файлы. Ctrl+V выбрать нельзя."
+            ),
+        );
+    }
+
+    /// The keys of `action` in a right-to-left layout: `+` first, then the
+    /// keys from the last.
+    fn key_chips(&mut self, ui: &mut Ui, keys: &mut Keymap, action: Action, changed: &mut Changed) {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        let add = ui
+            .add(egui::Button::new("+").min_size(vec2(26.0, KEY_HEIGHT)))
+            .on_hover_text(tr!("Add a key", "Добавить клавишу"));
+        if add.clicked() && self.gave_up != Some((action, None)) {
+            self.capture = Some((action, None));
+            self.taken = None;
+        }
+        if self.capture == Some((action, None)) {
+            key_chip(ui, (action, usize::MAX), &waiting(), true);
+        }
+        let chords = keys.chords(action).to_vec();
+        for (slot, chord) in chords.iter().enumerate().rev() {
+            let capturing = self.capture == Some((action, Some(slot)));
+            let label = if capturing { waiting() } else { chord.label() };
+            match key_chip(ui, (action, slot), &label, capturing) {
+                Some(Chip::Change) if self.gave_up != Some((action, Some(slot))) => {
+                    self.capture = Some((action, Some(slot)));
+                    self.taken = None;
+                }
+                Some(Chip::Remove) => {
+                    keys.remove(action, slot);
+                    self.capture = None;
+                    self.taken = None;
+                    changed.keys = true;
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
-/// A row of the key list: the key on a keycap ground, the action after it,
-/// wrapped (by hand: a Grid sizes its columns to their content and would
-/// not wrap a long action).
-fn key_row(ui: &mut Ui, key: &str, action: &str) {
-    const KEY_WIDTH: f32 = 210.0;
-    const PAD: f32 = 6.0;
-    let width = ui.available_width();
-    let key = ui.painter().layout_no_wrap(
-        key.to_owned(),
+/// The width of the keys of a row.
+const KEYS_WIDTH: f32 = 300.0;
+/// The height of a key.
+const KEY_HEIGHT: f32 = 24.0;
+/// A key's ground under the pointer.
+const KEY_HOVER: Color32 = Color32::from_rgb(0x48, 0x4d, 0x58);
+
+/// What a key on the keys page was clicked for.
+enum Chip {
+    Change,
+    Remove,
+}
+
+/// The label of a key waiting for a press.
+fn waiting() -> String {
+    tr!("Press a key…", "Нажмите клавишу…").to_owned()
+}
+
+/// A key on a keycap ground with a cross that removes it; while it waits
+/// for a press, in the accent colour without the cross.
+fn key_chip(ui: &mut Ui, id: (Action, usize), label: &str, waiting: bool) -> Option<Chip> {
+    const CROSS: f32 = 18.0;
+    let text = ui.painter().layout_no_wrap(
+        label.to_owned(),
         FontId::proportional(13.0),
         style::TEXT_BRIGHT,
     );
-    let action = ui.painter().layout(
-        action.to_owned(),
-        FontId::proportional(14.0),
-        style::TEXT,
-        width - KEY_WIDTH,
-    );
-    let cap = key.size() + vec2(16.0, 6.0);
-    let height = cap.y.max(action.size().y) + 2.0 * PAD;
-    let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
-    let cap = Rect::from_min_size(pos2(rect.left(), rect.center().y - cap.y / 2.0), cap);
+    let cross_width = if waiting { 0.0 } else { CROSS };
+    let size = vec2(text.size().x + 18.0 + cross_width, KEY_HEIGHT);
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    let key_rect = Rect::from_min_max(rect.min, pos2(rect.right() - cross_width, rect.bottom()));
+    let id = ui.id().with(("key_chip", id));
+    let key = ui
+        .interact(key_rect, id, Sense::CLICK)
+        .on_hover_text(if waiting {
+            tr!("Esc or a click gives up", "Esc или щелчок — отмена")
+        } else {
+            tr!("Choose another key", "Выбрать другую клавишу")
+        });
+    let cross = (!waiting).then(|| {
+        let r = Rect::from_min_max(pos2(key_rect.right(), rect.top()), rect.max);
+        ui.interact(r, id.with("remove"), Sense::CLICK)
+            .on_hover_text(tr!("Remove the key", "Убрать клавишу"))
+    });
+    let hovered = key.hovered() || cross.as_ref().is_some_and(Response::hovered);
+    let fill = if waiting {
+        style::ACCENT
+    } else if hovered {
+        KEY_HOVER
+    } else {
+        style::KEY_BG
+    };
     let painter = ui.painter();
-    painter.rect_filled(cap, 5.0, style::KEY_BG);
-    painter.galley(cap.min + vec2(8.0, 3.0), key, style::TEXT_BRIGHT);
-    let y = rect.center().y - action.size().y / 2.0;
-    painter.galley(pos2(rect.left() + KEY_WIDTH, y), action, style::TEXT);
+    painter.rect_filled(rect, 5.0, fill);
+    painter.galley(
+        pos2(rect.left() + 9.0, rect.center().y - text.size().y / 2.0),
+        text,
+        style::TEXT_BRIGHT,
+    );
+    if let Some(cross) = &cross {
+        let c = if cross.hovered() {
+            style::TEXT_BRIGHT
+        } else {
+            style::TEXT_WEAK
+        };
+        let o = pos2(cross.rect.center().x - 2.0, cross.rect.center().y);
+        let d = 3.5;
+        let stroke = Stroke::new(1.4, c);
+        painter.line_segment([o + vec2(-d, -d), o + vec2(d, d)], stroke);
+        painter.line_segment([o + vec2(-d, d), o + vec2(d, -d)], stroke);
+    }
+    if cross.is_some_and(|c| c.clicked()) {
+        Some(Chip::Remove)
+    } else if key.clicked() {
+        Some(Chip::Change)
+    } else {
+        None
+    }
 }
 
 /// A seek step in seconds.
@@ -1392,6 +1432,8 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.panels_pinned = d.panels_pinned;
     settings.snap_to_centre = d.snap_to_centre;
     settings.on_top = d.on_top;
+    changed.keys |= settings.keys != d.keys;
+    settings.keys = d.keys;
     changed.audio_channels |= settings.audio_channels != d.audio_channels;
     changed.volume_max |= settings.volume_max != d.volume_max;
     changed.normalize |= settings.normalize != d.normalize;

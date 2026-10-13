@@ -13,6 +13,7 @@ use std::sync::OnceLock;
 use crate::audio::{self, Channels, Passthrough};
 use crate::format::TimeMode;
 use crate::i18n::LangChoice;
+use crate::keymap::Keymap;
 use crate::playlist::Repeat;
 use crate::sub_style::{self, SubStyle};
 use crate::tracks::Likeness;
@@ -38,6 +39,7 @@ const OLD_INFO_PINNED: &str = "info_pinned";
 const SNAP_TO_CENTRE: &str = "snap_to_centre";
 const REPEAT: &str = "repeat";
 const ON_TOP: &str = "on_top";
+const KEYS: &str = "keys";
 
 /// When the window stays over the other windows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -218,6 +220,8 @@ pub struct Settings {
     pub repeat: Repeat,
     /// When the window stays over the other windows (`Ctrl+T`).
     pub on_top: OnTop,
+    /// The keys, as changed on the Keys page (`keymap.rs`).
+    pub keys: Keymap,
     /// The output device as mpv names it; empty for Windows' default.
     pub audio_device: String,
     pub audio_channels: Channels,
@@ -281,6 +285,7 @@ impl Default for Settings {
             snap_to_centre: true,
             repeat: Repeat::Off,
             on_top: OnTop::Never,
+            keys: Keymap::default(),
             audio_device: String::new(),
             audio_channels: Channels::Auto,
             volume_max: 100.0,
@@ -376,6 +381,7 @@ impl Settings {
                 .as_deref()
                 .and_then(OnTop::from_name)
                 .unwrap_or(d.on_top),
+            keys: get(KEYS).as_deref().map_or(d.keys, Keymap::from_setting),
             audio_device: get(AUDIO_DEVICE).unwrap_or_default(),
             audio_channels: get(AUDIO_CHANNELS)
                 .as_deref()
@@ -484,6 +490,7 @@ impl Settings {
         storage.set_string(SNAP_TO_CENTRE, self.snap_to_centre.to_string());
         storage.set_string(REPEAT, self.repeat.name().into());
         storage.set_string(ON_TOP, self.on_top.name().into());
+        storage.set_string(KEYS, self.keys.to_setting());
         storage.set_string(AUDIO_DEVICE, self.audio_device.clone());
         storage.set_string(AUDIO_CHANNELS, self.audio_channels.name().into());
         storage.set_string(VOLUME_MAX, format!("{:.0}", self.volume_max));
@@ -582,6 +589,7 @@ mod tests {
             snap_to_centre: false,
             repeat: Repeat::All,
             on_top: OnTop::Playing,
+            keys: Keymap::from_setting("pause\tF\nstop\tSpace Ctrl+MouseBack\nmute\t"),
             audio_device: "wasapi/{0.0.0.00000000}.{abc}".into(),
             audio_channels: Channels::Surround51,
             volume_max: 150.0,

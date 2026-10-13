@@ -22,6 +22,7 @@ mod icon;
 mod info;
 mod input;
 mod instance;
+mod keymap;
 mod logos;
 mod mpv;
 mod player;

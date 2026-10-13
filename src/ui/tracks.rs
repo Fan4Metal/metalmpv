@@ -248,8 +248,12 @@ pub fn summary(all: &[Track]) -> String {
     let sub = tracks::selected(all, Kind::Sub)
         .map(|t| t.name_in(l, t.number(all)))
         .unwrap_or_else(|| tr!("off", "выкл.").into());
+    let title = crate::keymap::with_key(
+        tr!("Audio and subtitles", "Звук и субтитры"),
+        Cmd::ToggleTracks,
+    );
     tr!(
-        format!("Audio and subtitles (T)\nAudio: {audio} · Subtitles: {sub}"),
-        format!("Звук и субтитры (T)\nЗвук: {audio} · Субтитры: {sub}")
+        format!("{title}\nAudio: {audio} · Subtitles: {sub}"),
+        format!("{title}\nЗвук: {audio} · Субтитры: {sub}")
     )
 }
