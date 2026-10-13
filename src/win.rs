@@ -314,6 +314,19 @@ pub fn work_area(hwnd: isize) -> Option<[i32; 4]> {
     Some([r.left, r.top, r.right, r.bottom])
 }
 
+/// The window's rectangle on the screen, in pixels.
+pub fn window_rect(hwnd: isize) -> Option<[i32; 4]> {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
+    let mut r = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    (unsafe { GetWindowRect(hwnd as _, &mut r) } != 0).then_some([r.left, r.top, r.right, r.bottom])
+}
+
 /// Restore a maximized window; the window's rectangle and the size of its
 /// client area, in pixels.
 pub fn restored_rects(hwnd: isize) -> Option<([i32; 4], [i32; 2])> {

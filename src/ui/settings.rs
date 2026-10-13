@@ -1146,7 +1146,7 @@ fn update_status(ui: &mut Ui, updates: &Updates) {
 
 /// The keys, as in the README.
 fn keys(ui: &mut Ui) {
-    let rows: [(&str, &str); 33] = [
+    let rows: [(&str, &str); 34] = [
         (
             tr!("Space", "Пробел"),
             tr!("Play / pause", "Воспроизведение / пауза"),
@@ -1216,10 +1216,17 @@ fn keys(ui: &mut Ui) {
             ),
         ),
         (
+            "7",
+            tr!(
+                "Only the picture / the interface again",
+                "Только видео / вернуть интерфейс"
+            ),
+        ),
+        (
             "Esc",
             tr!(
-                "Leave fullscreen; in a window, close the program",
-                "Выйти из полноэкранного режима; в окне — закрыть программу"
+                "Leave fullscreen, then bring the interface back; in a window, close the program",
+                "Выйти из полноэкранного режима, затем вернуть интерфейс; в окне — закрыть программу"
             ),
         ),
         (

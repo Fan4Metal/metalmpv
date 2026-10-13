@@ -109,6 +109,12 @@ pub struct App {
     /// Fullscreen with the picture filling the screen, cropped (`6`,
     /// mpv's `panscan`); ends with fullscreen.
     fill: bool,
+    /// Only the picture: no title row, control bar or playlist (`7`).
+    bare: bool,
+    /// What hiding them took off the window's sides, in pixels (left, top,
+    /// right, bottom), given back when they return; none when the window
+    /// was maximized or in fullscreen, which keep their size.
+    bare_insets: Option<[i32; 4]>,
     /// The right button went down on the picture: the context menu opens
     /// when it is let go.
     menu_press: bool,
@@ -248,6 +254,8 @@ impl App {
             pick_tracks: false,
             pick_ready: false,
             fill: false,
+            bare: false,
+            bare_insets: None,
             menu_press: false,
             picture_area: Rect::NOTHING,
             chrome: egui::Vec2::ZERO,
@@ -868,6 +876,8 @@ impl App {
                     self.video_panel.open = false;
                 } else if frameless::is_fullscreen(ctx) {
                     self.set_fullscreen(ctx, frame, false);
+                } else if self.bare {
+                    self.set_bare(ctx, false);
                 } else {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
@@ -1020,6 +1030,7 @@ impl App {
                     (aspect != crate::adjust::Aspect::Auto).then(|| aspect.label().to_owned()),
                 ));
             }
+            Cmd::ToggleInterface => self.set_bare(ctx, !self.bare),
             Cmd::ToggleFill => {
                 if self.fill {
                     // Fullscreen stays, with the black bars.
@@ -1180,6 +1191,60 @@ impl App {
     /// picture too big for it is scaled down); a maximized window is
     /// restored first. In fullscreen, fullscreen ends and the window is
     /// sized in the next frame (`pending_picture`).
+    /// Hide the title row, the control bar and the playlist (`on`), or
+    /// show them again. The picture keeps its place and size on the screen:
+    /// the window loses what they took and gets it back (not while
+    /// maximized or in fullscreen).
+    fn set_bare(&mut self, ctx: &egui::Context, on: bool) {
+        if self.bare == on {
+            return;
+        }
+        self.bare = on;
+        let windowed = !frameless::is_fullscreen(ctx) && !frameless::is_maximized(ctx);
+        let insets = if on { None } else { self.bare_insets.take() };
+        let (Some(hwnd), true) = (self.hwnd, windowed) else {
+            return;
+        };
+        let Some(window) = win::window_rect(hwnd) else {
+            return;
+        };
+        let rect = if on {
+            let ppp = ctx.pixels_per_point();
+            let (content, picture) = (ctx.content_rect(), self.picture_area);
+            let taken = [
+                picture.left() - content.left(),
+                picture.top() - content.top(),
+                content.right() - picture.right(),
+                content.bottom() - picture.bottom(),
+            ]
+            .map(|v| (v * ppp).round().max(0.0) as i32);
+            self.bare_insets = Some(taken);
+            [
+                window[0] + taken[0],
+                window[1] + taken[1],
+                window[2] - taken[2],
+                window[3] - taken[3],
+            ]
+        } else if let Some(i) = insets {
+            let grown = [
+                window[0] - i[0],
+                window[1] - i[1],
+                window[2] + i[2],
+                window[3] + i[3],
+            ];
+            // Kept on the work area, as a window sized for a picture is.
+            match win::work_area(hwnd) {
+                Some(work) => {
+                    sizing::placed(grown, [grown[2] - grown[0], grown[3] - grown[1]], work)
+                }
+                None => grown,
+            }
+        } else {
+            return;
+        };
+        win::set_rect(hwnd, rect);
+    }
+
     fn size_window(&mut self, ctx: &egui::Context, frame: &eframe::Frame, picture: [f64; 2]) {
         if frameless::is_fullscreen(ctx) {
             self.pending_picture = Some(picture);
@@ -1391,6 +1456,7 @@ impl App {
             (self.settings.playlist_visible, self.settings.chapter_marks);
         let marks = Marks {
             fill: self.fill,
+            bare: self.bare,
             aspect: self.adjust.aspect,
             repeat: self.settings.repeat,
             on_top: self.settings.on_top,
@@ -1825,6 +1891,16 @@ fn context_menu(
             ui.close();
         }
     };
+    if marks.bare {
+        // First, where it is found without the interface.
+        item(
+            ui,
+            tr!("Show the interface", "Вернуть интерфейс").into(),
+            "7",
+            Cmd::ToggleInterface,
+        );
+        ui.separator();
+    }
     item(ui, tr!("Open…", "Открыть…").into(), "Ctrl+O", Cmd::Open);
     item(
         ui,
@@ -1885,6 +1961,14 @@ fn context_menu(
         "Enter",
         Cmd::ToggleFullscreen,
     );
+    if !marks.bare {
+        item(
+            ui,
+            tr!("Only the picture", "Только видео").into(),
+            "7",
+            Cmd::ToggleInterface,
+        );
+    }
     zoom_menu(ui, state, marks.fill, &mut menu_cmds);
     on_top_menu(ui, marks.on_top, &mut menu_cmds);
     aspect_menu(ui, state, marks.aspect, &mut menu_cmds);
@@ -1919,6 +2003,8 @@ fn context_menu(
 /// What the context menu marks as chosen.
 struct Marks {
     fill: bool,
+    /// Only the picture is shown (`7`).
+    bare: bool,
     aspect: crate::adjust::Aspect,
     repeat: Repeat,
     on_top: OnTop,
@@ -2163,7 +2249,7 @@ impl eframe::App for App {
             frameless::resize_edges(root_ui);
         }
         let title = self.title(&state);
-        if !fullscreen {
+        if !fullscreen && !self.bare {
             let icon = ui::app_icon(&ctx, 16.0, &mut self.icon);
             let newer = self.updates.newer().map(str::to_owned);
             egui::Panel::top("title")

@@ -119,6 +119,9 @@ pub enum Cmd {
     /// Fullscreen with the picture filling the screen, cropped, or the
     /// whole picture again, still in fullscreen (`6`).
     ToggleFill,
+    /// Only the picture in the window, or the title row, the control bar
+    /// and the playlist again (`7`, the context menu).
+    ToggleInterface,
     /// Force the picture's shape, or the file's again (the context menu).
     SetAspect(crate::adjust::Aspect),
     Minimize,
@@ -190,6 +193,7 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
         // The key left of 1: `Ё` in the Russian layout.
         Key::Backtick if !ctrl && !m.alt => Cmd::FitWindow,
         Key::Num6 if !ctrl && !m.alt => Cmd::ToggleFill,
+        Key::Num7 if !ctrl && !m.alt => Cmd::ToggleInterface,
         _ => return None,
     };
     let repeats = matches!(
@@ -323,6 +327,7 @@ mod tests {
         assert_eq!(command(Key::Num5, none, false), Some(Cmd::FitScreen));
         assert_eq!(command(Key::Backtick, none, false), Some(Cmd::FitWindow));
         assert_eq!(command(Key::Num6, none, false), Some(Cmd::ToggleFill));
+        assert_eq!(command(Key::Num7, none, false), Some(Cmd::ToggleInterface));
         assert_eq!(command(Key::Num4, none, true), None);
         assert_eq!(command(Key::Num1, Modifiers::COMMAND, false), None);
         assert_eq!(command(Key::Num1, Modifiers::ALT, false), None);
