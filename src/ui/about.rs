@@ -79,7 +79,14 @@ impl AboutDialog {
                 ));
                 ui.add_space(8.0);
                 if !AUTHORS.is_empty() {
-                    let authors = AUTHORS.replace(':', ", ");
+                    // Names only: an author given as `Name <e-mail>` keeps
+                    // the address out of the window.
+                    let authors = AUTHORS
+                        .split(':')
+                        .map(|a| a.split('<').next().unwrap_or(a).trim())
+                        .filter(|a| !a.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     ui.label(tr!(
                         format!("Author: {authors}"),
                         format!("Автор: {authors}")

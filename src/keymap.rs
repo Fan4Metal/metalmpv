@@ -425,7 +425,7 @@ impl Action {
             ),
             Action::Delete => tr!(
                 "Remove the selected playlist entry",
-                "Убрать выбранный файл из плейлиста"
+                "Убрать выбранную запись из плейлиста"
             ),
             Action::Info => tr!("File information", "Сведения о файле"),
             Action::VideoPanel => tr!(

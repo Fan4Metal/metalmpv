@@ -19,6 +19,9 @@ const BUTTON: f32 = 150.0;
 
 #[derive(Default)]
 pub struct FileTypesPage {
+    /// The registration and who opens each type, with when they were
+    /// read: once a second (a hundred registry reads), and after a button.
+    read: Option<(std::time::Instant, Status, Vec<Opener>)>,
     /// The types' icons for a pixel size, drawn when the page is first
     /// shown.
     icons: Option<(u32, Vec<TextureHandle>)>,
@@ -35,10 +38,23 @@ enum Action {
 impl FileTypesPage {
     pub fn show(&mut self, ui: &mut Ui) {
         let exe = std::env::current_exe().ok();
-        // Read on every frame: cheap, and it follows choices made in
-        // Windows' Settings while the page is open.
-        let status = exe.as_deref().map_or(Status::NotRegistered, assoc::status);
-        let defaults = assoc::defaults(exe.as_deref());
+        // Read again every second: it follows choices made in Windows'
+        // Settings while the page is open.
+        if self
+            .read
+            .as_ref()
+            .is_none_or(|(at, _, _)| at.elapsed() >= std::time::Duration::from_secs(1))
+        {
+            let status = exe.as_deref().map_or(Status::NotRegistered, assoc::status);
+            self.read = Some((
+                std::time::Instant::now(),
+                status,
+                assoc::defaults(exe.as_deref()),
+            ));
+        }
+        let Some((_, status, defaults)) = self.read.clone() else {
+            return;
+        };
         let icons = self.icons(ui.ctx());
         let ru = crate::i18n::lang() == Lang::Ru;
 
@@ -166,6 +182,9 @@ impl FileTypesPage {
             ui.add_space(6.0);
         });
 
+        if action.is_some() {
+            self.read = None;
+        }
         match action {
             Some(Action::Register) => {
                 let result = exe

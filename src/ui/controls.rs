@@ -86,7 +86,7 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
     if flat(
         ui,
         slot(&mut x, SMALL),
-        tr!("Previous file (PgUp)", "Предыдущий файл (PgUp)"),
+        &with_key(tr!("Previous file", "Предыдущий файл"), Cmd::Prev),
         bar.has_prev,
         |p, o, c, _| icons::skip(p, o, s, c, false),
     )
@@ -100,7 +100,7 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
     if flat(
         ui,
         slot(&mut x, SMALL),
-        tr!("Next file (PgDn)", "Следующий файл (PgDn)"),
+        &with_key(tr!("Next file", "Следующий файл"), Cmd::Next),
         bar.has_next,
         |p, o, c, _| icons::skip(p, o, s, c, true),
     )
@@ -174,14 +174,22 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
         vec2(SMALL, SMALL),
     );
     let fs_tip = if bar.fullscreen {
-        tr!(
-            "Leave fullscreen (Enter, Esc)",
-            "Выйти из полноэкранного режима (Enter, Esc)"
-        )
+        // The keys as they are now: either may have been changed.
+        let keys: Vec<String> = [Cmd::ToggleFullscreen, Cmd::Escape]
+            .into_iter()
+            .map(crate::keymap::shortcut)
+            .filter(|k| !k.is_empty())
+            .collect();
+        let text = tr!("Leave fullscreen", "Выйти из полноэкранного режима");
+        if keys.is_empty() {
+            text.to_owned()
+        } else {
+            format!("{text} ({})", keys.join(", "))
+        }
     } else {
-        tr!("Fullscreen (Enter)", "Полный экран (Enter)")
+        with_key(tr!("Fullscreen", "Полный экран"), Cmd::ToggleFullscreen)
     };
-    if flat(ui, fs, fs_tip, true, |p, o, c, _| {
+    if flat(ui, fs, &fs_tip, true, |p, o, c, _| {
         icons::fullscreen(p, o, s, c, bar.fullscreen)
     })
     .clicked()

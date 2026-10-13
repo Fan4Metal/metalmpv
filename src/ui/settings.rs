@@ -14,8 +14,9 @@ use super::style::{self, Accent};
 use crate::audio::{BOOSTS, Channels, Device, Passthrough, boost_label};
 use crate::fonts::Family;
 use crate::i18n::LangChoice;
-use crate::keymap::{Action, Chord, Group, Keymap};
-use crate::settings::{MAX_STEP, MAX_TRANSPARENCY, OSD_SCALE_RANGE, OnTop, Settings};
+use crate::input::Cmd;
+use crate::keymap::{Action, Chord, Group, Keymap, shortcut};
+use crate::settings::{MAX_STEP, MAX_TRANSPARENCY, MIN_STEP, OSD_SCALE_RANGE, OnTop, Settings};
 use crate::update::{Status, Updates, release_url, version_of};
 
 /// The size of the window's content in points.
@@ -222,8 +223,8 @@ impl SettingsDialog {
                         egui::Button::new(tr!("Reset", "Сбросить")),
                     )
                     .on_hover_text(tr!(
-                        "Put every setting back to its default",
-                        "Вернуть всем настройкам значения по умолчанию"
+                        "Put the settings of this window and the equalizer back to their defaults",
+                        "Вернуть настройкам этого окна и эквалайзеру значения по умолчанию"
                     ))
                     .clicked()
                 {
@@ -284,7 +285,9 @@ impl SettingsDialog {
                             });
                     });
             });
-        if close || (!fresh && modal.should_close()) {
+        // A click that gave up waiting for a key (on the backdrop too)
+        // does not close the window.
+        if close || (!fresh && self.gave_up.is_none() && modal.should_close()) {
             self.open = false;
             self.capture = None;
             self.taken = None;
@@ -800,14 +803,18 @@ fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                     "А также недавние файлы стартового экрана."
                 )),
                 160.0,
-                |ui| ui.button(tr!("Forget all", "Забыть все")).clicked(),
+                |ui| ui.button(tr!("Forget all", "Забыть всё")).clicked(),
             );
         },
     );
     section(ui, tr!("Seek steps", "Шаги перемотки"), |ui| {
         row(
             ui,
-            tr!("Left / Right", "← / →"),
+            &key_pair(
+                Cmd::SeekShort(-1.0),
+                Cmd::SeekShort(1.0),
+                tr!("Short step", "Короткий шаг"),
+            ),
             Some(tr!(
                 "The short step, on keyframes.",
                 "Короткий шаг, по ключевым кадрам."
@@ -818,7 +825,11 @@ fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
         divider(ui);
         row(
             ui,
-            tr!("Ctrl+Left / Right", "Ctrl+← / →"),
+            &key_pair(
+                Cmd::SeekLong(-1.0),
+                Cmd::SeekLong(1.0),
+                tr!("Long step", "Длинный шаг"),
+            ),
             Some(tr!(
                 "The long step, on keyframes.",
                 "Длинный шаг, по ключевым кадрам."
@@ -840,7 +851,11 @@ fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
         |ui| {
             row(
                 ui,
-                tr!("Shift+Left / Right", "Shift+← / →"),
+                &key_pair(
+                    Cmd::SeekExact(-1.0),
+                    Cmd::SeekExact(1.0),
+                    tr!("By a second", "На секунду"),
+                ),
                 Some(tr!(
                     "Moves by 1 s to the exact frame.",
                     "Перематывает на 1 с точно до кадра."
@@ -851,7 +866,11 @@ fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
             divider(ui);
             row(
                 ui,
-                ", / .",
+                &key_pair(
+                    Cmd::Frame { forward: false },
+                    Cmd::Frame { forward: true },
+                    tr!("By a frame", "На кадр"),
+                ),
                 Some(tr!("Steps by one frame.", "Переходит на один кадр.")),
                 0.0,
                 |_| (),
@@ -1079,13 +1098,40 @@ fn audio_page(ui: &mut Ui, settings: &mut Settings, devices: &[Device], changed:
             changed.normalize = true;
         }
     });
+    let [later, earlier, in_sync] = [1.0, -1.0, 0.0].map(|d| {
+        let key = shortcut(Cmd::AudioDelay(d));
+        if key.is_empty() {
+            tr!("(no key)", "(без клавиши)").to_owned()
+        } else {
+            key
+        }
+    });
     note(
         ui,
-        tr!(
-            "Ctrl+= and Ctrl+- move the sound against the picture by 100 ms, Ctrl+0 puts it back.",
-            "Ctrl+= и Ctrl+- сдвигают звук относительно изображения на 100 мс, Ctrl+0 возвращает его на место."
+        &tr!(
+            format!(
+                "{later} and {earlier} move the sound against the picture by 100 ms, {in_sync} puts it back."
+            ),
+            format!(
+                "{later} и {earlier} сдвигают звук относительно изображения на 100 мс, {in_sync} возвращает его на место."
+            )
         ),
     );
+}
+
+/// The keys of a pair of commands as a row's name (`← / →`), the keys
+/// changed on the Keys page included; `fallback` when neither has one.
+fn key_pair(back: Cmd, forward: Cmd, fallback: &str) -> String {
+    let keys: Vec<String> = [back, forward]
+        .into_iter()
+        .map(shortcut)
+        .filter(|k| !k.is_empty())
+        .collect();
+    if keys.is_empty() {
+        fallback.to_owned()
+    } else {
+        keys.join(" / ")
+    }
 }
 
 /// `text` cut to `chars` characters with an ellipsis.
@@ -1187,7 +1233,7 @@ pub(super) fn font_choice(
     let shown = if current.is_empty() { default } else { current };
     let filter_id = ui.id().with((id, "filter"));
     let mut picked = None;
-    egui::ComboBox::from_id_salt(id)
+    let list = egui::ComboBox::from_id_salt(id)
         .selected_text(shown)
         .width(width)
         .height(320.0)
@@ -1225,7 +1271,8 @@ pub(super) fn font_choice(
                 }
             }
         });
-    if picked.is_some() {
+    // Closed, with a pick or without: the next opening starts afresh.
+    if picked.is_some() || list.inner.is_none() {
         ui.data_mut(|d| d.remove::<String>(filter_id));
     }
     picked
@@ -1423,7 +1470,11 @@ impl SettingsDialog {
                     if i > 0 {
                         divider(ui);
                     }
-                    row(ui, action.name(), None, KEYS_WIDTH, |ui| {
+                    // Many or long keys take more room from the name.
+                    let width = self
+                        .chips_width(ui, keys, action)
+                        .clamp(KEYS_WIDTH, (ui.available_width() - 120.0).max(KEYS_WIDTH));
+                    row(ui, action.name(), None, width, |ui| {
                         self.key_chips(ui, keys, action, changed);
                     });
                 }
@@ -1436,6 +1487,29 @@ impl SettingsDialog {
                 "Колесо мыши меняет громкость, двойной щелчок переключает полноэкранный режим, средний щелчок показывает или скрывает плейлист; мультимедийные клавиши запускают, приостанавливают, останавливают и переключают файлы. Ctrl+V выбрать нельзя."
             ),
         );
+    }
+
+    /// The width the keys of `action` take, as [`key_chip`] draws them.
+    fn chips_width(&self, ui: &Ui, keys: &Keymap, action: Action) -> f32 {
+        const GAP: f32 = 6.0;
+        let chip = |label: String, waiting: bool| {
+            let text =
+                ui.painter()
+                    .layout_no_wrap(label, FontId::proportional(13.0), style::TEXT_BRIGHT);
+            text.size().x + 18.0 + if waiting { 0.0 } else { 18.0 } + GAP
+        };
+        let mut width = 26.0 + GAP;
+        if self.capture == Some((action, None)) {
+            width += chip(waiting(), true);
+        }
+        for (slot, chord) in keys.chords(action).iter().enumerate() {
+            width += if self.capture == Some((action, Some(slot))) {
+                chip(waiting(), true)
+            } else {
+                chip(chord.label(), false)
+            };
+        }
+        width
     }
 
     /// The keys of `action` in a right-to-left layout: `+` first, then the
@@ -1558,7 +1632,7 @@ fn step(ui: &mut Ui, value: &mut f64) {
     ui.spacing_mut().interact_size.x = 80.0;
     ui.add(
         egui::DragValue::new(value)
-            .range(1.0..=MAX_STEP)
+            .range(MIN_STEP..=MAX_STEP)
             .speed(0.5)
             .fixed_decimals(0)
             .suffix(tr!(" s", " с")),
@@ -1597,12 +1671,14 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.keys = d.keys;
     changed.audio_channels |= settings.audio_channels != d.audio_channels;
     changed.volume_max |= settings.volume_max != d.volume_max;
-    changed.normalize |= settings.normalize != d.normalize;
+    changed.normalize |= settings.normalize != d.normalize || settings.equalizer != d.equalizer;
     changed.passthrough |= settings.passthrough != d.passthrough;
     settings.audio_device = d.audio_device;
     settings.audio_channels = d.audio_channels;
     settings.volume_max = d.volume_max;
     settings.normalize = d.normalize;
+    // The equalizer is in the panel, but a setting kept like these.
+    settings.equalizer = d.equalizer;
     settings.passthrough = d.passthrough;
     settings.sub = d.sub;
     settings.osd_font = d.osd_font;

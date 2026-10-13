@@ -120,6 +120,8 @@ const REMEMBER_RECENT: &str = "remember_recent";
 pub const RECENT_COUNT: usize = 10;
 
 /// The longest seek step the settings accept, in seconds.
+/// The shortest seek step, in whole seconds as the settings show it.
+pub const MIN_STEP: f64 = 1.0;
 pub const MAX_STEP: f64 = 3600.0;
 /// The most transparent the fullscreen panels may be, in percent: beyond it
 /// their text is lost on a light picture.
@@ -179,11 +181,17 @@ pub fn location() -> &'static Location {
 fn portable_file_in(dir: &Path) -> Option<PathBuf> {
     let file = dir.join(PORTABLE_FILE);
     // Opening for appending checks the permission without changing the file.
+    std::fs::OpenOptions::new().append(true).open(&file).ok()?;
+    // eframe writes a new file beside it and renames it: the folder must
+    // take a file too.
+    let probe = dir.join(format!(".metalmpv-{}.tmp", std::process::id()));
     std::fs::OpenOptions::new()
-        .append(true)
-        .open(&file)
-        .ok()
-        .map(|_| file)
+        .write(true)
+        .create_new(true)
+        .open(&probe)
+        .ok()?;
+    let _ = std::fs::remove_file(&probe);
+    Some(file)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -382,8 +390,8 @@ impl Settings {
                 .unwrap_or(d.last_update_check),
             volume: number(VOLUME, 0.0..=audio::MAX_VOLUME, d.volume),
             mute: flag(MUTE, d.mute),
-            seek_short: number(SEEK_SHORT, 0.1..=MAX_STEP, d.seek_short),
-            seek_long: number(SEEK_LONG, 0.1..=MAX_STEP, d.seek_long),
+            seek_short: number(SEEK_SHORT, MIN_STEP..=MAX_STEP, d.seek_short),
+            seek_long: number(SEEK_LONG, MIN_STEP..=MAX_STEP, d.seek_long),
             hwdec: flag(HWDEC, d.hwdec),
             fill_playlist: flag(FILL_PLAYLIST, d.fill_playlist),
             channel_logos: flag(CHANNEL_LOGOS, d.channel_logos),

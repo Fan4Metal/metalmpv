@@ -45,7 +45,7 @@ pub fn panel(
         }
         let selected = playlist.selected.filter(|i| *i < playlist.len());
         let remove = crate::keymap::with_key(
-            tr!("Remove the selected entry", "Убрать выбранный файл"),
+            tr!("Remove the selected entry", "Убрать выбранную запись"),
             Cmd::Delete,
         );
         if tool(ui, &remove, selected.is_some(), |p, o, c| {

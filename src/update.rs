@@ -81,8 +81,16 @@ impl Updates {
 
     /// Take the result of a finished check; call it every frame.
     pub fn poll(&mut self) {
-        let Some(result) = self.rx.as_ref().and_then(|rx| rx.try_recv().ok()) else {
+        let Some(rx) = &self.rx else {
             return;
+        };
+        let result = match rx.try_recv() {
+            Ok(result) => result,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return,
+            // The thread ended without an answer: not "Checking…" for ever.
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                Err("the check ended without an answer".into())
+            }
         };
         self.rx = None;
         self.status = match result {

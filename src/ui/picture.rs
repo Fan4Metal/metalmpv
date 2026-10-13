@@ -334,7 +334,7 @@ fn sound_tab(ui: &mut Ui, eq: &mut Equalizer, normalize: &mut bool) {
         if ui
             .add_enabled(
                 eq.gains != [0; 10],
-                egui::Button::new(tr!("Flat", "Сбросить")),
+                egui::Button::new(tr!("Flat", "Выровнять")),
             )
             .clicked()
         {
