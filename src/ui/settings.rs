@@ -11,7 +11,7 @@ use egui::{
 };
 
 use super::style;
-use crate::audio::{BOOSTS, Channels, Device, boost_label};
+use crate::audio::{BOOSTS, Channels, Device, Passthrough, boost_label};
 use crate::fonts::Family;
 use crate::i18n::LangChoice;
 use crate::settings::{MAX_STEP, MAX_TRANSPARENCY, OSD_SCALE_RANGE, SUB_SCALE_RANGE, Settings};
@@ -124,6 +124,7 @@ pub struct Changed {
     pub audio_channels: bool,
     pub volume_max: bool,
     pub normalize: bool,
+    pub passthrough: bool,
 }
 
 impl SettingsDialog {
@@ -777,6 +778,31 @@ fn audio_page(ui: &mut Ui, settings: &mut Settings, devices: &[Device], changed:
                 }
             },
         );
+        divider(ui);
+        row(
+            ui,
+            tr!("To a receiver as it is", "На ресивер без декодирования"),
+            Some(tr!(
+                "Dolby and DTS sound goes out compressed and the receiver decodes it; the volume, normalization and channels here do not apply to it, and Windows gives the device to the player alone. A format the device does not take is decoded as usual.",
+                "Звук Dolby и DTS уходит в сжатом виде, его декодирует ресивер; громкость, нормализация и каналы программы на него не действуют, а Windows отдаёт устройство только плееру. Формат, который устройство не принимает, декодируется как обычно."
+            )),
+            290.0,
+            |ui| {
+                let mut choice = settings.passthrough;
+                egui::ComboBox::from_id_salt("settings_passthrough")
+                    .selected_text(choice.label())
+                    .width(280.0)
+                    .show_ui(ui, |ui| {
+                        for p in Passthrough::ALL {
+                            ui.selectable_value(&mut choice, p, p.label());
+                        }
+                    });
+                if choice != settings.passthrough {
+                    settings.passthrough = choice;
+                    changed.passthrough = true;
+                }
+            },
+        );
     });
     section(ui, tr!("Volume", "Громкость"), |ui| {
         row(
@@ -1260,10 +1286,12 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     changed.audio_channels |= settings.audio_channels != d.audio_channels;
     changed.volume_max |= settings.volume_max != d.volume_max;
     changed.normalize |= settings.normalize != d.normalize;
+    changed.passthrough |= settings.passthrough != d.passthrough;
     settings.audio_device = d.audio_device;
     settings.audio_channels = d.audio_channels;
     settings.volume_max = d.volume_max;
     settings.normalize = d.normalize;
+    settings.passthrough = d.passthrough;
     settings.sub_font = d.sub_font;
     settings.sub_scale = d.sub_scale;
     settings.osd_font = d.osd_font;

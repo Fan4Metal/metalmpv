@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use crate::audio::{self, Channels};
+use crate::audio::{self, Channels, Passthrough};
 use crate::format::TimeMode;
 use crate::i18n::LangChoice;
 use crate::tracks::Likeness;
@@ -34,6 +34,7 @@ const AUDIO_DEVICE: &str = "audio_device";
 const AUDIO_CHANNELS: &str = "audio_channels";
 const VOLUME_MAX: &str = "volume_max";
 const NORMALIZE: &str = "normalize";
+const PASSTHROUGH: &str = "audio_passthrough";
 const SUB_FONT: &str = "sub_font";
 const SUB_SCALE: &str = "sub_scale";
 const OSD_FONT: &str = "osd_font";
@@ -154,6 +155,8 @@ pub struct Settings {
     pub volume_max: f64,
     /// The volume evened out (`audio::NORMALIZE_FILTER`).
     pub normalize: bool,
+    /// Compressed sound sent to a receiver as it is.
+    pub passthrough: Passthrough,
     /// The font family of text subtitles, empty for mpv's.
     pub sub_font: String,
     /// The size of subtitles, in percent (mpv's `sub-scale`).
@@ -202,6 +205,7 @@ impl Default for Settings {
             audio_channels: Channels::Auto,
             volume_max: 100.0,
             normalize: false,
+            passthrough: Passthrough::Off,
             sub_font: String::new(),
             sub_scale: 100.0,
             osd_font: String::new(),
@@ -226,6 +230,7 @@ impl Settings {
             volume_max: self.volume_max,
             channels: self.audio_channels,
             normalize: self.normalize,
+            passthrough: self.passthrough,
         }
     }
 
@@ -288,6 +293,10 @@ impl Settings {
                 .filter(|v| audio::BOOSTS.contains(v))
                 .unwrap_or(d.volume_max),
             normalize: flag(NORMALIZE, d.normalize),
+            passthrough: get(PASSTHROUGH)
+                .as_deref()
+                .and_then(Passthrough::from_name)
+                .unwrap_or(d.passthrough),
             sub_font: get(SUB_FONT).unwrap_or_default(),
             sub_scale: number(SUB_SCALE, SUB_SCALE_RANGE, d.sub_scale),
             osd_font: osd_font
@@ -336,6 +345,7 @@ impl Settings {
         storage.set_string(AUDIO_CHANNELS, self.audio_channels.name().into());
         storage.set_string(VOLUME_MAX, format!("{:.0}", self.volume_max));
         storage.set_string(NORMALIZE, self.normalize.to_string());
+        storage.set_string(PASSTHROUGH, self.passthrough.name().into());
         storage.set_string(SUB_FONT, self.sub_font.clone());
         storage.set_string(SUB_SCALE, format!("{:.0}", self.sub_scale));
         match &self.osd_font_file {
@@ -415,6 +425,7 @@ mod tests {
             audio_channels: Channels::Surround51,
             volume_max: 150.0,
             normalize: true,
+            passthrough: Passthrough::Hdmi,
             sub_font: "Arial".into(),
             sub_scale: 150.0,
             osd_font: "Segoe UI".into(),

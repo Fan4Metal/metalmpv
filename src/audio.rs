@@ -70,6 +70,56 @@ impl Channels {
     }
 }
 
+/// Compressed sound sent as it is to a receiver, which decodes it
+/// (`audio-spdif`). WASAPI takes it in exclusive mode only, which mpv
+/// asks for itself; a format the device refuses is decoded as usual.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Passthrough {
+    #[default]
+    Off,
+    /// What an optical or coaxial cable carries.
+    Spdif,
+    /// HDMI carries the lossless formats too.
+    Hdmi,
+}
+
+impl Passthrough {
+    pub const ALL: [Passthrough; 3] = [Passthrough::Off, Passthrough::Spdif, Passthrough::Hdmi];
+
+    /// The stored name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Passthrough::Off => "off",
+            Passthrough::Spdif => "spdif",
+            Passthrough::Hdmi => "hdmi",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|p| p.name() == name)
+    }
+
+    /// mpv's `audio-spdif`: the codecs passed through.
+    pub fn option(self) -> &'static str {
+        match self {
+            Passthrough::Off => "",
+            Passthrough::Spdif => "ac3,dts",
+            Passthrough::Hdmi => "ac3,eac3,dts,dts-hd,truehd",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Passthrough::Off => tr!("Off", "Выкл."),
+            Passthrough::Spdif => tr!("S/PDIF: AC3, DTS", "S/PDIF: AC3, DTS"),
+            Passthrough::Hdmi => tr!(
+                "HDMI: AC3, E-AC3, DTS, DTS-HD, TrueHD",
+                "HDMI: AC3, E-AC3, DTS, DTS-HD, TrueHD"
+            ),
+        }
+    }
+}
+
 /// The label of a volume ceiling.
 pub fn boost_label(max: f64) -> String {
     if max <= 100.0 {
@@ -137,6 +187,7 @@ pub struct Setup {
     pub volume_max: f64,
     pub channels: Channels,
     pub normalize: bool,
+    pub passthrough: Passthrough,
 }
 
 #[cfg(test)]
@@ -151,6 +202,11 @@ mod tests {
         assert_eq!(Channels::Auto.option(), "auto-safe");
         assert_eq!(Channels::Surround51.option(), "5.1");
         assert_eq!(Channels::from_name("9.1"), None);
+        for p in Passthrough::ALL {
+            assert_eq!(Passthrough::from_name(p.name()), Some(p));
+        }
+        assert_eq!(Passthrough::Off.option(), "");
+        assert_eq!(Passthrough::Spdif.option(), "ac3,dts");
     }
 
     #[test]

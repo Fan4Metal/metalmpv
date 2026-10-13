@@ -1688,6 +1688,9 @@ impl eframe::App for App {
             if changed.normalize {
                 player.set_normalize(self.settings.normalize);
             }
+            if changed.passthrough {
+                player.set_passthrough(self.settings.passthrough);
+            }
         }
         if changed.subs
             && let Some(player) = &mut self.player

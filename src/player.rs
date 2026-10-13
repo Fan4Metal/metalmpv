@@ -9,7 +9,7 @@
 
 use std::path::Path;
 
-use crate::audio::{self, Channels, Device};
+use crate::audio::{self, Channels, Device, Passthrough};
 use crate::chapters::{self, Chapter};
 use crate::mpv::{EndReason, Event, Mpv, Value, sys};
 use crate::resume::Tracks;
@@ -421,6 +421,7 @@ impl Player {
         };
         player.set_channels(setup.channels);
         player.set_normalize(setup.normalize);
+        player.set_passthrough(setup.passthrough);
         player.set_volume_max(setup.volume_max);
         let volume = setup.volume.clamp(0.0, player.state.volume_max);
         player.mpv.set("volume", &Value::Double(volume));
@@ -643,6 +644,12 @@ impl Player {
         self.mpv.set("af", &Value::Str(filter.into()));
     }
 
+    /// Compressed sound to a receiver as it is, or decoded here.
+    pub fn set_passthrough(&mut self, passthrough: Passthrough) {
+        self.mpv
+            .set("audio-spdif", &Value::Str(passthrough.option().into()));
+    }
+
     /// The sound against the picture, in seconds; kept between files.
     pub fn set_audio_delay(&mut self, seconds: f64) {
         let seconds = (seconds * 1000.0).round() / 1000.0;
@@ -815,6 +822,11 @@ mod tests {
         );
         mpv.set("volume-max", &Value::Double(200.0));
         mpv.set("volume", &Value::Double(150.0));
+        // Taken without a word; `ao=null` decodes as usual.
+        mpv.set(
+            "audio-spdif",
+            &Value::Str(Passthrough::Hdmi.option().into()),
+        );
         mpv.observe(1, "audio-out-params", sys::MPV_FORMAT_NODE);
         mpv.observe(2, "volume", sys::MPV_FORMAT_DOUBLE);
         mpv.observe(3, "audio-device-list", sys::MPV_FORMAT_NODE);

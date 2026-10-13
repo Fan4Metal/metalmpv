@@ -31,7 +31,7 @@ MetalMPV is a video player for Windows with a classic layout: the picture fills 
 - **Window for the picture**: 50 %, 100 %, 150 % or 200 % of the video's size, the largest window without black bars, the window fitted to the picture, or fullscreen without black bars (`1`–`6`, `` ` ``).
 - **Chapters**: marks on the seek bar, which can be turned off, and a list under the playlist to go to a chapter (see [Chapters](#chapters)).
 - **Hardware decoding** (NVDEC, D3D11VA and others, chosen by libmpv), which can be turned off in the settings.
-- **Sound settings**: the output device, the channels (automatic or a layout chosen by hand), a volume boost up to 200 % and normalization that evens the volume out; the sound can be moved against the picture with `Ctrl+=` and `Ctrl+-`.
+- **Sound settings**: the output device, the channels (automatic or a layout chosen by hand), a volume boost up to 200 %, normalization that evens the volume out, and Dolby and DTS sound sent to a receiver undecoded; the sound can be moved against the picture with `Ctrl+=` and `Ctrl+-`.
 - **Resume**: a film opened again goes on from where it was stopped (see [Settings](#settings)).
 - **Playlist**: files opened together, dropped onto the window or added with the **+** button of the playlist; optionally the other media files of the folder of an opened file.
 - **One window**: a file opened from Explorer while the player runs is played in the window already open.
@@ -111,6 +111,7 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | Video | Panel transparency | 12 % | Transparency of the control bar and the file's name over the picture in fullscreen, 0–80 % |
 | Sound | Device | Windows' default | The output device; while the chosen one is unplugged, the sound goes to Windows' default |
 | Sound | Channels | Auto | Auto follows the device's setup in Windows; mono, stereo, 5.1 or 7.1 mixes the sound to that layout |
+| Sound | To a receiver as it is | off | Dolby and DTS sound goes out compressed for the receiver to decode: over S/PDIF AC3 and DTS, over HDMI also E-AC3, DTS-HD and TrueHD; the player's volume, normalization and channels do not apply to it, and Windows gives the device to the player alone. A format the device does not take is decoded as usual |
 | Sound | Volume boost | none | Lets the volume go up to 130, 150 or 200 %; loud passages may then distort |
 | Sound | Normalization | off | Evens the volume out as the film plays: quiet dialogue louder, loud scenes quieter (FFmpeg's `dynaudnorm`) |
 | Subtitles and OSD | Subtitles: font | default | A font installed in Windows, for text subtitles (SRT and the like); ASS subtitles keep their own fonts |
