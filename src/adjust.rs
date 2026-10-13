@@ -1,9 +1,16 @@
-//! The picture's adjustments of the Video panel (`F7`): the colour
+//! The picture's adjustments of the Video and sound panel: the colour
 //! (mpv's video equalizer, done by the renderer on the GPU), the rotation
 //! (`video-rotate`, also on the GPU), the flips, the sharpness and the
-//! noise reduction (FFmpeg filters in `vf`: mpv downloads hardware-decoded
-//! frames for them) and the debanding (`deband`, on the GPU). They last
-//! while the program runs, over every file, and are not saved.
+//! noise reduction (FFmpeg filters in `vf`, on the processor) and the
+//! debanding (`deband`, on the GPU). They last while the program runs,
+//! over every file, and are not saved.
+//!
+//! mpv does not take frames out of the graphics card for a lavfi filter
+//! that cannot use them (the filter fails and is disabled), so while there
+//! are filters the player decodes with copying (`Player::adjust`). Upside
+//! down is `hflip` and half a turn: FFmpeg's `vflip` takes CUDA frames as
+//! they are, with a negative stride the CUDA interop refuses (a blue
+//! picture); both flips together are half a turn alone.
 
 /// The colour's properties, each from -100 to 100 (0: as the file is).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -135,13 +142,16 @@ impl Adjust {
                 self.sharpen.clamp(0, 100) as f64 / 100.0
             ));
         }
-        if self.flip {
-            vf.push("lavfi=[vflip]".to_owned());
-        }
-        if self.mirror {
+        // Upside down is mirrored and turned half round (`rotation`).
+        if self.flip != self.mirror {
             vf.push("lavfi=[hflip]".to_owned());
         }
         vf.join(",")
+    }
+
+    /// mpv's `video-rotate`: the turn, and half a turn more upside down.
+    pub fn rotation(&self) -> i64 {
+        (self.rotate + if self.flip { 180 } else { 0 }).rem_euclid(360)
     }
 
     pub fn is_default(&self) -> bool {
@@ -178,5 +188,17 @@ mod tests {
         a.set(Color::Gamma, 300);
         assert_eq!(a.get(Color::Gamma), 100);
         assert!(!a.is_default());
+    }
+
+    #[test]
+    fn flips_are_a_mirror_and_half_a_turn() {
+        let mut a = Adjust::default();
+        a.turn(1);
+        a.flip = true;
+        assert_eq!((a.filters().as_str(), a.rotation()), ("lavfi=[hflip]", 270));
+        a.mirror = true;
+        assert_eq!((a.filters().as_str(), a.rotation()), ("", 270));
+        a.flip = false;
+        assert_eq!((a.filters().as_str(), a.rotation()), ("lavfi=[hflip]", 90));
     }
 }

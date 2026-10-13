@@ -57,6 +57,12 @@ pub fn options<'a>(hwdec: bool) -> Vec<(&'a str, &'a str)> {
 /// The `hwdec` option for the setting; `METALMPV_HWDEC` overrides it
 /// for measurements ("nvdec", "d3d11va-copy", "no", …).
 fn hwdec_option(on: bool) -> &'static str {
+    hwdec_value(on, false)
+}
+
+/// The `hwdec` option; `copy` while there are filters on the processor:
+/// mpv does not download frames for them (`adjust.rs`).
+fn hwdec_value(on: bool, copy: bool) -> &'static str {
     use std::sync::OnceLock;
     static FORCED: OnceLock<Option<&'static str>> = OnceLock::new();
     let forced = FORCED.get_or_init(|| {
@@ -65,7 +71,11 @@ fn hwdec_option(on: bool) -> &'static str {
             .filter(|v| !v.is_empty())
             .map(|v| &*Box::leak(v.into_boxed_str()))
     });
-    forced.unwrap_or(if on { "auto-safe" } else { "no" })
+    forced.unwrap_or(match (on, copy) {
+        (false, _) => "no",
+        (true, false) => "auto-safe",
+        (true, true) => "auto-copy-safe",
+    })
 }
 
 /// Start an mpv core with [`options`]. Slow enough (loading the DLL, the
@@ -400,6 +410,10 @@ pub struct Player {
     pub state: State,
     /// When `video-frame-info` was last asked for.
     scan_asked: Option<std::time::Instant>,
+    /// Hardware decoding is on (the setting).
+    hwdec: bool,
+    /// Filters on the processor: hardware decoding copies the frames.
+    hwdec_copy: bool,
 }
 
 impl Player {
@@ -425,6 +439,8 @@ impl Player {
             mpv,
             state: State::default(),
             scan_asked: None,
+            hwdec: true,
+            hwdec_copy: false,
         };
         player.set_channels(setup.channels);
         player.set_audio_filters(setup.normalize, &setup.equalizer);
@@ -659,11 +675,17 @@ impl Player {
                 self.mpv.set(c.property(), &Value::Int(new.get(c)));
             }
         }
-        if old.rotate != new.rotate {
-            self.mpv.set("video-rotate", &Value::Int(new.rotate));
+        if old.rotation() != new.rotation() {
+            self.mpv.set("video-rotate", &Value::Int(new.rotation()));
         }
         let filters = new.filters();
         if old.filters() != filters {
+            // Copying first: the filters fail on frames in the graphics card.
+            let copy = !filters.is_empty();
+            if copy != self.hwdec_copy {
+                self.hwdec_copy = copy;
+                self.apply_hwdec();
+            }
             self.mpv.set("vf", &Value::Str(filters));
         }
         if old.deband != new.deband {
@@ -720,7 +742,13 @@ impl Player {
     /// Hardware decoding on (`auto-safe`) or off; mpv applies it to the
     /// playing file at once.
     pub fn set_hwdec(&mut self, on: bool) {
-        self.mpv.set("hwdec", &Value::Str(hwdec_option(on).into()));
+        self.hwdec = on;
+        self.apply_hwdec();
+    }
+
+    fn apply_hwdec(&mut self) {
+        let value = hwdec_value(self.hwdec, self.hwdec_copy);
+        self.mpv.set("hwdec", &Value::Str(value.into()));
     }
 
     /// Enlarge the picture to fill the window, cropping what is beyond it
@@ -955,6 +983,8 @@ mod tests {
                 ("idle", "yes"),
                 ("terminal", "no"),
                 ("pause", "yes"),
+                // As the app: the filters must make it copy the frames.
+                ("hwdec", "auto-safe"),
             ],
         )
         .unwrap();
@@ -963,13 +993,14 @@ mod tests {
             mpv,
             state: State::default(),
             scan_asked: None,
+            hwdec: true,
+            hwdec_copy: false,
         };
         let mut new = Adjust::default();
         new.set(Color::Brightness, 10);
         new.set(Color::Gamma, -20);
         new.turn(1);
         new.flip = true;
-        new.mirror = true;
         new.sharpen = 60;
         new.denoise = true;
         new.deband = true;
@@ -980,6 +1011,9 @@ mod tests {
             .mpv
             .observe(2, "video-out-params", sys::MPV_FORMAT_NODE);
         player.mpv.observe(3, "brightness", sys::MPV_FORMAT_INT64);
+        player
+            .mpv
+            .observe(4, "hwdec-current", sys::MPV_FORMAT_STRING);
         player.mpv.command(0, &["loadfile", &sample]);
         let shot = std::env::temp_dir().join(format!("metalmpv_frame_{}.png", std::process::id()));
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -993,6 +1027,7 @@ mod tests {
                         out = Some(value);
                     }
                     Event::Property { id: 3, value } => eprintln!("brightness: {value:?}"),
+                    Event::Property { id: 4, value } => eprintln!("hwdec: {value:?}"),
                     Event::Log { prefix, text, .. } => {
                         eprint!("[{prefix}] {text}");
                         errors.push(text);
