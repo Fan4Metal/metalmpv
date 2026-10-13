@@ -120,10 +120,7 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
     {
         out.push(Cmd::Settings);
     }
-    let list_tip = with_key(
-        tr!("Playlist", "Список воспроизведения"),
-        Cmd::TogglePlaylist,
-    );
+    let list_tip = with_key(tr!("Playlist", "Плейлист"), Cmd::TogglePlaylist);
     let list = flat(ui, slot(&mut x, SMALL), &list_tip, true, |p, o, c, _| {
         icons::list(p, o, s, c)
     });

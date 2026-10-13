@@ -412,3 +412,33 @@ pub fn check(p: &Painter, o: Pos2, s: f32, c: Color32) {
         Stroke::new(1.8, c),
     ));
 }
+
+/// A window with an arrow out of its corner: the playlist in a window of
+/// its own; with `back`, the arrow points in (back into the player).
+pub fn detach(p: &Painter, o: Pos2, s: f32, c: Color32, back: bool) {
+    let stroke = Stroke::new(1.4, c);
+    // The window, open at its top right corner where the arrow goes.
+    p.add(Shape::line(
+        vec![
+            o + vec2(s * 0.1, -s * 0.8),
+            o + vec2(-s, -s * 0.8),
+            o + vec2(-s, s),
+            o + vec2(s * 0.8, s),
+            o + vec2(s * 0.8, -s * 0.1),
+        ],
+        stroke,
+    ));
+    let (from, to) = if back {
+        (o + vec2(s, -s), o + vec2(-s * 0.15, s * 0.15))
+    } else {
+        (o + vec2(-s * 0.15, s * 0.15), o + vec2(s, -s))
+    };
+    p.line_segment([from, to], stroke);
+    let head = s * 0.6;
+    let (h1, h2) = if back {
+        (to + vec2(head, 0.0), to + vec2(0.0, -head))
+    } else {
+        (to + vec2(-head, 0.0), to + vec2(0.0, head))
+    };
+    p.add(Shape::line(vec![h1, to, h2], stroke));
+}

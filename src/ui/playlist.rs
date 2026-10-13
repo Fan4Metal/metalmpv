@@ -1,6 +1,8 @@
-//! The playlist panel on the right: a row of icon buttons (add, remove,
-//! sort, clear, save as M3U8, shuffle, and on the right the repeat mode; their names in
-//! the tooltips) and the list; a click selects
+//! The playlist panel on the right, or in a window of its own: a row of
+//! icon buttons (add, remove, sort, clear, save as M3U8; after a line,
+//! shuffle and the repeat mode; on the right the button that moves the
+//! list into a window of its own or back; their names in the tooltips)
+//! and the list; a click selects
 //! an entry, a double click plays it. Under it, when the playing file has
 //! chapters, a section of them that folds: a click goes to a chapter.
 
@@ -13,11 +15,17 @@ use crate::logos::Logos;
 use crate::playlist::{Playlist, Repeat};
 
 const ROW: f32 = 22.0;
+/// The narrowest the panel or its window may be, in points, so that the
+/// buttons do not run into each other: eight buttons of 26, the line
+/// between the groups with its margins (12), the gaps (2 each), a gap
+/// before the button on the right and the panel's margins (6 a side).
+pub const MIN_WIDTH: f32 = 260.0;
 /// The height of the chapters' header.
 const HEADER: f32 = 26.0;
 
 /// The panel; `chapters` and `time` are the playing file's; `logos`, when
-/// they are fetched, pictures the channels of an IPTV list.
+/// they are fetched, pictures the channels of an IPTV list; `detached`,
+/// it is in a window of its own.
 pub fn panel(
     ui: &mut Ui,
     playlist: &mut Playlist,
@@ -25,21 +33,22 @@ pub fn panel(
     repeat: Repeat,
     chapters: &[Chapter],
     time: Option<f64>,
+    detached: bool,
 ) -> Vec<Cmd> {
     let mut out = Vec::new();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         let s = 5.5;
-        let add = tr!("Add files to the list", "Добавить файлы в список");
+        let add = tr!("Add files to the list", "Добавить файлы в плейлист");
         if tool(ui, add, true, |p, o, c| icons::plus(p, o, s, c)).clicked() {
             out.push(Cmd::PlaylistAdd);
         }
         let selected = playlist.selected.filter(|i| *i < playlist.len());
-        let remove = tr!(
-            "Remove the selected entry (Delete)",
-            "Убрать выбранный файл (Delete)"
+        let remove = crate::keymap::with_key(
+            tr!("Remove the selected entry", "Убрать выбранный файл"),
+            Cmd::Delete,
         );
-        if tool(ui, remove, selected.is_some(), |p, o, c| {
+        if tool(ui, &remove, selected.is_some(), |p, o, c| {
             icons::minus(p, o, s, c)
         })
         .clicked()
@@ -55,7 +64,7 @@ pub fn panel(
         {
             out.push(Cmd::PlaylistSort);
         }
-        let clear = tr!("Clear the list", "Очистить список");
+        let clear = tr!("Clear the list", "Очистить плейлист");
         if tool(ui, clear, !playlist.is_empty(), |p, o, c| {
             icons::trash(p, o, 7.0, c)
         })
@@ -63,7 +72,7 @@ pub fn panel(
         {
             out.push(Cmd::PlaylistClear);
         }
-        let save = tr!("Save the list as M3U8…", "Сохранить список в M3U8…");
+        let save = tr!("Save the list as M3U8…", "Сохранить плейлист в M3U8…");
         if tool(ui, save, !playlist.is_empty(), |p, o, c| {
             icons::save(p, o, s, c)
         })
@@ -71,7 +80,11 @@ pub fn panel(
         {
             out.push(Cmd::PlaylistSave);
         }
-        let shuffle = tr!("Shuffle the list", "Перемешать список");
+        // The order of play, apart from what acts on the list.
+        ui.add_space(3.0);
+        ui.separator();
+        ui.add_space(3.0);
+        let shuffle = tr!("Shuffle the list", "Перемешать плейлист");
         if tool(ui, shuffle, playlist.len() > 1, |p, o, c| {
             icons::shuffle(p, o, s, c)
         })
@@ -79,24 +92,37 @@ pub fn panel(
         {
             out.push(Cmd::PlaylistShuffle);
         }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let tip = match repeat {
-                Repeat::Off => tr!("Repeat: off", "Повтор: выключен"),
-                Repeat::One => tr!("Repeat: the file", "Повтор: файл"),
-                Repeat::All => tr!("Repeat: the list", "Повтор: список"),
+        let tip = match repeat {
+            Repeat::Off => tr!("Repeat: off", "Повтор: выключен"),
+            Repeat::One => tr!("Repeat: the file", "Повтор: файл"),
+            Repeat::All => tr!("Repeat: the list", "Повтор: плейлист"),
+        };
+        let tip = crate::keymap::with_key(tip, Cmd::CycleRepeat);
+        if tool(ui, &tip, true, |p, o, c| {
+            let c = if repeat == Repeat::Off {
+                c
+            } else {
+                style::accent()
             };
-            let tip = crate::keymap::with_key(tip, Cmd::CycleRepeat);
-            if tool(ui, &tip, true, |p, o, c| {
-                let c = if repeat == Repeat::Off {
-                    c
-                } else {
-                    style::accent()
-                };
-                icons::repeat(p, o, s, c, repeat == Repeat::One)
+            icons::repeat(p, o, s, c, repeat == Repeat::One)
+        })
+        .clicked()
+        {
+            out.push(Cmd::CycleRepeat);
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let window = if detached {
+                tr!("Back into the player's window", "Вернуть в окно плеера")
+            } else {
+                tr!("Into a window of its own", "В отдельное окно")
+            };
+            let window = crate::keymap::with_key(window, Cmd::TogglePlaylistWindow);
+            if tool(ui, &window, true, |p, o, c| {
+                icons::detach(p, o, s, c, detached)
             })
             .clicked()
             {
-                out.push(Cmd::CycleRepeat);
+                out.push(Cmd::TogglePlaylistWindow);
             }
         });
     });

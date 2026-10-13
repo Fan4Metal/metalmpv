@@ -35,8 +35,8 @@ pub enum Page {
     Audio,
     Text,
     Files,
-    Updates,
     Keys,
+    Updates,
 }
 
 impl Page {
@@ -47,8 +47,8 @@ impl Page {
         Page::Audio,
         Page::Text,
         Page::Files,
-        Page::Updates,
         Page::Keys,
+        Page::Updates,
     ];
 
     fn title(self) -> &'static str {
@@ -69,7 +69,7 @@ impl Page {
         match self {
             Page::General => tr!(
                 "The interface language and how a playlist is made.",
-                "Язык интерфейса и составление списка воспроизведения."
+                "Язык интерфейса и составление плейлиста."
             ),
             Page::Playback => tr!(
                 "Going on where a file was left; how far the arrow keys move playback; the chapter marks.",
@@ -699,33 +699,29 @@ fn general(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
             },
         );
     });
-    section(
-        ui,
-        tr!("Playlist", "Список воспроизведения"),
-        |ui| {
-            row(
-                ui,
-                tr!("Add the folder's files", "Добавлять файлы папки"),
-                Some(tr!(
-                    "Opening a file adds the other media files of its folder.",
-                    "При открытии файла добавляются остальные медиафайлы его папки."
-                )),
-                50.0,
-                |ui| switch(ui, &mut settings.fill_playlist),
-            );
-            divider(ui);
-            row(
-                ui,
-                tr!("Channel logos", "Логотипы каналов"),
-                Some(tr!(
-                    "The pictures an IPTV list (M3U) gives its channels are fetched from their sites, only over HTTPS and never from the local network, and kept for 30 days.",
-                    "Картинки, которые список IPTV (M3U) указывает для каналов, загружаются с их сайтов — только по HTTPS и не из локальной сети — и хранятся 30 дней."
-                )),
-                50.0,
-                |ui| switch(ui, &mut settings.channel_logos),
-            );
-        },
-    );
+    section(ui, tr!("Playlist", "Плейлист"), |ui| {
+        row(
+            ui,
+            tr!("Add the folder's files", "Добавлять файлы папки"),
+            Some(tr!(
+                "Opening a file adds the other media files of its folder.",
+                "При открытии файла добавляются остальные медиафайлы его папки."
+            )),
+            50.0,
+            |ui| switch(ui, &mut settings.fill_playlist),
+        );
+        divider(ui);
+        row(
+            ui,
+            tr!("Channel logos", "Логотипы каналов"),
+            Some(tr!(
+                "The pictures an IPTV list (M3U) gives its channels are fetched from their sites, only over HTTPS and never from the local network, and kept for 30 days.",
+                "Картинки, которые плейлист IPTV (M3U) указывает для каналов, загружаются с их сайтов — только по HTTPS и не из локальной сети — и хранятся 30 дней."
+            )),
+            50.0,
+            |ui| switch(ui, &mut settings.channel_logos),
+        );
+    });
 }
 
 fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
@@ -858,7 +854,7 @@ fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
             tr!("Marks on the seek bar", "Метки на полосе перемотки"),
             Some(tr!(
                 "Cuts in the bar where the chapters start; also in the context menu. The chapters themselves are listed under the playlist.",
-                "Разрывы на полосе в начале глав; переключаются и в контекстном меню. Сами главы перечислены под списком воспроизведения."
+                "Разрывы на полосе в начале глав; переключаются и в контекстном меню. Сами главы перечислены под плейлистом."
             )),
             50.0,
             |ui| switch(ui, &mut settings.chapter_marks),
@@ -1427,7 +1423,7 @@ impl SettingsDialog {
             ui,
             tr!(
                 "The mouse wheel changes the volume, a double click switches fullscreen, a middle click shows or hides the playlist; the media keys play, pause, stop and change files. Ctrl+V cannot be chosen.",
-                "Колесо мыши меняет громкость, двойной щелчок переключает полноэкранный режим, средний щелчок показывает или скрывает список; мультимедийные клавиши запускают, приостанавливают, останавливают и переключают файлы. Ctrl+V выбрать нельзя."
+                "Колесо мыши меняет громкость, двойной щелчок переключает полноэкранный режим, средний щелчок показывает или скрывает плейлист; мультимедийные клавиши запускают, приостанавливают, останавливают и переключают файлы. Ctrl+V выбрать нельзя."
             ),
         );
     }

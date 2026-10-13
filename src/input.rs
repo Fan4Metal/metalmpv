@@ -45,6 +45,8 @@ pub enum Cmd {
     /// Ask for an address to play (`Ctrl+U`).
     OpenUrl,
     TogglePlaylist,
+    /// The playlist in a window of its own, or back in the player's.
+    TogglePlaylistWindow,
     About,
     Settings,
     /// Delete the selected playlist entry.

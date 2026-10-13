@@ -232,7 +232,7 @@ impl Repeat {
         match self {
             Repeat::Off => tr!("Off", "Выкл."),
             Repeat::One => tr!("The file", "Файл"),
-            Repeat::All => tr!("The list", "Список"),
+            Repeat::All => tr!("The list", "Плейлист"),
         }
     }
 }

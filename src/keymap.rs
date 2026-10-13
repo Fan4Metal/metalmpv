@@ -309,6 +309,7 @@ actions! {
     Open "open" Files Cmd::Open, [Chord::ctrl(Key::O)];
     OpenUrl "open_url" Files Cmd::OpenUrl, [Chord::ctrl(Key::U)];
     Playlist "playlist" Files Cmd::TogglePlaylist, [Chord::key(Key::L)];
+    PlaylistWindow "playlist_window" Files Cmd::TogglePlaylistWindow, [];
     Delete "delete" Files Cmd::Delete, [Chord::key(Key::Delete)];
     Info "info" Files Cmd::ToggleInfo, [Chord::key(Key::I)];
     VideoPanel "video_panel" Files Cmd::ToggleVideoPanel, [Chord::key(Key::U), Chord::key(Key::F7)];
@@ -354,7 +355,7 @@ impl Action {
             ),
             Action::Repeat => tr!(
                 "Repeat: off, the file, the list",
-                "Повтор: выключен, файл, список"
+                "Повтор: выключен, файл, плейлист"
             ),
             Action::VolumeUp => tr!("Volume up", "Громче"),
             Action::VolumeDown => tr!("Volume down", "Тише"),
@@ -417,10 +418,14 @@ impl Action {
             Action::Next => tr!("Next file", "Следующий файл"),
             Action::Open => tr!("Open files", "Открыть файлы"),
             Action::OpenUrl => tr!("Open an address (a stream)", "Открыть адрес (поток)"),
-            Action::Playlist => tr!("Show or hide the playlist", "Показать или скрыть список"),
+            Action::Playlist => tr!("Show or hide the playlist", "Показать или скрыть плейлист"),
+            Action::PlaylistWindow => tr!(
+                "Playlist in a window of its own / in the player",
+                "Плейлист в отдельном окне / в окне плеера"
+            ),
             Action::Delete => tr!(
                 "Remove the selected playlist entry",
-                "Убрать выбранный файл из списка"
+                "Убрать выбранный файл из плейлиста"
             ),
             Action::Info => tr!("File information", "Сведения о файле"),
             Action::VideoPanel => tr!(

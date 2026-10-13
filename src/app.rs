@@ -86,6 +86,10 @@ pub struct App {
     start_icon: ui::IconCache,
     /// The accent of the window's icon (blue from `main`).
     window_icon: style::Accent,
+    /// The playlist's own window (`dock.rs`): how egui makes it, while it
+    /// is open, and its handle once found.
+    playlist_builder: Option<egui::ViewportBuilder>,
+    playlist_hwnd: Option<isize>,
     /// The seek bar is being dragged: the position under the pointer.
     seek_drag: Option<f64>,
     /// When the last file came from another start.
@@ -248,6 +252,8 @@ impl App {
             icon: None,
             start_icon: None,
             window_icon: style::Accent::Blue,
+            playlist_builder: None,
+            playlist_hwnd: None,
             seek_drag: None,
             last_received: None,
             shown_title: String::new(),
@@ -489,8 +495,8 @@ impl App {
         }
         let mut dialog = rfd::FileDialog::new()
             .set_parent(frame)
-            .set_title(tr!("Save the playlist", "Сохранить список"))
-            .set_file_name(tr!("Playlist.m3u8", "Список.m3u8"))
+            .set_title(tr!("Save the playlist", "Сохранить плейлист"))
+            .set_file_name(tr!("Playlist.m3u8", "Плейлист.m3u8"))
             .add_filter(tr!("M3U8 playlist", "Плейлист M3U8"), &["m3u8"]);
         if let Some(dir) = self
             .playlist
@@ -506,7 +512,7 @@ impl App {
             log::warn!("cannot save the playlist to {}: {e}", target.display());
             self.osd.show(Osd::Text(tr!(
                 format!("Cannot save the playlist: {e}"),
-                format!("Не удалось сохранить список: {e}")
+                format!("Не удалось сохранить плейлист: {e}")
             )));
         }
     }
@@ -611,7 +617,7 @@ impl App {
         let mut dialog = rfd::FileDialog::new()
             .set_parent(frame)
             .set_title(if add {
-                tr!("Add to the playlist", "Добавить в список")
+                tr!("Add to the playlist", "Добавить в плейлист")
             } else {
                 tr!("Open", "Открыть")
             })
@@ -935,6 +941,10 @@ impl App {
             Cmd::Open => self.pick_files(frame, false),
             Cmd::OpenUrl => self.url_dialog.open(),
             Cmd::TogglePlaylist => self.settings.playlist_visible = !self.settings.playlist_visible,
+            Cmd::TogglePlaylistWindow => {
+                self.settings.playlist_detached = !self.settings.playlist_detached;
+                self.settings.playlist_visible = true;
+            }
             Cmd::About => self.about.toggle(),
             Cmd::Settings => self.settings_dialog.toggle(),
             Cmd::Delete => {
@@ -1197,6 +1207,152 @@ impl App {
     /// picture too big for it is scaled down); a maximized window is
     /// restored first. In fullscreen, fullscreen ends and the window is
     /// sized in the next frame (`pending_picture`).
+    /// Files dropped on a window: subtitle files dropped on a playing video
+    /// go with it, the others are opened.
+    fn drop_files(&mut self, dropped: Vec<PathBuf>, state: &State) {
+        let (subs, media): (Vec<PathBuf>, Vec<PathBuf>) = dropped
+            .into_iter()
+            .partition(|p| tracks::is_subtitles(p) && !state.idle);
+        for sub in &subs {
+            self.add_subtitles(sub);
+        }
+        if !media.is_empty() {
+            self.open(media);
+        }
+    }
+
+    /// The playlist in a window of its own (`dock.rs`) while it is shown
+    /// and detached: an egui viewport drawn in this frame, as metalmd's
+    /// detached tabs are; not in fullscreen when it is over the player's
+    /// screen. `keys`: the player's keys work (no modal is open).
+    fn playlist_window(
+        &mut self,
+        ctx: &egui::Context,
+        state: &State,
+        cmds: &mut Vec<Cmd>,
+        keys: bool,
+    ) {
+        let player = self.hwnd.and_then(win::window_rect);
+        let over_player = match (player, self.settings.playlist_rect) {
+            (Some(m), Some(p)) => p[0] < m[2] && m[0] < p[2] && p[1] < m[3] && m[1] < p[3],
+            _ => false,
+        };
+        let shown = self.settings.playlist_visible
+            && self.settings.playlist_detached
+            && !(self.fullscreen && over_player);
+        if !shown {
+            if self.playlist_builder.take().is_some() {
+                self.playlist_hwnd = None;
+                win::playlist_closed();
+            }
+            return;
+        }
+        let ppp = ctx.pixels_per_point();
+        let saved = self
+            .settings
+            .playlist_rect
+            .filter(|r| win::on_a_monitor(*r));
+        let height = ctx.content_rect().height();
+        let accent = self.settings.accent;
+        let builder = self
+            .playlist_builder
+            .get_or_insert_with(|| {
+                // Frameless as the player's: the title row is the app's own.
+                let builder = egui::ViewportBuilder::default()
+                    .with_title(tr!("Playlist", "Плейлист"))
+                    .with_decorations(false)
+                    .with_resizable(true)
+                    .with_min_inner_size([ui::playlist::MIN_WIDTH, 160.0])
+                    .with_minimize_button(false)
+                    .with_maximize_button(false)
+                    .with_drag_and_drop(true)
+                    .with_taskbar(false)
+                    .with_icon(crate::window_icon(accent));
+                // Near enough: the window is put exactly once it is found.
+                match saved {
+                    Some(r) => builder
+                        .with_position(egui::pos2(r[0] as f32 / ppp, r[1] as f32 / ppp))
+                        .with_inner_size([(r[2] - r[0]) as f32 / ppp, (r[3] - r[1]) as f32 / ppp]),
+                    None => builder.with_inner_size([PLAYLIST_WIDTH, height]),
+                }
+            })
+            .clone();
+        let id = egui::ViewportId::from_hash_of("playlist_window");
+        let mut close = false;
+        let mut dropped = Vec::new();
+        ctx.show_viewport_immediate(id, builder, |ui, _class| {
+            let ctx = ui.ctx().clone();
+            close = ctx.input(|i| i.viewport().close_requested());
+            dropped = dropped_files(&ctx);
+            if keys && !egui::Popup::is_any_open(&ctx) {
+                if let Some(id) = ctx.memory(|m| m.focused()) {
+                    ctx.memory_mut(|m| m.surrender_focus(id));
+                }
+                // Esc here closes this window, not the program.
+                cmds.extend(input::keys(&ctx, &self.settings.keys).into_iter().map(
+                    |cmd| match cmd {
+                        Cmd::Escape => Cmd::TogglePlaylist,
+                        cmd => cmd,
+                    },
+                ));
+            }
+            frameless::resize_edges(ui);
+            egui::Panel::top("playlist_title")
+                .exact_size(style::TITLE_HEIGHT)
+                .frame(egui::Frame::NONE.fill(style::TITLE_BG))
+                .show_separator_line(false)
+                .show(ui, |ui| {
+                    close |= ui::title::tool_row(ui, tr!("Playlist", "Плейлист"));
+                });
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE.fill(style::PANEL_BG).inner_margin(6))
+                .show(ui, |ui| {
+                    let logos = self.settings.channel_logos.then_some(&mut self.logos);
+                    cmds.extend(ui::playlist::panel(
+                        ui,
+                        &mut self.playlist,
+                        logos,
+                        self.settings.repeat,
+                        &state.chapters,
+                        state.time,
+                        true,
+                    ));
+                });
+        });
+        self.drop_files(dropped, state);
+        if close {
+            self.settings.playlist_visible = false;
+        }
+        // eframe gives no handle for the window: the visible one of this
+        // thread that is not the player's. Found again if it was made anew.
+        if self.playlist_hwnd.is_some_and(|h| !win::is_window(h)) {
+            self.playlist_hwnd = None;
+        }
+        if self.playlist_hwnd.is_none()
+            && let Some(main) = self.hwnd
+            && let Some(child) = win::thread_windows().into_iter().find(|h| *h != main)
+        {
+            self.playlist_hwnd = Some(child);
+            let first = || {
+                let main = win::visible_rect(main)?;
+                Some(crate::dock::first_place(
+                    main,
+                    (PLAYLIST_WIDTH * ppp).round() as i32,
+                ))
+            };
+            if let Some(rect) = saved.or_else(first) {
+                win::set_visible_rect(child, rect);
+            }
+            win::adopt_playlist(child, main);
+        }
+        // A minimised window is far off the screen.
+        if let Some(rect) = self.playlist_hwnd.and_then(win::visible_rect)
+            && rect[0] > -30000
+        {
+            self.settings.playlist_rect = Some(rect);
+        }
+    }
+
     /// Hide the title row, the control bar and the playlist (`on`), or
     /// show them again. The picture keeps its place and size on the screen:
     /// the window loses what they took and gets it back (not while
@@ -1466,6 +1622,7 @@ impl App {
             aspect: self.adjust.aspect,
             repeat: self.settings.repeat,
             on_top: self.settings.on_top,
+            playlist_detached: self.settings.playlist_detached,
         };
         // As Windows' menus do: the right button opens the menu when let go
         // and a press anywhere off the menus closes it, however the pointer
@@ -1972,11 +2129,20 @@ fn context_menu(
     speed_menu(ui, state, &mut menu_cmds);
     repeat_menu(ui, marks.repeat, &mut menu_cmds);
     let list = if playlist_visible {
-        tr!("Hide the playlist", "Скрыть список")
+        tr!("Hide the playlist", "Скрыть плейлист")
     } else {
-        tr!("Show the playlist", "Показать список")
+        tr!("Show the playlist", "Показать плейлист")
     };
     item(ui, list.into(), Cmd::TogglePlaylist);
+    let window = if marks.playlist_detached {
+        tr!("Playlist in the player's window", "Плейлист в окне плеера")
+    } else {
+        tr!(
+            "Playlist in a window of its own",
+            "Плейлист в отдельном окне"
+        )
+    };
+    item(ui, window.into(), Cmd::TogglePlaylistWindow);
     let mute = if state.mute {
         tr!("Sound on", "Включить звук")
     } else {
@@ -1992,6 +2158,20 @@ fn context_menu(
     cmds.extend(menu_cmds);
 }
 
+/// The width of the playlist's own window the first time, in points.
+const PLAYLIST_WIDTH: f32 = 300.0;
+
+/// The files dropped on the window `ctx` is drawing.
+fn dropped_files(ctx: &egui::Context) -> Vec<PathBuf> {
+    ctx.input(|i| {
+        i.raw
+            .dropped_files
+            .iter()
+            .map(|f| f.path().to_path_buf())
+            .collect()
+    })
+}
+
 /// What the context menu marks as chosen.
 struct Marks {
     fill: bool,
@@ -2000,6 +2180,7 @@ struct Marks {
     aspect: crate::adjust::Aspect,
     repeat: Repeat,
     on_top: OnTop,
+    playlist_detached: bool,
 }
 
 /// Over the other windows: never, always, while playing; the current
@@ -2206,6 +2387,7 @@ impl eframe::App for App {
             }
         }
         self.keep_awake(minimized);
+        win::set_playlist_follow(!self.fullscreen);
         self.follow_on_top(ctx);
         self.show_on_taskbar();
     }
@@ -2224,31 +2406,12 @@ impl eframe::App for App {
         let state = self.state();
         let mut cmds = std::mem::take(&mut self.pending);
 
-        let dropped: Vec<PathBuf> = ctx.input(|i| {
-            i.raw
-                .dropped_files
-                .iter()
-                .map(|f| f.path().to_path_buf())
-                .collect()
-        });
-        // Subtitle files dropped on a playing video go with it.
-        let (subs, media): (Vec<PathBuf>, Vec<PathBuf>) = dropped
-            .into_iter()
-            .partition(|p| tracks::is_subtitles(p) && !state.idle);
-        for sub in &subs {
-            self.add_subtitles(sub);
-        }
-        if !media.is_empty() {
-            self.open(media);
-        }
+        self.drop_files(dropped_files(&ctx), &state);
 
         // The keys are the player's: no widget keeps the focus to take
         // Space or Enter as a click. A modal takes the keys while open.
-        if !self.about.open
-            && !self.settings_dialog.open
-            && !self.url_dialog.is_open()
-            && !egui::Popup::is_any_open(&ctx)
-        {
+        let keys = !self.about.open && !self.settings_dialog.open && !self.url_dialog.is_open();
+        if keys && !egui::Popup::is_any_open(&ctx) {
             if let Some(id) = ctx.memory(|m| m.focused()) {
                 ctx.memory_mut(|m| m.surrender_focus(id));
             }
@@ -2298,11 +2461,11 @@ impl eframe::App for App {
                 )
                 .show_separator_line(false)
                 .show(root_ui, |ui| cmds.extend(ui::controls::bar(ui, bar)));
-            if self.settings.playlist_visible {
+            if self.settings.playlist_visible && !self.settings.playlist_detached {
                 egui::Panel::right("playlist")
                     .resizable(true)
                     .default_size(260.0)
-                    .size_range(160.0..=600.0)
+                    .size_range(ui::playlist::MIN_WIDTH..=600.0)
                     .frame(egui::Frame::NONE.fill(style::PANEL_BG).inner_margin(6))
                     .show(root_ui, |ui| {
                         let logos = self.settings.channel_logos.then_some(&mut self.logos);
@@ -2313,10 +2476,12 @@ impl eframe::App for App {
                             self.settings.repeat,
                             &state.chapters,
                             state.time,
+                            false,
                         ))
                     });
             }
         }
+        self.playlist_window(&ctx, &state, &mut cmds, keys);
         let picture = egui::CentralPanel::no_frame()
             .show(root_ui, |ui| self.video_area(ui, frame, &state, &mut cmds))
             .response

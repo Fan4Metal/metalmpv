@@ -122,3 +122,28 @@ pub fn row(
     }
     cmd
 }
+
+/// The title row of the playlist's own window, frameless as the player's:
+/// `title` in the middle, close on the right; the rest drags the window.
+/// Whether close was clicked.
+pub fn tool_row(ui: &mut Ui, title: &str) -> bool {
+    let rect = ui.max_rect();
+    crate::frameless::drag_area(ui, rect, ui.id().with("tool_title_drag"), Sense::hover());
+    let r = Rect::from_min_max(pos2(rect.right() - BUTTON, rect.top()), rect.max);
+    let response = ui.interact(r, ui.id().with("tool_close"), Sense::CLICK);
+    let color = if response.hovered() {
+        ui.painter().rect_filled(r, 0.0, style::CLOSE_HOVER);
+        style::TEXT_BRIGHT
+    } else {
+        style::TEXT
+    };
+    icons::close(ui.painter(), r.center(), 5.0, color);
+    ui.painter().text(
+        rect.center(),
+        Align2::CENTER_CENTER,
+        title,
+        FontId::proportional(12.5),
+        style::TEXT,
+    );
+    response.on_hover_text(tr!("Close", "Закрыть")).clicked()
+}

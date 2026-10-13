@@ -382,7 +382,7 @@ impl Osd {
                     (Repeat::All, false) => "[ Repeat the list ]".into(),
                     (Repeat::Off, true) => "[ Повтор выключен ]".into(),
                     (Repeat::One, true) => "[ Повтор файла ]".into(),
-                    (Repeat::All, true) => "[ Повтор списка ]".into(),
+                    (Repeat::All, true) => "[ Повтор плейлиста ]".into(),
                 }
             }
             Osd::Speed(speed) => {

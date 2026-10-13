@@ -14,6 +14,7 @@ mod assoc;
 mod audio;
 mod chapters;
 mod cover;
+mod dock;
 mod filetypes;
 mod fonts;
 mod format;

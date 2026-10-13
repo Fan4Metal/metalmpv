@@ -42,6 +42,8 @@ const REPEAT: &str = "repeat";
 const ON_TOP: &str = "on_top";
 const KEYS: &str = "keys";
 const ACCENT: &str = "accent";
+const PLAYLIST_DETACHED: &str = "playlist_detached";
+const PLAYLIST_RECT: &str = "playlist_rect";
 
 /// When the window stays over the other windows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -206,6 +208,11 @@ pub struct Settings {
     /// The pictures of an M3U list's channels are fetched (`logos.rs`).
     pub channel_logos: bool,
     pub playlist_visible: bool,
+    /// The playlist is in a window of its own (`dock.rs`).
+    pub playlist_detached: bool,
+    /// That window's visible rectangle in pixels (left, top, right,
+    /// bottom), once it was open.
+    pub playlist_rect: Option<[i32; 4]>,
     /// Marks at the chapters' starts on the seek bar.
     pub chapter_marks: bool,
     /// What the time in the control bar shows (a click changes it).
@@ -284,6 +291,8 @@ impl Default for Settings {
             fill_playlist: false,
             channel_logos: true,
             playlist_visible: false,
+            playlist_detached: false,
+            playlist_rect: None,
             chapter_marks: true,
             time_mode: TimeMode::Both,
             fullscreen_transparency: 12.0,
@@ -314,6 +323,17 @@ impl Default for Settings {
             recent: Vec::new(),
         }
     }
+}
+
+/// A rectangle written as `left,top,right,bottom`, not empty.
+fn rect(text: &str) -> Option<[i32; 4]> {
+    let n: Vec<i32> = text
+        .split(',')
+        .filter_map(|x| x.trim().parse().ok())
+        .collect();
+    <[i32; 4]>::try_from(n)
+        .ok()
+        .filter(|r| r[2] > r[0] && r[3] > r[1])
 }
 
 impl Settings {
@@ -368,6 +388,8 @@ impl Settings {
             fill_playlist: flag(FILL_PLAYLIST, d.fill_playlist),
             channel_logos: flag(CHANNEL_LOGOS, d.channel_logos),
             playlist_visible: flag(PLAYLIST_VISIBLE, d.playlist_visible),
+            playlist_detached: flag(PLAYLIST_DETACHED, d.playlist_detached),
+            playlist_rect: get(PLAYLIST_RECT).and_then(|v| rect(&v)),
             chapter_marks: flag(CHAPTER_MARKS, d.chapter_marks),
             time_mode: get(TIME_DISPLAY)
                 .as_deref()
@@ -444,12 +466,7 @@ impl Settings {
                 .unwrap_or_default(),
             osd_font_file: osd_font.map(|(_, file)| file),
             osd_scale: number(OSD_SCALE, OSD_SCALE_RANGE, d.osd_scale),
-            window_normal: get(WINDOW_NORMAL).and_then(|v| {
-                let n: Vec<i32> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
-                <[i32; 4]>::try_from(n)
-                    .ok()
-                    .filter(|r| r[2] > r[0] && r[3] > r[1])
-            }),
+            window_normal: get(WINDOW_NORMAL).and_then(|v| rect(&v)),
             resume_playback: flag(RESUME_PLAYBACK, d.resume_playback),
             remember_tracks: flag(REMEMBER_TRACKS, d.remember_tracks),
             prefer_last_tracks: flag(PREFER_LAST_TRACKS, d.prefer_last_tracks),
@@ -493,6 +510,14 @@ impl Settings {
         storage.set_string(FILL_PLAYLIST, self.fill_playlist.to_string());
         storage.set_string(CHANNEL_LOGOS, self.channel_logos.to_string());
         storage.set_string(PLAYLIST_VISIBLE, self.playlist_visible.to_string());
+        storage.set_string(PLAYLIST_DETACHED, self.playlist_detached.to_string());
+        match self.playlist_rect {
+            Some(r) => storage.set_string(
+                PLAYLIST_RECT,
+                format!("{},{},{},{}", r[0], r[1], r[2], r[3]),
+            ),
+            None => storage.remove_string(PLAYLIST_RECT),
+        }
         storage.set_string(CHAPTER_MARKS, self.chapter_marks.to_string());
         storage.set_string(TIME_DISPLAY, self.time_mode.name().into());
         storage.set_string(
@@ -600,6 +625,8 @@ mod tests {
             fill_playlist: true,
             channel_logos: false,
             playlist_visible: true,
+            playlist_detached: true,
+            playlist_rect: Some([-1200, 40, -900, 700]),
             chapter_marks: false,
             time_mode: TimeMode::Remaining,
             fullscreen_transparency: 40.0,

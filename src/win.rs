@@ -486,7 +486,7 @@ unsafe extern "system" fn window_proc(
     use std::sync::atomic::Ordering;
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        WM_APPCOMMAND, WM_COMMAND, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_KEYDOWN, WM_MOVING,
+        WM_COMMAND, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_MOVING, WM_WINDOWPOSCHANGED,
     };
     // THBN_CLICKED in WM_COMMAND's high word.
     const THBN_CLICKED: usize = 0x1800;
@@ -499,6 +499,7 @@ unsafe extern "system" fn window_proc(
             return 0;
         }
         WM_ENTERSIZEMOVE => unsafe { move_started(hwnd as isize) },
+        WM_WINDOWPOSCHANGED => follow_player(hwnd as isize),
         WM_EXITSIZEMOVE => {
             if let Ok(mut start) = MOVE_START.lock() {
                 *start = None;
@@ -509,26 +510,41 @@ unsafe extern "system" fn window_proc(
                 return 1;
             }
         }
-        WM_KEYDOWN => {
-            if let Some(key) = media_vk(wparam as u32) {
-                // Held keys repeat; one press is one command.
-                if lparam & (1 << 30) == 0 {
-                    hook(Hooked::Media(key));
-                }
-                return 0;
+        _ => {
+            if let Some(result) = media_message(msg, wparam, lparam) {
+                return result;
             }
+        }
+    }
+    unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
+}
+
+/// A media key's message (`WM_KEYDOWN` with a `VK_MEDIA_*` key,
+/// `WM_APPCOMMAND`), queued for [`take_hooked`]; its result if it was one.
+fn media_message(
+    msg: u32,
+    wparam: windows_sys::Win32::Foundation::WPARAM,
+    lparam: windows_sys::Win32::Foundation::LPARAM,
+) -> Option<windows_sys::Win32::Foundation::LRESULT> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{WM_APPCOMMAND, WM_KEYDOWN};
+    match msg {
+        WM_KEYDOWN => {
+            let key = media_vk(wparam as u32)?;
+            // Held keys repeat; one press is one command.
+            if lparam & (1 << 30) == 0 {
+                hook(Hooked::Media(key));
+            }
+            Some(0)
         }
         WM_APPCOMMAND => {
             // GET_APPCOMMAND_LPARAM: the high word without the device bits.
             let command = ((lparam as u32) >> 16) & !0xF000;
-            if let Some(key) = media_command(command) {
-                hook(Hooked::Media(key));
-                return 1;
-            }
+            let key = media_command(command)?;
+            hook(Hooked::Media(key));
+            Some(1)
         }
-        _ => {}
+        _ => None,
     }
-    unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
 }
 
 /// Where the window and the pointer were when the move began
@@ -619,6 +635,280 @@ unsafe fn snap(hwnd: isize, lparam: windows_sys::Win32::Foundation::LPARAM) -> b
         bottom,
     };
     true
+}
+
+/// The window's visible rectangle in pixels: a framed window's
+/// `GetWindowRect` takes in its invisible resize borders, DWM's extended
+/// frame bounds do not.
+pub fn visible_rect(hwnd: isize) -> Option<[i32; 4]> {
+    use windows_sys::Win32::Foundation::RECT;
+    #[link(name = "dwmapi")]
+    unsafe extern "system" {
+        fn DwmGetWindowAttribute(
+            hwnd: isize,
+            attribute: u32,
+            value: *mut core::ffi::c_void,
+            size: u32,
+        ) -> i32;
+    }
+    const DWMWA_EXTENDED_FRAME_BOUNDS: u32 = 9;
+    let mut r = RECT::default();
+    let got = unsafe {
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_EXTENDED_FRAME_BOUNDS,
+            (&raw mut r).cast(),
+            size_of::<RECT>() as u32,
+        )
+    } >= 0;
+    if got && r.right > r.left {
+        Some([r.left, r.top, r.right, r.bottom])
+    } else {
+        window_rect(hwnd)
+    }
+}
+
+/// Whether `hwnd` is still a window.
+pub fn is_window(hwnd: isize) -> bool {
+    unsafe { windows_sys::Win32::UI::WindowsAndMessaging::IsWindow(hwnd as _) != 0 }
+}
+
+/// Whether `rect` (pixels) is at least partly on a monitor.
+pub fn on_a_monitor(rect: [i32; 4]) -> bool {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONULL, MonitorFromRect};
+    let r = RECT {
+        left: rect[0],
+        top: rect[1],
+        right: rect[2],
+        bottom: rect[3],
+    };
+    !unsafe { MonitorFromRect(&r, MONITOR_DEFAULTTONULL) }.is_null()
+}
+
+/// Put the window's visible rectangle at `rect` (pixels).
+pub fn set_visible_rect(hwnd: isize, rect: [i32; 4]) {
+    let (Some(outer), Some(visible)) = (window_rect(hwnd), visible_rect(hwnd)) else {
+        return;
+    };
+    set_rect(
+        hwnd,
+        [
+            rect[0] - (visible[0] - outer[0]),
+            rect[1] - (visible[1] - outer[1]),
+            rect[2] + (outer[2] - visible[2]),
+            rect[3] + (outer[3] - visible[3]),
+        ],
+    );
+}
+
+/// The visible top-level windows of this thread, for the window egui makes
+/// for a child viewport: eframe gives no handle for it (metalmd's way).
+pub fn thread_windows() -> Vec<isize> {
+    use windows_sys::Win32::Foundation::{HWND, LPARAM};
+    use windows_sys::Win32::System::Threading::GetCurrentThreadId;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{EnumThreadWindows, IsWindowVisible};
+    unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> i32 {
+        // SAFETY: `lparam` is the pointer to `out` passed below, and the
+        // callback runs only during the call.
+        let out = unsafe { &mut *(lparam as *mut Vec<isize>) };
+        if unsafe { IsWindowVisible(hwnd) } != 0 {
+            out.push(hwnd as isize);
+        }
+        1
+    }
+    let mut out: Vec<isize> = Vec::new();
+    unsafe {
+        EnumThreadWindows(
+            GetCurrentThreadId(),
+            Some(collect),
+            (&raw mut out) as LPARAM,
+        )
+    };
+    out
+}
+
+/// The playlist's window, while it is open, and the player's edge it is
+/// glued to.
+struct PlaylistWindow {
+    hwnd: isize,
+    glue: Option<crate::dock::Glue>,
+}
+
+static PLAYLIST: std::sync::Mutex<Option<PlaylistWindow>> = std::sync::Mutex::new(None);
+/// Whether the glued playlist follows the player (not in fullscreen).
+static FOLLOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+/// Where the playlist's window and the pointer were when its move began,
+/// and the window's invisible borders (left, top, right, bottom).
+static PLAYLIST_MOVE: std::sync::Mutex<Option<MoveStart>> = std::sync::Mutex::new(None);
+
+/// The window's rectangle, the pointer, the window's invisible borders.
+type MoveStart = ([i32; 4], [i32; 2], [i32; 4]);
+
+/// Make `hwnd`, the playlist's window, the player's (`owner`): above it,
+/// minimised with it, without a taskbar button; rounded corners as the
+/// player's; drawn to the player's edges while moved and glued to the one
+/// it touches.
+pub fn adopt_playlist(hwnd: isize, owner: isize) {
+    use windows_sys::Win32::UI::Shell::SetWindowSubclass;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GWLP_HWNDPARENT, SetWindowLongPtrW};
+    unsafe { SetWindowLongPtrW(hwnd as _, GWLP_HWNDPARENT, owner) };
+    round_corners(hwnd);
+    unsafe { SetWindowSubclass(hwnd as _, Some(playlist_proc), 2, 0) };
+    if let Ok(mut p) = PLAYLIST.lock() {
+        *p = Some(PlaylistWindow { hwnd, glue: None });
+    }
+    glue_playlist();
+}
+
+/// The playlist's window is gone (or going).
+pub fn playlist_closed() {
+    if let Ok(mut p) = PLAYLIST.lock() {
+        *p = None;
+    }
+}
+
+/// Glue the playlist to the player's edge it touches now, if any.
+pub fn glue_playlist() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GW_OWNER, GetWindow};
+    let Ok(mut p) = PLAYLIST.lock() else {
+        return;
+    };
+    let Some(p) = p.as_mut() else {
+        return;
+    };
+    let owner = unsafe { GetWindow(p.hwnd as _, GW_OWNER) } as isize;
+    p.glue = match (visible_rect(owner), visible_rect(p.hwnd)) {
+        (Some(main), Some(child)) => crate::dock::glue_of(main, child),
+        _ => None,
+    };
+}
+
+/// Whether the glued playlist follows the player; off in fullscreen.
+pub fn set_playlist_follow(on: bool) {
+    FOLLOW.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The player's window moved or was resized: the glued playlist goes
+/// along, unless the player is minimised, maximized or in fullscreen.
+fn follow_player(main: isize) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, IsZoomed};
+    if !FOLLOW.load(std::sync::atomic::Ordering::Relaxed)
+        || unsafe { IsIconic(main as _) } != 0
+        || unsafe { IsZoomed(main as _) } != 0
+    {
+        return;
+    }
+    let Some((hwnd, glue)) = PLAYLIST
+        .lock()
+        .ok()
+        .and_then(|p| p.as_ref().and_then(|p| Some((p.hwnd, p.glue?))))
+    else {
+        return;
+    };
+    let (Some(main), Some(child)) = (visible_rect(main), visible_rect(hwnd)) else {
+        return;
+    };
+    let size = [child[2] - child[0], child[3] - child[1]];
+    let wanted = crate::dock::placed(main, size, glue);
+    if wanted != child {
+        set_visible_rect(hwnd, wanted);
+    }
+}
+
+unsafe extern "system" fn playlist_proc(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    msg: u32,
+    wparam: windows_sys::Win32::Foundation::WPARAM,
+    lparam: windows_sys::Win32::Foundation::LPARAM,
+    _id: usize,
+    _data: usize,
+) -> windows_sys::Win32::Foundation::LRESULT {
+    use windows_sys::Win32::Foundation::{POINT, RECT};
+    use windows_sys::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GW_OWNER, GetCursorPos, GetWindow, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_MOVING,
+        WM_NCDESTROY,
+    };
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn GetDpiForWindow(hwnd: isize) -> u32;
+    }
+    let me = hwnd as isize;
+    if let Some(result) = media_message(msg, wparam, lparam) {
+        return result;
+    }
+    match msg {
+        WM_ENTERSIZEMOVE => {
+            let mut cursor = POINT::default();
+            let start = match (window_rect(me), visible_rect(me)) {
+                (Some(outer), Some(visible)) if unsafe { GetCursorPos(&mut cursor) } != 0 => {
+                    Some((
+                        outer,
+                        [cursor.x, cursor.y],
+                        [
+                            visible[0] - outer[0],
+                            visible[1] - outer[1],
+                            outer[2] - visible[2],
+                            outer[3] - visible[3],
+                        ],
+                    ))
+                }
+                _ => None,
+            };
+            if let Ok(mut m) = PLAYLIST_MOVE.lock() {
+                *m = start;
+            }
+        }
+        WM_EXITSIZEMOVE => {
+            if let Ok(mut m) = PLAYLIST_MOVE.lock() {
+                *m = None;
+            }
+            glue_playlist();
+        }
+        // As the player's own magnet: the rectangle the pointer alone
+        // gives, else Windows would work the next one out from the one
+        // given back and a slow move would stay stuck.
+        WM_MOVING if lparam != 0 => {
+            let start = PLAYLIST_MOVE.lock().ok().and_then(|m| *m);
+            let owner = unsafe { GetWindow(hwnd, GW_OWNER) } as isize;
+            let mut cursor = POINT::default();
+            if let (Some((outer, from, edge)), Some(main)) = (start, visible_rect(owner))
+                && unsafe { GetCursorPos(&mut cursor) } != 0
+            {
+                let (dx, dy) = (cursor.x - from[0], cursor.y - from[1]);
+                let visible = [
+                    outer[0] + dx + edge[0],
+                    outer[1] + dy + edge[1],
+                    outer[2] + dx - edge[2],
+                    outer[3] + dy - edge[3],
+                ];
+                let dpi = match unsafe { GetDpiForWindow(me) } {
+                    0 => 96,
+                    dpi => dpi as i32,
+                };
+                let [l, t, r, b] = crate::dock::snapped(main, visible, SNAP_REACH * dpi / 96);
+                let rect = unsafe { &mut *(lparam as *mut RECT) };
+                *rect = RECT {
+                    left: l - edge[0],
+                    top: t - edge[1],
+                    right: r + edge[2],
+                    bottom: b + edge[3],
+                };
+                return 1;
+            }
+        }
+        WM_NCDESTROY => {
+            if let Ok(mut p) = PLAYLIST.lock()
+                && p.as_ref().is_some_and(|p| p.hwnd == me)
+            {
+                *p = None;
+            }
+            unsafe { RemoveWindowSubclass(hwnd, Some(playlist_proc), 2) };
+        }
+        _ => {}
+    }
+    unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
 }
 
 /// What playback needs Windows to keep on.
