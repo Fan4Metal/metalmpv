@@ -92,7 +92,9 @@ pub struct App {
     playlist_hwnd: Option<isize>,
     /// The seek bar is being dragged: the position under the pointer.
     seek_drag: Option<f64>,
-    /// When the last file came from another start.
+    /// When the last file came from another start, or this start's own
+    /// files were opened: Explorer starts one copy per selected file, and
+    /// the others' files join the first's.
     last_received: Option<Instant>,
     /// The window title shown, to change it only when it changes.
     shown_title: String,
@@ -255,7 +257,7 @@ impl App {
             playlist_builder: None,
             playlist_hwnd: None,
             seek_drag: None,
-            last_received: None,
+            last_received: (!files.is_empty()).then(Instant::now),
             shown_title: String::new(),
             cloak,
             pending: Vec::new(),
@@ -1601,16 +1603,8 @@ impl App {
             cmds.push(Cmd::TogglePlaylist);
         }
         if response.hovered() {
-            let notches: f32 = ui.input(|i| {
-                i.events
-                    .iter()
-                    .filter_map(|e| match e {
-                        egui::Event::MouseWheel { delta, .. } => Some(delta.y.signum()),
-                        _ => None,
-                    })
-                    .sum()
-            });
-            if notches != 0.0 {
+            let notches = ui::wheel_notches(ui);
+            if notches != 0 {
                 cmds.push(Cmd::Volume(notches as f64 * input::VOLUME_STEP));
             }
         }

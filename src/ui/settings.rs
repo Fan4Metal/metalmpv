@@ -179,7 +179,10 @@ impl SettingsDialog {
                 // Every part gets a rectangle of its own with a top-down
                 // layout: nested horizontal layouts would lay the groups
                 // out side by side and widen the window past the screen.
-                let (rect, _) = ui.allocate_exact_size(SIZE, Sense::hover());
+                // Smaller in a small window, so Close and the cross stay
+                // on the screen.
+                let size = super::modal_size(ctx, SIZE, 12.0);
+                let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
 
                 // The category column, flush with the window's left edge.
                 let sidebar = Rect::from_min_size(rect.min, vec2(SIDEBAR_WIDTH, rect.height()));
@@ -292,47 +295,54 @@ impl SettingsDialog {
         changed
     }
 
-    /// The list of categories in `rect`.
+    /// The list of categories in `rect`; it scrolls when the window is
+    /// too low for it.
     fn categories(&mut self, ui: &mut Ui, rect: Rect) {
-        let mut y = rect.top();
-        for page in Page::ALL {
-            let row = Rect::from_min_size(pos2(rect.left(), y), vec2(rect.width(), 34.0));
-            y += 36.0;
-            let response = ui.interact(
-                row,
-                ui.id().with(("settings_page", page as u8)),
-                Sense::CLICK,
-            );
-            let selected = self.page == page;
-            let fill = if selected {
-                Color32::from_white_alpha(14)
-            } else if response.hovered() {
-                Color32::from_white_alpha(7)
-            } else {
-                Color32::TRANSPARENT
-            };
-            ui.painter().rect_filled(row, 6.0, fill);
-            if selected {
-                // A short accent bar at the left edge marks the page.
-                let bar =
-                    Rect::from_center_size(pos2(row.left() + 3.0, row.center().y), vec2(3.0, 16.0));
-                ui.painter().rect_filled(bar, 1.5, style::accent());
-            }
-            let color = if selected {
-                style::TEXT_BRIGHT
-            } else {
-                style::TEXT
-            };
-            ui.painter().text(
-                pos2(row.left() + 16.0, row.center().y),
-                Align2::LEFT_CENTER,
-                page.title(),
-                FontId::proportional(14.0),
-                color,
-            );
-            if response.clicked() {
-                self.page = page;
-            }
+        let mut list = child(ui, rect);
+        egui::ScrollArea::vertical()
+            .id_salt("settings_pages")
+            .auto_shrink([false, false])
+            .show(&mut list, |ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
+                for page in Page::ALL {
+                    self.category(ui, page);
+                }
+            });
+    }
+
+    /// One row of the categories.
+    fn category(&mut self, ui: &mut Ui, page: Page) {
+        let (row, response) =
+            ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::CLICK);
+        let selected = self.page == page;
+        let fill = if selected {
+            Color32::from_white_alpha(14)
+        } else if response.hovered() {
+            Color32::from_white_alpha(7)
+        } else {
+            Color32::TRANSPARENT
+        };
+        ui.painter().rect_filled(row, 6.0, fill);
+        if selected {
+            // A short accent bar at the left edge marks the page.
+            let bar =
+                Rect::from_center_size(pos2(row.left() + 3.0, row.center().y), vec2(3.0, 16.0));
+            ui.painter().rect_filled(bar, 1.5, style::accent());
+        }
+        let color = if selected {
+            style::TEXT_BRIGHT
+        } else {
+            style::TEXT
+        };
+        ui.painter().text(
+            pos2(row.left() + 16.0, row.center().y),
+            Align2::LEFT_CENTER,
+            page.title(),
+            FontId::proportional(14.0),
+            color,
+        );
+        if response.clicked() {
+            self.page = page;
         }
     }
 }

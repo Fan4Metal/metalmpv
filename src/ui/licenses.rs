@@ -67,7 +67,8 @@ impl LicensesView {
     /// outside).
     pub fn show(&mut self, ctx: &egui::Context) -> bool {
         let modal = egui::Modal::new(egui::Id::new("licenses")).show(ctx, |ui| {
-            let (rect, _) = ui.allocate_exact_size(SIZE, Sense::hover());
+            let size = super::modal_size(ctx, SIZE, 24.0);
+            let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
             let list = Rect::from_min_size(rect.min, vec2(LIST, rect.height()));
             let mut list_ui = ui.new_child(egui::UiBuilder::new().max_rect(list));
             list_ui.label(

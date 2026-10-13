@@ -55,6 +55,52 @@ pub fn app_icon(ctx: &egui::Context, points: f32, cache: &mut IconCache) -> Text
     cache.as_ref().expect("set above").0.clone()
 }
 
+/// A modal's content size: `wanted`, or less in a window too small for
+/// it, leaving `margin` points free around it, so its close buttons stay
+/// on the screen.
+pub fn modal_size(ctx: &egui::Context, wanted: egui::Vec2, margin: f32) -> egui::Vec2 {
+    let room = ctx.content_rect().size() - egui::vec2(2.0 * margin, 2.0 * margin);
+    wanted.min(room).max(egui::vec2(200.0, 160.0))
+}
+
+/// How many whole wheel notches turned this frame, up or down. A touchpad
+/// or a free-spinning wheel sends many small deltas: they add up, and the
+/// rest waits for the next frames (forgotten after a second of rest or
+/// when the direction changes), so one swipe is not dozens of notches.
+pub fn wheel_notches(ui: &Ui) -> i32 {
+    /// Points of a pixel-precise delta per notch.
+    const POINTS_PER_NOTCH: f32 = 50.0;
+    let (delta, time) = ui.input(|i| {
+        let delta: f32 = i
+            .events
+            .iter()
+            .filter_map(|e| match e {
+                egui::Event::MouseWheel { unit, delta, .. } => Some(match unit {
+                    egui::MouseWheelUnit::Point => delta.y / POINTS_PER_NOTCH,
+                    egui::MouseWheelUnit::Line | egui::MouseWheelUnit::Page => delta.y,
+                }),
+                _ => None,
+            })
+            .sum();
+        (delta, i.time)
+    });
+    if delta == 0.0 || !delta.is_finite() {
+        return 0;
+    }
+    let id = egui::Id::new("wheel_notches");
+    ui.ctx().data_mut(|d| {
+        let (rest, last) = d.get_temp_mut_or_default::<(f32, f64)>(id);
+        if time - *last > 1.0 || (*rest != 0.0 && rest.signum() != delta.signum()) {
+            *rest = 0.0;
+        }
+        *last = time;
+        *rest += delta;
+        let whole = rest.trunc();
+        *rest -= whole;
+        whole as i32
+    })
+}
+
 /// The app icon of one place, with the accent it was drawn in.
 pub type IconCache = Option<(TextureHandle, style::Accent)>;
 

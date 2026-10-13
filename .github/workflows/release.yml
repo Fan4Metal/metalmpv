@@ -31,6 +31,9 @@ jobs:
           if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
             throw "Tag $env:GITHUB_REF_NAME does not match Cargo.toml version $version (expected v$version)"
           }
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $version.Contains('-')) {
+            throw "Version $version is a pre-release (-dev): a release drops the suffix in Cargo.toml first"
+          }
           "Version: $version"
 
       - uses: dtolnay/rust-toolchain@stable

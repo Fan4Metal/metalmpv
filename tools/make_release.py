@@ -252,7 +252,10 @@ def main() -> int:
         steps.next("Checks")
         version = extract_version(CARGO_TOML)
         print(f"  version:               {version} (from {CARGO_TOML.name})")
-        if "-dev" in version:
+        if "-" in version:
+            # A tag publishes a public release: never one of a -dev version.
+            if os.environ.get("GITHUB_REF_TYPE") == "tag":
+                raise ReleaseError(f"version {version} has a suffix; a release drops -dev in Cargo.toml first")
             print("  note: a development version; a release drops -dev in Cargo.toml first")
         cargo, iscc = check_prerequisites()
 
@@ -261,12 +264,12 @@ def main() -> int:
 
         if not args.no_tests:
             steps.next("Tests")
-            run_command([cargo, "test"], "cargo test")
+            run_command([cargo, "test", "--locked"], "cargo test")
 
         steps.next("Release build")
         # Checked right before the build: the program may have been started while the tests ran.
         close_running_exe(EXE)
-        run_command([cargo, "build", "--release"], "cargo build")
+        run_command([cargo, "build", "--release", "--locked"], "cargo build")
         if not EXE.is_file():
             raise ReleaseError(f"cargo finished, but {EXE} was not found")
         if not DLL.is_file():

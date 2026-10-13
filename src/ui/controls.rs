@@ -481,16 +481,8 @@ fn volume_slider(ui: &mut Ui, rect: Rect, state: &State) -> Option<Cmd> {
         cmd = Some(Cmd::SetVolume(v));
     }
     if response.hovered() {
-        let notches = ui.input(|i| {
-            i.events
-                .iter()
-                .filter_map(|e| match e {
-                    egui::Event::MouseWheel { delta, .. } => Some(delta.y.signum()),
-                    _ => None,
-                })
-                .sum::<f32>()
-        });
-        if notches != 0.0 {
+        let notches = super::wheel_notches(ui);
+        if notches != 0 {
             cmd = Some(Cmd::SetVolume(
                 (state.volume + notches as f64 * crate::input::VOLUME_STEP).clamp(0.0, max),
             ));

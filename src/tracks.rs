@@ -286,13 +286,17 @@ impl Track {
         let (Some(title), Some(code)) = (&self.title, &self.lang) else {
             return false;
         };
-        let title = title.to_lowercase();
+        let title = words(title);
         let names = [
             language_in(Lang::En, code),
             language_in(Lang::Ru, code),
             code.clone(),
         ];
-        names.iter().any(|n| title.contains(&n.to_lowercase()))
+        // Whole words: "en" is in "Commentary", "no" in "Mono".
+        names.iter().any(|n| {
+            let name = words(n);
+            !name.is_empty() && title.windows(name.len()).any(|w| w == name.as_slice())
+        })
     }
 
     /// The format, the channels and the marks (external, forced, default),
@@ -420,6 +424,14 @@ pub fn language_in(lang: Lang, code: &str) -> String {
     }
 }
 
+/// The words of `text` in lower case.
+fn words(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_lowercase)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -514,6 +526,16 @@ mod tests {
         t[2].title = Some("Русский дубляж".into());
         t[2].lang = Some("rus".into());
         assert_eq!(t[2].name_in(Lang::En, 2), "Русский дубляж");
+        // The code is a word of its own, not a part of one.
+        t[2].title = Some("Commentary".into());
+        t[2].lang = Some("en".into());
+        assert_eq!(t[2].name_in(Lang::En, 2), "English — Commentary");
+        t[2].title = Some("Mono".into());
+        t[2].lang = Some("no".into());
+        assert!(t[2].name_in(Lang::En, 2).ends_with("— Mono"));
+        t[2].title = Some("rus, 2.0".into());
+        t[2].lang = Some("rus".into());
+        assert_eq!(t[2].name_in(Lang::En, 2), "rus, 2.0");
         assert_eq!(language_in(Lang::En, "pt-BR"), "Portuguese");
         assert_eq!(language_in(Lang::Ru, "xyz"), "XYZ");
     }
