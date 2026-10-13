@@ -1519,6 +1519,13 @@ impl App {
                     self.file_error = None;
                     self.pick_ready = self.pick_tracks;
                 }
+                Happened::Expanded { entries, playing } => {
+                    let entries = entries
+                        .into_iter()
+                        .map(|(file, title)| (PathBuf::from(file), title))
+                        .collect();
+                    self.playlist.expand_current(entries, playing);
+                }
                 Happened::Eof => {
                     if let Some(i) = self.playlist.next_in(self.settings.repeat) {
                         self.play(i);

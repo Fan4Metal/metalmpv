@@ -1,13 +1,15 @@
 //! The pictures of IPTV channels (an M3U list's `tvg-logo`), shown in the
 //! playlist. A list is anybody's text, so a logo is fetched under rules of
 //! its own (`allowed`, `fetch`): only `https://` on the usual port, never a
-//! name or an address of the local network, through WinHTTP (the system's
-//! TLS and proxy; it does not follow a redirect from HTTPS to HTTP), at
-//! most 512 KB, and only a PNG or JPEG picture of at most 2048×2048,
-//! decoded by the `image` crate. The pictures are kept in `logos` next to
-//! the settings for 30 days, so a list opened again asks nobody. Fetched on
-//! up to four threads of their own, started with the first logo asked
-//! for; nothing at all with the setting off (`channel_logos`).
+//! name or an address of the local network (nor a name that resolves to
+//! one), through WinHTTP (the system's TLS and proxy), a redirect followed
+//! only to an address allowed too, at most 512 KB, and only a PNG or JPEG
+//! picture of at most 2048×2048, decoded by the `image` crate. The
+//! pictures are kept in `logos` next to the settings for 30 days, so a list
+//! opened again asks nobody (older ones are deleted, a damaged one fetched
+//! again). Fetched on up to four threads of their own, started with the
+//! first logo asked for; nothing at all with the setting off
+//! (`channel_logos`). At most [`MAX_TEXTURES`] are kept in memory.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -27,10 +29,16 @@ const TIMEOUT_MS: i32 = 10_000;
 /// How long a fetched logo is kept on disk.
 const KEEP: Duration = Duration::from_secs(30 * 24 * 3600);
 const WORKERS: usize = 4;
+/// The most textures kept; those not shown for a while go beyond it (and
+/// come back from the disk when scrolled to again).
+const MAX_TEXTURES: usize = 400;
+/// Redirects followed at most.
+const MAX_REDIRECTS: usize = 3;
 
 enum Slot {
     Loading,
-    Ready(TextureHandle),
+    /// The texture and the frame it was last asked for in.
+    Ready(TextureHandle, u64),
     Failed,
 }
 
@@ -61,9 +69,32 @@ impl Logos {
             let pool = self.pool.get_or_insert_with(|| Pool::start(ctx));
             let _ = pool.requests.send(url.to_owned());
         }
-        match self.slots.get(url) {
-            Some(Slot::Ready(texture)) => Some(texture),
+        let frame = ctx.cumulative_frame_nr();
+        match self.slots.get_mut(url) {
+            Some(Slot::Ready(texture, used)) => {
+                *used = frame;
+                Some(texture)
+            }
             _ => None,
+        }
+    }
+
+    /// Drop the textures shown longest ago while there are too many.
+    fn trim(&mut self) {
+        let mut ready: Vec<(u64, String)> = self
+            .slots
+            .iter()
+            .filter_map(|(url, slot)| match slot {
+                Slot::Ready(_, used) => Some((*used, url.clone())),
+                _ => None,
+            })
+            .collect();
+        if ready.len() <= MAX_TEXTURES {
+            return;
+        }
+        ready.sort_unstable();
+        for (_, url) in ready.into_iter().take(MAX_TEXTURES / 4) {
+            self.slots.remove(&url);
         }
     }
 
@@ -71,16 +102,26 @@ impl Logos {
         let Some(pool) = &self.pool else {
             return;
         };
+        let mut added = false;
         while let Ok((url, image)) = pool.results.try_recv() {
             let slot = match image {
-                Some(image) => Slot::Ready(ctx.load_texture(
-                    format!("logo {url}"),
-                    image,
-                    egui::TextureOptions::LINEAR,
-                )),
+                Some(image) => {
+                    added = true;
+                    Slot::Ready(
+                        ctx.load_texture(
+                            format!("logo {url}"),
+                            image,
+                            egui::TextureOptions::LINEAR,
+                        ),
+                        ctx.cumulative_frame_nr(),
+                    )
+                }
                 None => Slot::Failed,
             };
             self.slots.insert(url, slot);
+        }
+        if added {
+            self.trim();
         }
     }
 }
@@ -90,6 +131,9 @@ impl Pool {
         let (requests, queue) = channel::<String>();
         let (done, results) = channel();
         let queue = Arc::new(Mutex::new(queue));
+        let _ = std::thread::Builder::new()
+            .name("logos cleanup".into())
+            .spawn(prune);
         for n in 0..WORKERS {
             let (queue, done, ctx) = (queue.clone(), done.clone(), ctx.clone());
             let _ = std::thread::Builder::new()
@@ -121,18 +165,57 @@ fn load(url: &str) -> Result<ColorImage, String> {
             .ok()?;
         (age < KEEP).then(|| std::fs::read(f).ok()).flatten()
     });
-    let bytes = match fresh {
-        Some(bytes) => bytes,
-        None => {
-            let bytes = fetch(url)?;
-            if let Some(file) = &cached {
-                let _ = std::fs::create_dir_all(file.parent().unwrap_or(file));
-                let _ = std::fs::write(file, &bytes);
+    if let Some(bytes) = fresh {
+        match decode(&bytes) {
+            Ok(image) => return Ok(image),
+            // Cut short (the program ended while writing it): fetched again.
+            Err(e) => {
+                log::info!("logo {url}: the kept copy is damaged ({e})");
+                if let Some(file) = &cached {
+                    let _ = std::fs::remove_file(file);
+                }
             }
-            bytes
         }
-    };
+    }
+    let bytes = fetch(url)?;
+    if let Some(file) = &cached {
+        let _ = std::fs::create_dir_all(file.parent().unwrap_or(file));
+        // Written aside and renamed: never half a file under its name.
+        let part = file.with_extension("part");
+        if std::fs::write(&part, &bytes).is_ok() && std::fs::rename(&part, file).is_err() {
+            let _ = std::fs::remove_file(&part);
+        }
+    }
     decode(&bytes)
+}
+
+/// Delete the logos kept longer than [`KEEP`] (and pieces left by a
+/// write cut short).
+fn prune() {
+    let Some(dir) = cache_file("").and_then(|f| f.parent().map(PathBuf::from)) else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return;
+    };
+    let now = SystemTime::now();
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| now.duration_since(t).ok())
+            .is_some_and(|age| age >= KEEP);
+        let part = path.extension().is_some_and(|e| e == "part");
+        if (old || part) && path.is_file() && std::fs::remove_file(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    if removed > 0 {
+        log::debug!("{removed} old logos deleted");
+    }
 }
 
 /// The host and the path (with the query) of `url` if a logo may be
@@ -151,7 +234,7 @@ fn allowed(url: &str) -> Option<(String, String)> {
         None => authority,
     }
     .to_ascii_lowercase();
-    if host.is_empty() || local(&host) {
+    if host.is_empty() || host.ends_with('.') || local(&host) || odd_number(&host) {
         return None;
     }
     let path = tail.split('#').next().unwrap_or_default();
@@ -187,19 +270,68 @@ fn local(host: &str) -> bool {
     }
 }
 
+/// A host of numbers that is not a plain dotted quad (`127.1`,
+/// `0177.0.0.1`, `0x7f.1`): resolvers may take it for a local address.
+fn odd_number(host: &str) -> bool {
+    host.parse::<std::net::Ipv4Addr>().is_err()
+        && host.split('.').all(|label| {
+            !label.is_empty()
+                && (label.bytes().all(|b| b.is_ascii_digit())
+                    || label.starts_with("0x") && label[2..].bytes().all(|b| b.is_ascii_hexdigit()))
+        })
+}
+
+/// Whether `host` resolves to an address of this computer or of a local
+/// network (a public name may point there).
+fn resolves_locally(host: &str) -> bool {
+    use std::net::{IpAddr, ToSocketAddrs};
+    let Ok(addresses) = (host, 443).to_socket_addrs() else {
+        // Not resolved: WinHTTP will say so.
+        return false;
+    };
+    addresses.map(|a| a.ip()).any(|ip| match ip {
+        IpAddr::V4(v4) => local(&v4.to_string()),
+        IpAddr::V6(v6) => {
+            let first = v6.segments()[0];
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || (first & 0xfe00) == 0xfc00 // unique local
+                || (first & 0xffc0) == 0xfe80 // link-local
+                || v6.to_ipv4_mapped().is_some_and(|v4| local(&v4.to_string()))
+        }
+    })
+}
+
 fn fetch(url: &str) -> Result<Vec<u8>, String> {
-    let (host, path) = allowed(url).ok_or("not an address logos are fetched from")?;
-    let (status, body) = crate::win::https_get(
-        &host,
-        &path,
-        &format!("{}/{}", crate::APP_NAME, crate::VERSION),
-        "Accept: image/png, image/jpeg",
-        TIMEOUT_MS,
-        MAX_BYTES,
-    )?;
-    if status != 200 {
-        return Err(format!("HTTP {status}"));
-    }
+    let mut url = url.to_owned();
+    let mut redirects = 0;
+    let body = loop {
+        let (host, path) = allowed(&url).ok_or("not an address logos are fetched from")?;
+        if resolves_locally(&host) {
+            return Err(format!("{host} is on the local network"));
+        }
+        let (status, body, location) = crate::win::https_get_once(
+            &host,
+            &path,
+            &format!("{}/{}", crate::APP_NAME, crate::VERSION),
+            "Accept: image/png, image/jpeg",
+            TIMEOUT_MS,
+            MAX_BYTES,
+        )?;
+        match (status, location) {
+            (200, _) => break body,
+            // Followed only to an address a logo may come from.
+            (300..400, Some(next)) if redirects < MAX_REDIRECTS => {
+                redirects += 1;
+                url = if next.starts_with('/') {
+                    format!("https://{host}{next}")
+                } else {
+                    next
+                };
+            }
+            (status, _) => return Err(format!("HTTP {status}")),
+        }
+    };
     // Checked before it is kept: only a picture goes to the disk.
     decode(&body)?;
     Ok(body)
@@ -270,6 +402,11 @@ mod tests {
             "https://169.254.1.1/a.png",
             "https://[::1]/a.png",
             "https:///a.png",
+            "https://localhost./a.png",
+            "https://example.com./a.png",
+            "https://127.1/a.png",
+            "https://0177.0.0.1/a.png",
+            "https://0x7f.1/a.png",
         ] {
             assert_eq!(allowed(url), None, "{url}");
         }

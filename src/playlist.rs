@@ -45,22 +45,33 @@ impl Channel {
     /// nothing.
     fn parse(line: &str) -> Option<Self> {
         // `-1 tvg-id="…" tvg-logo="…" group-title="…",Title`: the title
-        // follows the first comma outside quotes.
-        let mut quoted = false;
+        // follows the first comma outside quotes. Some lists quote values
+        // with apostrophes (`tvg-logo='…'`); an apostrophe elsewhere is a
+        // letter ("Children's").
+        let mut quote: Option<char> = None;
+        let mut previous = ' ';
         let comma = line.char_indices().find_map(|(i, c)| {
-            if c == '"' {
-                quoted = !quoted;
+            let after = previous;
+            previous = c;
+            match quote {
+                Some(q) if c == q => quote = None,
+                Some(_) => {}
+                None if c == '"' || (c == '\'' && after == '=') => quote = Some(c),
+                None if c == ',' => return Some(i),
+                None => {}
             }
-            (c == ',' && !quoted).then_some(i)
+            None
         });
         let (head, title) = match comma {
             Some(i) => (&line[..i], Some(line[i + 1..].trim())),
             None => (line, None),
         };
         let attribute = |name: &str| {
-            let start = head.find(&format!("{name}=\""))? + name.len() + 2;
-            let end = head[start..].find('"')? + start;
-            Some(clean(&head[start..end])).filter(|v| !v.is_empty())
+            ['"', '\''].into_iter().find_map(|q| {
+                let start = head.find(&format!("{name}={q}"))? + name.len() + 2;
+                let end = head[start..].find(q)? + start;
+                Some(clean(&head[start..end])).filter(|v| !v.is_empty())
+            })
         };
         let channel = Self {
             title: title.map(clean).filter(|t| !t.is_empty()),
@@ -139,8 +150,10 @@ pub fn expand_lists(paths: Vec<PathBuf>) -> (Vec<PathBuf>, HashMap<PathBuf, Chan
                     m3u_entries(&text, p.parent().unwrap_or(Path::new("")))
                         .into_iter()
                         .map(|(path, channel)| {
+                            // The first of a path listed twice (one stream
+                            // under two names): the entry kept is the first.
                             if let Some(c) = channel {
-                                channels.insert(path.clone(), c);
+                                channels.entry(path.clone()).or_insert(c);
                             }
                             path
                         })
@@ -326,12 +339,52 @@ impl Playlist {
     /// already listed; the index of the first one added.
     pub fn add(&mut self, paths: Vec<PathBuf>) -> Option<usize> {
         let first = self.items.len();
+        // A set, not `contains`: an IPTV list has thousands of entries.
+        let mut listed: std::collections::HashSet<PathBuf> = self.items.iter().cloned().collect();
         for path in expand(paths) {
-            if !self.items.contains(&path) {
+            if listed.insert(path.clone()) {
                 self.items.push(path);
             }
         }
         (self.items.len() > first).then_some(first)
+    }
+
+    /// Put `entries` (a list mpv opened, with the titles it gave them) in
+    /// place of the current entry; entry `playing` of them becomes the
+    /// current one. Those already listed elsewhere are left out.
+    pub fn expand_current(&mut self, entries: Vec<(PathBuf, Option<String>)>, playing: usize) {
+        let Some(at) = self.current else {
+            return;
+        };
+        let playing_path = entries.get(playing).map(|(p, _)| p.clone());
+        let listed: std::collections::HashSet<PathBuf> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != at)
+            .map(|(_, p)| p.clone())
+            .collect();
+        let mut new = Vec::new();
+        for (path, title) in entries {
+            if listed.contains(&path) || new.contains(&path) {
+                continue;
+            }
+            if let Some(title) = title.map(|t| clean(&t)).filter(|t| !t.is_empty()) {
+                let channel = self.channels.entry(path.clone()).or_default();
+                channel.title.get_or_insert(title);
+            }
+            new.push(path);
+        }
+        let count = new.len();
+        self.items.splice(at..=at, new);
+        self.selected = match self.selected {
+            Some(i) if i > at => Some(i + count - 1),
+            Some(i) if i == at => (count > 0).then_some(at),
+            other => other,
+        };
+        self.current = playing_path
+            .and_then(|p| self.items.iter().position(|i| *i == p))
+            .or((count > 0).then_some(at));
     }
 
     /// Remove entry `index`; the current and the selected entries keep
@@ -449,9 +502,18 @@ pub fn folder_of(file: &Path) -> Vec<PathBuf> {
         return vec![file.to_path_buf()];
     };
     let mut out = media_in(dir);
-    if !out.iter().any(|p| p == file) {
-        out.push(file.to_path_buf());
-        out.sort_by(|a, b| natural_cmp(&name_of(a), &name_of(b)));
+    // Names in another case are the same file on Windows: the entry takes
+    // the spelling the file was opened with (it is looked for by it).
+    let wanted = file.to_string_lossy().to_lowercase();
+    match out
+        .iter_mut()
+        .find(|p| p.to_string_lossy().to_lowercase() == wanted)
+    {
+        Some(entry) => *entry = file.to_path_buf(),
+        None => {
+            out.push(file.to_path_buf());
+            out.sort_by(|a, b| natural_cmp(&name_of(a), &name_of(b)));
+        }
     }
     out
 }
@@ -610,6 +672,14 @@ mod tests {
         let odd = Channel::parse("-1 tvg-logo=\"a\"b\",x\ny").unwrap();
         assert!(!odd.line().contains('\n'));
         assert_eq!(Channel::parse("-1,"), None);
+        // Values in apostrophes; an apostrophe in a value or a title is a
+        // letter.
+        let single =
+            Channel::parse("-1 tvg-logo='https://e/a, b.png' group-title=\"Children's\",Kid's TV")
+                .unwrap();
+        assert_eq!(single.logo.as_deref(), Some("https://e/a, b.png"));
+        assert_eq!(single.group.as_deref(), Some("Children's"));
+        assert_eq!(single.title.as_deref(), Some("Kid's TV"));
     }
 
     #[test]
@@ -691,6 +761,26 @@ mod tests {
     }
 
     #[test]
+    fn a_list_mpv_opened_takes_its_place() {
+        let mut p = list(&["a", "https://x/list.m3u", "b"]);
+        p.set_current(1);
+        p.selected = Some(2);
+        p.expand_current(
+            vec![
+                (PathBuf::from("https://x/1"), Some("One".into())),
+                (PathBuf::from("a"), None),
+                (PathBuf::from("https://x/2"), None),
+            ],
+            2,
+        );
+        let items: Vec<_> = p.items().iter().map(|i| i.to_string_lossy()).collect();
+        assert_eq!(items, ["a", "https://x/1", "https://x/2", "b"]);
+        assert_eq!(p.current_path(), Some(Path::new("https://x/2")));
+        assert_eq!(p.selected, Some(3));
+        assert_eq!(p.title(Path::new("https://x/1")), "One");
+    }
+
+    #[test]
     fn the_entry_after_a_removed_current_comes_next() {
         let mut p = list(&["a", "b", "c", "d"]);
         p.set_current(1);
@@ -739,6 +829,11 @@ mod tests {
         assert_eq!(
             names(folder_of(&dir.join("notes.txt"))),
             ["ep2.MP4", "ep10.mkv", "notes.txt", "song.flac"]
+        );
+        // Opened by a name in another case: listed once, by that name.
+        assert_eq!(
+            names(folder_of(&dir.join("EP10.MKV"))),
+            ["ep2.MP4", "EP10.MKV", "song.flac"]
         );
         let mut p = Playlist::default();
         p.replace(vec![dir.clone()]);

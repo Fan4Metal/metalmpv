@@ -97,6 +97,33 @@ pub fn https_get(
     timeout_ms: i32,
     limit: usize,
 ) -> Result<(u32, Vec<u8>), String> {
+    https_request(host, path, agent, headers, timeout_ms, limit, true)
+        .map(|(status, body, _)| (status, body))
+}
+
+/// As [`https_get`], but a redirect is not followed: its status comes
+/// back with the `Location` header, for the caller to check where it
+/// leads (`logos.rs`).
+pub fn https_get_once(
+    host: &str,
+    path: &str,
+    agent: &str,
+    headers: &str,
+    timeout_ms: i32,
+    limit: usize,
+) -> Result<(u32, Vec<u8>, Option<String>), String> {
+    https_request(host, path, agent, headers, timeout_ms, limit, false)
+}
+
+fn https_request(
+    host: &str,
+    path: &str,
+    agent: &str,
+    headers: &str,
+    timeout_ms: i32,
+    limit: usize,
+    follow: bool,
+) -> Result<(u32, Vec<u8>, Option<String>), String> {
     use std::ffi::c_void;
     use std::ptr::{null, null_mut};
     use windows_sys::Win32::Networking::WinHttp::*;
@@ -150,6 +177,15 @@ pub fn https_get(
             null(),
             WINHTTP_FLAG_SECURE,
         ))?;
+        if !follow {
+            let mut policy = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+            check(WinHttpSetOption(
+                request.0,
+                WINHTTP_OPTION_REDIRECT_POLICY,
+                (&raw mut policy).cast(),
+                size_of::<u32>() as u32,
+            ))?;
+        }
         check(WinHttpSendRequest(
             request.0,
             headers.as_ptr(),
@@ -170,6 +206,21 @@ pub fn https_get(
             &mut len,
             null_mut(),
         ))?;
+        let location = (!follow && (300..400).contains(&status))
+            .then(|| {
+                let mut buf = [0u16; 2048];
+                let mut len = size_of_val(&buf) as u32;
+                let ok = WinHttpQueryHeaders(
+                    request.0,
+                    WINHTTP_QUERY_LOCATION,
+                    null(),
+                    buf.as_mut_ptr().cast(),
+                    &mut len,
+                    null_mut(),
+                );
+                (ok != 0).then(|| String::from_utf16_lossy(&buf[..len as usize / 2]))
+            })
+            .flatten();
         let mut body = Vec::new();
         let mut buf = [0u8; 16 * 1024];
         loop {
@@ -188,7 +239,7 @@ pub fn https_get(
                 return Err(format!("the answer is larger than {limit} bytes"));
             }
         }
-        Ok((status, body))
+        Ok((status, body, location))
     }
 }
 

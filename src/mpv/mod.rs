@@ -83,6 +83,9 @@ pub enum EndReason {
     Quit,
     /// The file could not be played; the error is `mpv_error_string`'s.
     Error,
+    /// The file was a playlist (an M3U at an address, or one inside a
+    /// list): mpv put its entries in its own playlist in its place.
+    Redirect,
     Other,
 }
 
@@ -300,6 +303,7 @@ impl Mpv {
                     sys::MPV_END_FILE_REASON_STOP => EndReason::Stop,
                     sys::MPV_END_FILE_REASON_QUIT => EndReason::Quit,
                     sys::MPV_END_FILE_REASON_ERROR => EndReason::Error,
+                    sys::MPV_END_FILE_REASON_REDIRECT => EndReason::Redirect,
                     _ => EndReason::Other,
                 };
                 let error = (e.error < 0).then(|| self.error_string(e.error));

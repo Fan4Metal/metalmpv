@@ -14,6 +14,9 @@ use std::sync::mpsc::{self, Receiver};
 const MAX_SIDE: u32 = 2048;
 /// A picture bigger than this is not a cover.
 const MAX_BYTES: u64 = 64 << 20;
+/// The largest picture decoded, a side and its pixels in memory.
+const MAX_DECODED_SIDE: u32 = 16384;
+const MAX_DECODED_BYTES: u64 = 256 << 20;
 
 /// Extensions of the audio files whose folder may hold their cover.
 const AUDIO_EXTENSIONS: &[&str] = &[
@@ -159,7 +162,16 @@ fn decode(bytes: Vec<u8>, source: Source) -> Option<Cover> {
         image::ImageFormat::Png => "png",
         _ => return None,
     };
-    let picture = image::load_from_memory_with_format(&bytes, format)
+    // Limits as a picture of a downloaded file may be a bomb: 64 MB of PNG
+    // could ask for gigabytes.
+    let mut reader = image::ImageReader::with_format(std::io::Cursor::new(&bytes), format);
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_DECODED_SIDE);
+    limits.max_image_height = Some(MAX_DECODED_SIDE);
+    limits.max_alloc = Some(MAX_DECODED_BYTES);
+    reader.limits(limits);
+    let picture = reader
+        .decode()
         .map_err(|e| log::warn!("cannot decode the cover: {e}"))
         .ok()?;
     let size = [picture.width() as usize, picture.height() as usize];
@@ -324,7 +336,12 @@ fn read_bytes(r: &mut impl Read, size: u64, limit: u64) -> Option<Vec<u8>> {
     Some(data)
 }
 
-fn read_uint(r: &mut impl Read, size: u64) -> Option<u64> {
+fn read_uint(r: &mut (impl Read + Seek), size: u64) -> Option<u64> {
+    if size > 8 {
+        // Not a number: skipped, so the next element is read where it is.
+        r.seek_relative(i64::try_from(size).ok()?).ok()?;
+        return None;
+    }
     let data = read_bytes(r, size, 8)?;
     Some(data.iter().fold(0, |v, b| (v << 8) | u64::from(*b)))
 }
@@ -364,7 +381,7 @@ fn matroska_cover(path: &Path) -> Option<Vec<u8>> {
         }
     }
     let position = attachments_at?;
-    r.seek(SeekFrom::Start(start + position)).ok()?;
+    r.seek(SeekFrom::Start(start.checked_add(position)?)).ok()?;
     let (id, size) = element(&mut r)?;
     (id == ATTACHMENTS).then_some(())?;
     attachment(&mut r, size?)
@@ -403,8 +420,17 @@ fn seek_position(data: &[u8], wanted: u32) -> Option<u64> {
 /// the Matroska names (`cover`, `cover_land`, `small_cover`, …), else the
 /// first picture.
 fn attachment(r: &mut (impl Read + Seek), size: u64) -> Option<Vec<u8>> {
-    let end = r.stream_position().ok()? + size;
-    let mut pictures: Vec<(String, Vec<u8>)> = Vec::new();
+    let end = r.stream_position().ok()?.checked_add(size)?;
+    const ORDER: [&str; 4] = ["cover.", "cover_land.", "small_cover.", "small_cover_land."];
+    let rank = |name: &str| {
+        ORDER
+            .iter()
+            .position(|o| name.starts_with(o))
+            .unwrap_or(ORDER.len())
+    };
+    // Only the best picture so far is kept: a file may carry many large
+    // ones. The name comes before the data in a Matroska file.
+    let mut best: Option<(usize, Vec<u8>)> = None;
     while r.stream_position().ok()? < end {
         let (id, size) = element(r)?;
         let size = size?;
@@ -412,7 +438,7 @@ fn attachment(r: &mut (impl Read + Seek), size: u64) -> Option<Vec<u8>> {
             r.seek_relative(size as i64).ok()?;
             continue;
         }
-        let file_end = r.stream_position().ok()? + size;
+        let file_end = r.stream_position().ok()?.checked_add(size)?;
         let (mut name, mut mime, mut data) = (String::new(), String::new(), None);
         while r.stream_position().ok()? < file_end {
             let (id, size) = element(r)?;
@@ -422,7 +448,12 @@ fn attachment(r: &mut (impl Read + Seek), size: u64) -> Option<Vec<u8>> {
                 FILE_MIME_TYPE => {
                     mime = String::from_utf8_lossy(&read_bytes(r, size, 256)?).into();
                 }
-                FILE_DATA if mime.starts_with("image/") || mime.is_empty() => {
+                FILE_DATA
+                    if (mime.starts_with("image/") || mime.is_empty())
+                        && best
+                            .as_ref()
+                            .is_none_or(|(b, _)| rank(&name.to_lowercase()) < *b) =>
+                {
                     data = read_bytes(r, size, MAX_BYTES);
                     if data.is_none() {
                         r.seek_relative(size as i64).ok()?;
@@ -431,24 +462,15 @@ fn attachment(r: &mut (impl Read + Seek), size: u64) -> Option<Vec<u8>> {
                 _ => r.seek_relative(size as i64).ok()?,
             }
         }
+        let rank = rank(&name.to_lowercase());
         if let Some(data) = data
             && (mime.starts_with("image/") || image::guess_format(&data).is_ok())
+            && best.as_ref().is_none_or(|(b, _)| rank < *b)
         {
-            pictures.push((name.to_lowercase(), data));
+            best = Some((rank, data));
         }
     }
-    const ORDER: [&str; 4] = ["cover.", "cover_land.", "small_cover.", "small_cover_land."];
-    let rank = |name: &str| {
-        ORDER
-            .iter()
-            .position(|o| name.starts_with(o))
-            .unwrap_or(ORDER.len())
-    };
-    pictures
-        .into_iter()
-        .enumerate()
-        .min_by_key(|(i, (name, _))| (rank(name), *i))
-        .map(|(_, (_, data))| data)
+    best.map(|(_, data)| data)
 }
 
 #[cfg(test)]

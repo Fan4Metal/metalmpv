@@ -164,6 +164,35 @@ const PROPS: [(Prop, &str, sys::mpv_format); 21] = [
 const FRAME_INFO: u64 = 100;
 /// The reply to [`Player::load`]'s `loadfile`.
 const LOAD: u64 = 101;
+/// mpv's `playlist`, asked for when a file turned out to be a list.
+const PLAYLIST: u64 = 102;
+
+/// The entries of mpv's `playlist` (files or addresses with the titles
+/// the list gave them) and the one it plays.
+fn playlist_of(value: &Value) -> (Vec<(String, Option<String>)>, usize) {
+    let mut playing = 0;
+    let entries = value
+        .list()
+        .iter()
+        .filter_map(|entry| {
+            let file = entry.get("filename")?.string()?.to_owned();
+            let title = entry
+                .get("title")
+                .and_then(Value::string)
+                .map(str::to_owned);
+            Some((entry, file, title))
+        })
+        .enumerate()
+        .map(|(i, (entry, file, title))| {
+            let current = |key| entry.get(key).is_some_and(Value::flag);
+            if current("current") || current("playing") {
+                playing = i;
+            }
+            (file, title)
+        })
+        .collect();
+    (entries, playing)
+}
 
 /// The scan of a `video-frame-info` value.
 fn scan_of(value: &Value) -> Option<Scan> {
@@ -385,6 +414,14 @@ pub enum Happened {
     Eof,
     /// The file could not be played.
     Failed(String),
+    /// The file was a list mpv opened (an M3U at an address, or one
+    /// inside a list): its entries with their titles, and the one mpv
+    /// plays now. mpv keeps only that one in its playlist, the app's has
+    /// the rest.
+    Expanded {
+        entries: Vec<(String, Option<String>)>,
+        playing: usize,
+    },
     /// A seek finished: the position is the new one.
     Restarted,
     Shutdown,
@@ -475,6 +512,18 @@ impl Player {
                     id: FRAME_INFO,
                     value,
                 } => self.state.scan = scan_of(&value),
+                Event::Property {
+                    id: PLAYLIST,
+                    value,
+                } => {
+                    let (entries, playing) = playlist_of(&value);
+                    if !entries.is_empty() {
+                        // The app's playlist moves on at the end of a file;
+                        // mpv's would too.
+                        self.mpv.command(0, &["playlist-clear"]);
+                        out.push(Happened::Expanded { entries, playing });
+                    }
+                }
                 Event::Property { id, value } => {
                     if let Some((prop, _, _)) = PROPS.iter().find(|(p, _, _)| *p as u64 == id) {
                         let was_eof = self.state.eof;
@@ -504,6 +553,13 @@ impl Player {
                     out.push(Happened::Failed(
                         error.unwrap_or_else(|| "unknown error".into()),
                     ));
+                }
+                Event::EndFile {
+                    reason: EndReason::Redirect,
+                    ..
+                } => {
+                    log::debug!("the file was a list: taking its entries");
+                    self.mpv.get(PLAYLIST, "playlist", sys::MPV_FORMAT_NODE);
                 }
                 Event::EndFile { .. } => {}
                 Event::Log {
@@ -863,6 +919,84 @@ mod tests {
             Ok(_) => {}
             Err(e) => assert!(e.contains(sys::DLL_NAME), "{e}"),
         }
+    }
+
+    /// A list mpv opens itself (as one at an address would be) gives its
+    /// entries to the app, and mpv keeps only the one it plays:
+    /// `cargo test list_mpv_opens -- --ignored` (a video in METALMPV_SAMPLE
+    /// or the default below).
+    #[test]
+    #[ignore = "needs vendor/libmpv and a sample video"]
+    fn list_mpv_opens_gives_its_entries() {
+        let sample = std::env::var("METALMPV_SAMPLE")
+            .unwrap_or_else(|_| "D:/Projects/video_converter/samples/test.mp4".into());
+        let dir = std::env::temp_dir().join("metalmpv_list_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let list = dir.join("list.m3u");
+        std::fs::write(
+            &list,
+            format!("#EXTM3U\n#EXTINF:-1,The sample\n{sample}\nhttps://example.invalid/2.ts\n"),
+        )
+        .unwrap();
+        let api = sys::api().unwrap();
+        let mpv = Mpv::new(
+            api,
+            &[
+                ("vo", "null"),
+                ("ao", "null"),
+                ("idle", "yes"),
+                ("terminal", "no"),
+                ("keep-open", "yes"),
+            ],
+        )
+        .unwrap();
+        let mut player = Player {
+            mpv,
+            state: State::default(),
+            scan_asked: None,
+            loading: false,
+            hwdec: true,
+            hwdec_copy: false,
+        };
+        player
+            .mpv
+            .observe(1, "playlist-count", sys::MPV_FORMAT_INT64);
+        player.load(&list, None, None);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut expanded = None;
+        let mut loaded = false;
+        let mut count = None;
+        while std::time::Instant::now() < deadline && !(loaded && count == Some(1)) {
+            while let Some(event) = player.mpv.next_event() {
+                match event {
+                    Event::Property { id: 1, value } => count = value.int(),
+                    Event::Property {
+                        id: PLAYLIST,
+                        value,
+                    } => {
+                        let (entries, playing) = playlist_of(&value);
+                        player.mpv.command(0, &["playlist-clear"]);
+                        expanded = Some((entries, playing));
+                    }
+                    Event::EndFile {
+                        reason: EndReason::Redirect,
+                        ..
+                    } => player.mpv.get(PLAYLIST, "playlist", sys::MPV_FORMAT_NODE),
+                    Event::FileLoaded => loaded = true,
+                    _ => {}
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let (entries, playing) = expanded.expect("no redirect");
+        eprintln!("{entries:?}, playing {playing}");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].1.as_deref(), Some("The sample"));
+        assert!(entries[1].0.ends_with("2.ts"));
+        assert_eq!(playing, 0);
+        assert!(loaded, "the first entry did not load");
+        assert_eq!(count, Some(1), "mpv kept the other entries");
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// Plays a real file without a window and reads its tracks:

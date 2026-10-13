@@ -49,6 +49,7 @@ pub const MPV_END_FILE_REASON_EOF: c_int = 0;
 pub const MPV_END_FILE_REASON_STOP: c_int = 2;
 pub const MPV_END_FILE_REASON_QUIT: c_int = 3;
 pub const MPV_END_FILE_REASON_ERROR: c_int = 4;
+pub const MPV_END_FILE_REASON_REDIRECT: c_int = 5;
 
 /// `mpv_error`: an option the build does not know.
 pub const MPV_ERROR_OPTION_NOT_FOUND: c_int = -5;
