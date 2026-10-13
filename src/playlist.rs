@@ -246,6 +246,11 @@ pub struct Playlist {
     pub selected: Option<usize>,
     /// What the M3U lists said about their entries.
     channels: HashMap<PathBuf, Channel>,
+    /// The file playing, taken out of the list: still the current path
+    /// (its title, its cover), and the entry that took its place, which
+    /// comes next.
+    gone: Option<PathBuf>,
+    after_gone: Option<usize>,
 }
 
 impl Playlist {
@@ -284,9 +289,12 @@ impl Playlist {
             .unwrap_or_else(|| path.to_string_lossy().into_owned())
     }
 
+    /// The file of the current entry, or the one playing that was taken
+    /// out of the list.
     pub fn current_path(&self) -> Option<&Path> {
         self.current
             .and_then(|i| self.items.get(i))
+            .or(self.gone.as_ref())
             .map(PathBuf::as_path)
     }
 
@@ -294,6 +302,8 @@ impl Playlist {
     pub fn set_current(&mut self, index: usize) -> Option<&Path> {
         let path = self.items.get(index)?;
         self.current = Some(index);
+        self.gone = None;
+        self.after_gone = None;
         Some(path)
     }
 
@@ -304,6 +314,8 @@ impl Playlist {
         self.channels.clear();
         self.current = None;
         self.selected = None;
+        self.gone = None;
+        self.after_gone = None;
         self.add(paths);
         if !self.items.is_empty() {
             self.current = Some(0);
@@ -323,13 +335,21 @@ impl Playlist {
     }
 
     /// Remove entry `index`; the current and the selected entries keep
-    /// pointing at the same files (the current one becomes none if it was
-    /// removed).
+    /// pointing at the same files. The current one removed stays the
+    /// current path while it plays, and the entry after it comes next.
     pub fn remove(&mut self, index: usize) {
         if index >= self.items.len() {
             return;
         }
-        self.items.remove(index);
+        let removed = self.items.remove(index);
+        if self.current == Some(index) {
+            self.gone = Some(removed);
+            self.after_gone = Some(index);
+        } else if let Some(after) = self.after_gone
+            && after > index
+        {
+            self.after_gone = Some(after - 1);
+        }
         let shift = |i: Option<usize>| match i {
             Some(i) if i == index => None,
             Some(i) if i > index => Some(i - 1),
@@ -359,18 +379,27 @@ impl Playlist {
         self.items = items;
         let find = |p: Option<PathBuf>| p.and_then(|p| self.items.iter().position(|i| *i == p));
         self.current = find(current);
+        // The place of a playing entry taken out means nothing now.
+        self.after_gone = None;
         self.selected = find(selected);
     }
 
-    /// The entry after the current one, if any.
+    /// The entry after the current one (after the place of the playing
+    /// one taken out), if any.
     pub fn next(&self) -> Option<usize> {
-        let i = self.current.map_or(0, |c| c + 1);
+        let i = match (self.current, self.after_gone) {
+            (Some(c), _) => c + 1,
+            (None, Some(after)) => after,
+            (None, None) => 0,
+        };
         (i < self.items.len()).then_some(i)
     }
 
     /// The entry before the current one, if any.
     pub fn prev(&self) -> Option<usize> {
-        self.current.and_then(|c| c.checked_sub(1))
+        self.current
+            .or(self.after_gone)
+            .and_then(|c| c.checked_sub(1))
     }
 
     /// The entry after the current one; with the list repeated, the first
@@ -407,6 +436,8 @@ impl Playlist {
         }
         let find = |p: Option<PathBuf>| p.and_then(|p| self.items.iter().position(|i| *i == p));
         self.current = find(current);
+        // The place of a playing entry taken out means nothing now.
+        self.after_gone = None;
         self.selected = find(selected);
     }
 }
@@ -650,9 +681,30 @@ mod tests {
         assert_eq!(p.current_path(), Some(Path::new("c")));
         p.remove(1);
         assert_eq!(p.current(), None);
-        assert_eq!(p.next(), Some(0));
+        // The playing file taken out is still the current path; it was
+        // the last, so nothing comes after it.
+        assert_eq!(p.current_path(), Some(Path::new("c")));
+        assert_eq!(p.next(), None);
+        assert_eq!(p.prev(), Some(0));
         p.remove(5);
         assert_eq!(p.len(), 1);
+    }
+
+    #[test]
+    fn the_entry_after_a_removed_current_comes_next() {
+        let mut p = list(&["a", "b", "c", "d"]);
+        p.set_current(1);
+        p.remove(1);
+        assert_eq!(p.next(), Some(1));
+        assert_eq!(p.items()[1], Path::new("c"));
+        assert_eq!(p.prev(), Some(0));
+        // Removing one before its place moves the place.
+        p.remove(0);
+        assert_eq!(p.items()[p.next().unwrap()], Path::new("c"));
+        // Playing another entry forgets it.
+        p.set_current(1);
+        assert_eq!(p.current_path(), Some(Path::new("d")));
+        assert_eq!(p.next(), None);
     }
 
     #[test]

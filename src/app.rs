@@ -124,6 +124,13 @@ pub struct App {
     /// right, bottom), given back when they return; none when the window
     /// was maximized or in fullscreen, which keep their size.
     bare_insets: Option<[i32; 4]>,
+    /// Windows is ending the session: the settings and positions are saved
+    /// in `logic` (winit does not close the window for it).
+    ending_session: bool,
+    /// The interface came back while the window was maximized or in
+    /// fullscreen: `bare_insets` are given back once it is a window again
+    /// (its restored rectangle is still the smaller one).
+    regrow: bool,
     /// The right button went down on the picture: the context menu opens
     /// when it is let go.
     menu_press: bool,
@@ -187,7 +194,10 @@ impl App {
             crate::instance::listen(ctx, hwnd);
             if crate::MAXIMIZE_WHEN_SHOWN.swap(false, Ordering::Relaxed) {
                 win::cloak(hwnd, true);
-                win::show_maximized(hwnd, settings.window_normal, crate::DEFAULT_SIZE);
+                // A rectangle on a monitor no longer there would restore
+                // the window off the screen.
+                let normal = settings.window_normal.filter(|r| win::on_a_monitor(*r));
+                win::show_maximized(hwnd, normal, crate::DEFAULT_SIZE);
                 cloak = Some((Instant::now() + UNCLOAK_TIMEOUT, ctx.cumulative_frame_nr()));
             }
         }
@@ -270,6 +280,8 @@ impl App {
             fill: false,
             bare: false,
             bare_insets: None,
+            regrow: false,
+            ending_session: false,
             menu_press: false,
             picture_area: Rect::NOTHING,
             chrome: egui::Vec2::ZERO,
@@ -336,6 +348,8 @@ impl App {
 
     /// Play playlist entry `index`.
     fn play(&mut self, index: usize) {
+        // The entry playing chosen again starts over, not where it is.
+        let again = self.playlist.current() == Some(index) && !self.state_idle();
         let Some(path) = self.playlist.set_current(index).map(Path::to_path_buf) else {
             return;
         };
@@ -345,7 +359,7 @@ impl App {
         let left = self.positions.get(&path);
         let start = left
             .and_then(|l| l.time)
-            .filter(|_| self.settings.resume_playback);
+            .filter(|_| self.settings.resume_playback && !again);
         let tracks = left
             .and_then(|l| l.tracks)
             .filter(|_| self.settings.remember_tracks);
@@ -1088,6 +1102,10 @@ impl App {
             .player
             .as_ref()
             .is_none_or(|p| p.state.paused || p.state.idle);
+        // Play with nothing to play would open the file dialog, perhaps
+        // over a minimised window: a headset's button does nothing then.
+        let nothing = self.state_idle() && self.playlist.is_empty();
+        let play = |cmd: Cmd| (!(nothing && cmd == Cmd::TogglePause)).then_some(cmd);
         for hooked in win::take_hooked() {
             let key = match hooked {
                 win::Hooked::Media(key) => key,
@@ -1097,10 +1115,14 @@ impl App {
                     }
                     continue;
                 }
+                win::Hooked::EndSession => {
+                    self.ending_session = true;
+                    continue;
+                }
                 win::Hooked::Thumb(id) => {
                     self.pending.extend(match id {
                         crate::taskbar::PREVIOUS => Some(Cmd::Prev),
-                        crate::taskbar::PLAY_PAUSE => Some(Cmd::TogglePause),
+                        crate::taskbar::PLAY_PAUSE => play(Cmd::TogglePause),
                         crate::taskbar::NEXT => Some(Cmd::Next),
                         _ => None,
                     });
@@ -1115,7 +1137,7 @@ impl App {
                 win::MediaKey::Next => Some(Cmd::Next),
                 win::MediaKey::Previous => Some(Cmd::Prev),
             };
-            self.pending.extend(cmd);
+            self.pending.extend(cmd.and_then(play));
         }
     }
 
@@ -1246,6 +1268,7 @@ impl App {
         };
         let shown = self.settings.playlist_visible
             && self.settings.playlist_detached
+            && !self.bare
             && !(self.fullscreen && over_player);
         if !shown {
             if self.playlist_builder.take().is_some() {
@@ -1331,8 +1354,12 @@ impl App {
             self.settings.playlist_visible = false;
         }
         // eframe gives no handle for the window: the visible one of this
-        // thread that is not the player's. Found again if it was made anew.
-        if self.playlist_hwnd.is_some_and(|h| !win::is_window(h)) {
+        // thread that is not the player's. Found again if it was made anew
+        // (its handle may then be the old one's: not owned by the player
+        // yet).
+        if let (Some(h), Some(main)) = (self.playlist_hwnd, self.hwnd)
+            && !win::owned_by(h, main)
+        {
             self.playlist_hwnd = None;
         }
         if self.playlist_hwnd.is_none()
@@ -1369,9 +1396,22 @@ impl App {
             return;
         }
         self.bare = on;
+        self.regrow = false;
         let windowed = !frameless::is_fullscreen(ctx) && !frameless::is_maximized(ctx);
+        if !windowed {
+            // Given back when the window is restored (`ui`); the insets of
+            // a window hidden before it was maximized are kept for that.
+            self.regrow = !on && self.bare_insets.is_some();
+            return;
+        }
+        self.resize_bare(ctx, on);
+    }
+
+    /// Take the interface's room off the window (`on`) or give back what
+    /// was taken.
+    fn resize_bare(&mut self, ctx: &egui::Context, on: bool) {
         let insets = if on { None } else { self.bare_insets.take() };
-        let (Some(hwnd), true) = (self.hwnd, windowed) else {
+        let Some(hwnd) = self.hwnd else {
             return;
         };
         let Some(window) = win::window_rect(hwnd) else {
@@ -2376,6 +2416,13 @@ impl eframe::App for App {
         self.updates.poll();
         self.take_events();
         self.take_hooked();
+        if std::mem::take(&mut self.ending_session)
+            && let Some(storage) = frame.storage_mut()
+        {
+            log::info!("the session is ending: saving");
+            self.save(storage);
+            storage.flush();
+        }
         self.follow_audio_device();
         let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         // eframe calls no `ui` for a minimised window: the thumbnail
@@ -2408,6 +2455,22 @@ impl eframe::App for App {
         }
         self.fullscreen = fullscreen;
         let maximized = frameless::is_maximized(&ctx);
+        // The interface came back while maximized or in fullscreen: the
+        // restored window gets its room back now.
+        if self.regrow
+            && !fullscreen
+            && !maximized
+            && !ctx.input(|i| i.viewport().minimized.unwrap_or(false))
+        {
+            self.regrow = false;
+            self.resize_bare(&ctx, false);
+        }
+        // Closing with only the picture: eframe keeps the window's size
+        // for the next start, which shows the interface.
+        if self.bare && !fullscreen && !maximized && ctx.input(|i| i.viewport().close_requested()) {
+            self.bare = false;
+            self.resize_bare(&ctx, false);
+        }
         let state = self.state();
         let mut cmds = std::mem::take(&mut self.pending);
 

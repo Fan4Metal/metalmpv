@@ -403,6 +403,9 @@ pub enum Hooked {
     TaskbarButton,
     /// A thumbnail button was clicked (its id).
     Thumb(u16),
+    /// Windows is ending the session (`WM_QUERYENDSESSION`): winit closes
+    /// nothing, so the settings are saved now.
+    EndSession,
 }
 
 /// `TaskbarButtonCreated`, registered by [`hook_window`].
@@ -486,7 +489,8 @@ unsafe extern "system" fn window_proc(
     use std::sync::atomic::Ordering;
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        WM_COMMAND, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_MOVING, WM_WINDOWPOSCHANGED,
+        WM_COMMAND, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_MOVING, WM_QUERYENDSESSION,
+        WM_WINDOWPOSCHANGED,
     };
     // THBN_CLICKED in WM_COMMAND's high word.
     const THBN_CLICKED: usize = 0x1800;
@@ -498,6 +502,9 @@ unsafe extern "system" fn window_proc(
             hook(Hooked::Thumb((wparam & 0xFFFF) as u16));
             return 0;
         }
+        // Answered as DefWindowProc does (yes); the app saves before the
+        // process is ended.
+        WM_QUERYENDSESSION => hook(Hooked::EndSession),
         WM_ENTERSIZEMOVE => unsafe { move_started(hwnd as isize) },
         WM_WINDOWPOSCHANGED => follow_player(hwnd as isize),
         WM_EXITSIZEMOVE => {
@@ -671,6 +678,12 @@ pub fn visible_rect(hwnd: isize) -> Option<[i32; 4]> {
 /// Whether `hwnd` is still a window.
 pub fn is_window(hwnd: isize) -> bool {
     unsafe { windows_sys::Win32::UI::WindowsAndMessaging::IsWindow(hwnd as _) != 0 }
+}
+
+/// Whether `hwnd` is a window owned by `owner` (an adopted playlist).
+pub fn owned_by(hwnd: isize, owner: isize) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GW_OWNER, GetWindow};
+    is_window(hwnd) && unsafe { GetWindow(hwnd as _, GW_OWNER) } as isize == owner
 }
 
 /// Whether `rect` (pixels) is at least partly on a monitor.
