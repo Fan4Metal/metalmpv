@@ -36,6 +36,9 @@ pub const PRESSED: Color32 = rgb(0x38, 0x3c, 0x44);
 pub const TRACK: Color32 = rgb(0x3a, 0x3e, 0x46);
 /// The OSD text.
 pub const OSD: Color32 = rgb(0xf3, 0xc5, 0x7a);
+/// The A-B repeat's points on the seek bar: the OSD's yellow, which says
+/// the same on the screen.
+pub const LOOP: Color32 = OSD;
 /// The close button of the title row under the pointer.
 pub const CLOSE_HOVER: Color32 = rgb(0xc4, 0x2b, 0x1c);
 pub const ERROR: Color32 = rgb(0xff, 0x8a, 0x80);

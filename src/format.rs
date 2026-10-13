@@ -87,6 +87,14 @@ pub fn time_line(mode: TimeMode, time_pos: Option<f64>, duration: Option<f64>) -
 }
 
 /// The OSD's clock: always `HH:MM:SS`.
+/// `HH:MM:SS.t`, the tenths after the decimal sign of `lang` (the A-B
+/// repeat's points, set to a frame).
+pub fn clock_tenths_in(lang: Lang, seconds: f64) -> String {
+    let tenths = (seconds.max(0.0) * 10.0).round() as u64;
+    let sign = if lang == Lang::Ru { ',' } else { '.' };
+    format!("{}{sign}{}", clock((tenths / 10) as f64), tenths % 10)
+}
+
 pub fn clock(seconds: f64) -> String {
     let total = seconds.max(0.0) as u64;
     format!(
@@ -230,6 +238,11 @@ pub enum Osd {
     OnTop(crate::settings::OnTop),
     /// What plays after the end of a file.
     Repeat(crate::playlist::Repeat),
+    /// The A-B repeat's points (none: off).
+    Loop {
+        a: Option<f64>,
+        b: Option<f64>,
+    },
     /// Free text: a file name, an error.
     Text(String),
 }
@@ -383,6 +396,19 @@ impl Osd {
                     (Repeat::Off, true) => "[ Повтор выключен ]".into(),
                     (Repeat::One, true) => "[ Повтор файла ]".into(),
                     (Repeat::All, true) => "[ Повтор плейлиста ]".into(),
+                }
+            }
+            Osd::Loop { a, b } => {
+                let at = |t: f64| clock_tenths_in(lang, t);
+                match (a, b, ru) {
+                    (Some(a), Some(b), false) => format!("[ A-B repeat {} – {} ]", at(*a), at(*b)),
+                    (Some(a), Some(b), true) => format!("[ Повтор A-B {} – {} ]", at(*a), at(*b)),
+                    (Some(a), None, false) => format!("[ A-B repeat from {} ]", at(*a)),
+                    (Some(a), None, true) => format!("[ Повтор A-B с {} ]", at(*a)),
+                    (None, Some(b), false) => format!("[ A-B repeat to {} ]", at(*b)),
+                    (None, Some(b), true) => format!("[ Повтор A-B до {} ]", at(*b)),
+                    (None, None, false) => "[ A-B repeat off ]".into(),
+                    (None, None, true) => "[ Повтор A-B выключен ]".into(),
                 }
             }
             Osd::Speed(speed) => {
@@ -554,6 +580,25 @@ mod tests {
         assert_eq!(Osd::Fill(false).text_in(Lang::En), "[ Whole picture ]");
         assert_eq!(Osd::Speed(1.25).text_in(Lang::Ru), "[ Скорость 1,25× ]");
         assert_eq!(Osd::Speed(2.0).text_in(Lang::En), "[ Speed 2× ]");
+        let both = Osd::Loop {
+            a: Some(83.44),
+            b: Some(3725.0),
+        };
+        assert_eq!(
+            both.text_in(Lang::En),
+            "[ A-B repeat 00:01:23.4 – 01:02:05.0 ]"
+        );
+        assert_eq!(
+            both.text_in(Lang::Ru),
+            "[ Повтор A-B 00:01:23,4 – 01:02:05,0 ]"
+        );
+        let start = Osd::Loop {
+            a: Some(0.96),
+            b: None,
+        };
+        assert_eq!(start.text_in(Lang::En), "[ A-B repeat from 00:00:01.0 ]");
+        let off = Osd::Loop { a: None, b: None };
+        assert_eq!(off.text_in(Lang::Ru), "[ Повтор A-B выключен ]");
         assert_eq!(speed_in(Lang::En, 0.5), "0.5×");
         assert_eq!(
             Osd::AudioDelay(0.3).text_in(Lang::Ru),

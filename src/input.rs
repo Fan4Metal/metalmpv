@@ -69,6 +69,13 @@ pub enum Cmd {
     PlaylistShuffle,
     /// Repeat off, the file, the list (`R`).
     CycleRepeat,
+    /// The A-B repeat's start here (`[`), its end here (`]`: playback goes
+    /// back to the start from there), none (`\`); the context menu.
+    LoopA,
+    LoopB,
+    LoopClear,
+    /// A, then B, then none, as mpv's `l` (no key by default).
+    CycleLoop,
     /// Over the other windows: never, always, while playing (`Ctrl+T`).
     CycleOnTop,
     SetOnTop(crate::settings::OnTop),

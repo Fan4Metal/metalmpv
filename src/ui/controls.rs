@@ -410,6 +410,22 @@ fn seek_bar(
         );
         painter.rect_filled(done, 3.0, style::accent());
     }
+    // The A-B repeat: the stretch between its points lighter, the points
+    // as ticks across the bar.
+    if let Some(d) = duration.filter(|d| *d > 0.0) {
+        let x = |t: f64| track.left() + track.width() * (t / d).clamp(0.0, 1.0) as f32;
+        if let (Some(a), Some(b)) = (state.loop_a, state.loop_b) {
+            let stretch = Rect::from_min_max(pos2(x(a), track.top()), pos2(x(b), track.bottom()));
+            painter.rect_filled(stretch, 0.0, style::LOOP.gamma_multiply(0.45));
+        }
+        for t in [state.loop_a, state.loop_b].into_iter().flatten() {
+            let tick = Rect::from_center_size(
+                pos2(x(t), track.center().y),
+                vec2(2.0, track.height() + 8.0),
+            );
+            painter.rect_filled(tick, 1.0, style::LOOP);
+        }
+    }
     // The chapters' starts as gaps in the bar (not the first, at the
     // start, nor one at the very end).
     if marks && let Some(d) = duration {

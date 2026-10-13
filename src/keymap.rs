@@ -178,6 +178,9 @@ fn key_label(key: Key) -> &'static str {
         Key::Minus => "-",
         // The key left of 1: `Ё` in the Russian layout.
         Key::Backtick => tr!("`", "Ё"),
+        // The brackets: `Х` and `Ъ` in the Russian layout.
+        Key::OpenBracket => tr!("[", "Х"),
+        Key::CloseBracket => tr!("]", "Ъ"),
         _ => key.symbol_or_name(),
     }
 }
@@ -271,6 +274,10 @@ actions! {
     NormalSpeed "normal_speed" Playback Cmd::Speed(0), [Chord::key(Key::Z)];
     Position "position" Playback Cmd::ShowPosition, [Chord::key(Key::O)];
     Repeat "repeat" Playback Cmd::CycleRepeat, [Chord::key(Key::R)];
+    LoopA "loop_a" Playback Cmd::LoopA, [Chord::key(Key::OpenBracket)];
+    LoopB "loop_b" Playback Cmd::LoopB, [Chord::key(Key::CloseBracket)];
+    LoopClear "loop_clear" Playback Cmd::LoopClear, [Chord::key(Key::Backslash)];
+    LoopCycle "loop_cycle" Playback Cmd::CycleLoop, [];
 
     VolumeUp "volume_up" Sound Cmd::Volume(VOLUME_STEP), [Chord::key(Key::ArrowUp)];
     VolumeDown "volume_down" Sound Cmd::Volume(-VOLUME_STEP), [Chord::key(Key::ArrowDown)];
@@ -356,6 +363,13 @@ impl Action {
             Action::Repeat => tr!(
                 "Repeat: off, the file, the list",
                 "Повтор: выключен, файл, плейлист"
+            ),
+            Action::LoopA => tr!("A-B repeat: start here", "Повтор A-B: начало здесь"),
+            Action::LoopB => tr!("A-B repeat: end here", "Повтор A-B: конец здесь"),
+            Action::LoopClear => tr!("A-B repeat off", "Выключить повтор A-B"),
+            Action::LoopCycle => tr!(
+                "A-B repeat: start, end, off",
+                "Повтор A-B: начало, конец, выключить"
             ),
             Action::VolumeUp => tr!("Volume up", "Громче"),
             Action::VolumeDown => tr!("Volume down", "Тише"),

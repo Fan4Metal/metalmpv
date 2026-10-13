@@ -81,6 +81,10 @@ The Subtitles tab starts with ready-made looks: standard, yellow, bold with a th
 
 When the file has chapters, the seek bar is cut at the start of each, and the tooltip over the bar names the chapter under the pointer. The marks are turned off and on in the **Chapters** submenu of the picture's context menu or in the settings (**Playback**). Under the playlist, the **Chapters** section lists them with their starts, the playing one highlighted; a click goes to a chapter, and a click on the header folds the section. The same list is in the **Chapters** submenu. The move is reported on the screen with the chapter's number and title.
 
+### A-B repeat
+
+`[` marks the start of a stretch at the position playing and `]` its end; from then on, playback goes back to the start each time it reaches the end, until `\` turns the repeat off. An end marked without a start repeats from the beginning of the file, and an end before the start swaps the two. The points appear as yellow ticks on the seek bar with the stretch between them highlighted, the on-screen message gives them to a tenth of a second, and the **A-B repeat** submenu of the picture's context menu does the same. The points belong to the file: another file starts without them.
+
 ### Audio and subtitles
 
 The button with a speech bubble left of the volume (`T`) opens a window with the audio tracks and the subtitles of the file side by side. Each entry names the language first and the track's title after a dash ("Russian — Superbit"); under it, badges show the format, the channels and whether the track is external, forced or the file's default. A long list scrolls. A choice applies at once and the window stays open, so both can be changed in one go; a click outside or `Esc` closes it. **Load from a file…** under the subtitles adds subtitles from a file of their own (SRT, ASS, SSA, VobSub, PGS, WebVTT); a subtitle file dropped onto the playing video is added the same way. Subtitles named like the video next to it are loaded by themselves. The same lists are in the picture's context menu, and every change is reported on the screen.
@@ -141,7 +145,7 @@ The list of fonts has a search field at its top. The **Keyboard shortcuts** cate
 
 ## Keyboard shortcuts
 
-The keys below are the defaults. In the settings, the **Keyboard shortcuts** category lists the actions in groups, each with its keys: a click on a key waits for the key combination (or the mouse's back or forward button, with `Ctrl`, `Alt` or `Shift` if wanted) that takes its place, **+** adds one more, the cross removes it, and `Esc` gives up. A combination another action had is taken from that action, and the page says so. A few actions without a default key can be given one: Stop, Load subtitles, Equalizer, Playlist in a window of its own / in the player, Minimize and Maximize. **Reset the keys** puts them all back. The menus and tooltips show the keys as they are set. The mouse wheel, the double and middle clicks and the media keys stay as described; `Ctrl+V` cannot be chosen.
+The keys below are the defaults. In the settings, the **Keyboard shortcuts** category lists the actions in groups, each with its keys: a click on a key waits for the key combination (or the mouse's back or forward button, with `Ctrl`, `Alt` or `Shift` if wanted) that takes its place, **+** adds one more, the cross removes it, and `Esc` gives up. A combination another action had is taken from that action, and the page says so. A few actions without a default key can be given one: Stop, A-B repeat: start, end, off (one key for the three in turn), Load subtitles, Equalizer, Playlist in a window of its own / in the player, Minimize and Maximize. **Reset the keys** puts them all back. The menus and tooltips show the keys as they are set. The mouse wheel, the double and middle clicks and the media keys stay as described; `Ctrl+V` cannot be chosen.
 
 | Key | Action |
 |---|---|
@@ -179,6 +183,8 @@ The keys below are the defaults. In the settings, the **Keyboard shortcuts** cat
 | `Ctrl+U` | Open an address: a direct link to a video or a stream |
 | `L`, middle click on the picture | Show or hide the playlist |
 | `R` | Repeat: off, the file, the list |
+| `[` / `]` | A-B repeat: start / end at the position playing |
+| `\` | A-B repeat off |
 | `Ctrl+T` | Over the other windows: never, always, while playing (also in the settings and the context menu) |
 | `Delete` | Remove the selected playlist entry |
 | `F5`, `Ctrl+,` | Settings |

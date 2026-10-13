@@ -48,6 +48,8 @@ const FULLSCREEN_TITLE_HEIGHT: f32 = 34.0;
 /// How near the bottom edge the pointer shows the control bar in
 /// fullscreen (the bar is a little lower).
 const FULLSCREEN_BAR_ZONE: f32 = 90.0;
+/// The shortest A-B repeat, in seconds.
+const MIN_LOOP: f64 = 0.1;
 /// Files handed over by other starts this close together make one
 /// playlist (Explorer starts one process per selected file).
 const SAME_BATCH: Duration = Duration::from_millis(1500);
@@ -993,6 +995,9 @@ impl App {
                 self.osd.show(Osd::OnTop(on_top));
             }
             Cmd::CycleRepeat => self.run(ctx, frame, Cmd::SetRepeat(self.settings.repeat.next())),
+            Cmd::LoopA | Cmd::LoopB | Cmd::LoopClear | Cmd::CycleLoop => {
+                self.ab_loop(cmd, &state);
+            }
             Cmd::SetRepeat(repeat) => {
                 self.settings.repeat = repeat;
                 if let Some(player) = &mut self.player {
@@ -1385,6 +1390,43 @@ impl App {
         {
             self.settings.playlist_rect = Some(rect);
         }
+    }
+
+    /// The A-B repeat: its start or its end at the position now, or off;
+    /// `CycleLoop` does the next of the three. An end without a start
+    /// starts at the beginning; one before the start swaps them.
+    fn ab_loop(&mut self, cmd: Cmd, state: &State) {
+        let Some(player) = &mut self.player else {
+            return;
+        };
+        let (a, b) = (state.loop_a, state.loop_b);
+        let cmd = match cmd {
+            Cmd::CycleLoop => match (a, b) {
+                (None, _) => Cmd::LoopA,
+                (Some(_), None) => Cmd::LoopB,
+                (Some(_), Some(_)) => Cmd::LoopClear,
+            },
+            cmd => cmd,
+        };
+        let now = state.time.filter(|_| !state.idle);
+        let (a, b) = match (cmd, now) {
+            (Cmd::LoopClear, _) => (None, None),
+            // A start after the end leaves no end.
+            (Cmd::LoopA, Some(t)) => (Some(t), b.filter(|b| *b > t + MIN_LOOP)),
+            (Cmd::LoopB, Some(t)) => {
+                let a = a.unwrap_or(0.0);
+                if (t - a).abs() < MIN_LOOP {
+                    return;
+                }
+                (Some(a), Some(t))
+            }
+            _ => return,
+        };
+        player.set_loop(a, b);
+        self.osd.show(Osd::Loop {
+            a: player.state.loop_a,
+            b: player.state.loop_b,
+        });
     }
 
     /// Hide the title row, the control bar and the playlist (`on`), or
@@ -2174,6 +2216,7 @@ fn context_menu(
     aspect_menu(ui, state, marks.aspect, &mut menu_cmds);
     speed_menu(ui, state, &mut menu_cmds);
     repeat_menu(ui, marks.repeat, &mut menu_cmds);
+    loop_menu(ui, state, &mut menu_cmds);
     let list = if playlist_visible {
         tr!("Hide the playlist", "Скрыть плейлист")
     } else {
@@ -2266,6 +2309,46 @@ fn repeat_menu(ui: &mut egui::Ui, current: Repeat, out: &mut Vec<Cmd>) {
             }
         }
         switches(ui, Cmd::CycleRepeat);
+    });
+}
+
+/// The A-B repeat: its start and its end at the position now, off; the
+/// points set, if any.
+fn loop_menu(ui: &mut egui::Ui, state: &State, out: &mut Vec<Cmd>) {
+    ui.menu_button(tr!("A-B repeat", "Повтор A-B"), |ui| {
+        let lang = crate::i18n::lang();
+        let point = |t: Option<f64>| t.map(|t| crate::format::clock_tenths_in(lang, t));
+        let items = [
+            (
+                Cmd::LoopA,
+                tr!("Start here (A)", "Начало здесь (A)"),
+                !state.idle,
+                point(state.loop_a),
+            ),
+            (
+                Cmd::LoopB,
+                tr!("End here (B)", "Конец здесь (B)"),
+                !state.idle,
+                point(state.loop_b),
+            ),
+            (
+                Cmd::LoopClear,
+                tr!("Off", "Выключить"),
+                state.loop_a.is_some() || state.loop_b.is_some(),
+                None,
+            ),
+        ];
+        for (cmd, text, enabled, at) in items {
+            let text = match at {
+                Some(at) => format!("{text}: {at}"),
+                None => text.to_owned(),
+            };
+            let button = egui::Button::new(text).shortcut_text(keymap::shortcut(cmd));
+            if ui.add_enabled(enabled, button).clicked() {
+                out.push(cmd);
+                ui.close();
+            }
+        }
     });
 }
 

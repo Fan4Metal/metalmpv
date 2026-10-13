@@ -123,9 +123,11 @@ enum Prop {
     FileFormat,
     VideoParams,
     AudioDevices,
+    LoopA,
+    LoopB,
 }
 
-const PROPS: [(Prop, &str, sys::mpv_format); 21] = [
+const PROPS: [(Prop, &str, sys::mpv_format); 23] = [
     (Prop::Pause, "pause", sys::MPV_FORMAT_FLAG),
     (Prop::TimePos, "time-pos", sys::MPV_FORMAT_DOUBLE),
     (Prop::Duration, "duration", sys::MPV_FORMAT_DOUBLE),
@@ -157,6 +159,9 @@ const PROPS: [(Prop, &str, sys::mpv_format); 21] = [
         "audio-device-list",
         sys::MPV_FORMAT_NODE,
     ),
+    // A-B repeat: a time, or "no" (a node gives either).
+    (Prop::LoopA, "ab-loop-a", sys::MPV_FORMAT_NODE),
+    (Prop::LoopB, "ab-loop-b", sys::MPV_FORMAT_NODE),
 ];
 
 /// The reply to [`Player::ask_scan`]'s `video-frame-info`, past the
@@ -221,6 +226,10 @@ pub struct State {
     pub audio_delay: f64,
     /// The subtitles against the picture, in seconds (later when positive).
     pub sub_delay: f64,
+    /// The A-B repeat's points in seconds (mpv's `ab-loop-a`, `-b`); it
+    /// repeats while both are set.
+    pub loop_a: Option<f64>,
+    pub loop_b: Option<f64>,
     /// The playback speed (1: normal).
     pub speed: f64,
     /// The output devices there are.
@@ -341,6 +350,8 @@ impl Default for State {
             file_format: None,
             video_params: None,
             scan: None,
+            loop_a: None,
+            loop_b: None,
         }
     }
 }
@@ -393,6 +404,8 @@ impl State {
             }
             Prop::VideoParams => self.video_params = VideoParams::from_value(value),
             Prop::AudioDevices => self.audio_devices = audio::devices_from_value(value),
+            Prop::LoopA => self.loop_a = value.double().filter(|t| t.is_finite()),
+            Prop::LoopB => self.loop_b = value.double().filter(|t| t.is_finite()),
         }
     }
 
@@ -619,6 +632,8 @@ impl Player {
     /// `tracks` (`None`: mpv's choice), replacing the current file.
     pub fn load(&mut self, path: &Path, start: Option<f64>, tracks: Option<Tracks>) {
         self.mpv.set("pause", &Value::Flag(false));
+        // The A-B points are the file's: mpv would keep them for the next.
+        self.set_loop(None, None);
         let path = path.to_string_lossy();
         // File-local options: the next file starts afresh.
         let id = |n: Option<i64>| n.map_or("no".to_owned(), |n| n.to_string());
@@ -804,6 +819,20 @@ impl Player {
         self.mpv.set("loop-file", &Value::Str(value.into()));
     }
 
+    /// The A-B repeat's points (`None`: not set): from `b` playback goes
+    /// back to `a` while both are set; in order.
+    pub fn set_loop(&mut self, a: Option<f64>, b: Option<f64>) {
+        let (a, b) = match (a, b) {
+            (Some(a), Some(b)) if b < a => (Some(b), Some(a)),
+            other => other,
+        };
+        let value = |t: Option<f64>| t.map_or(Value::Str("no".into()), Value::Double);
+        self.mpv.set("ab-loop-a", &value(a));
+        self.mpv.set("ab-loop-b", &value(b));
+        self.state.loop_a = a;
+        self.state.loop_b = b;
+    }
+
     /// The playback speed (mpv keeps the voice's pitch); kept between files.
     pub fn set_speed(&mut self, speed: f64) {
         self.mpv.set("speed", &Value::Double(speed));
@@ -919,6 +948,81 @@ mod tests {
             Ok(_) => {}
             Err(e) => assert!(e.contains(sys::DLL_NAME), "{e}"),
         }
+    }
+
+    /// The A-B repeat on a real file: mpv takes the points, playback goes
+    /// back from B to A, and the points go with the next file:
+    /// `cargo test ab_loop -- --ignored --nocapture` (a video of at least
+    /// 3 s in METALMPV_SAMPLE or the default below).
+    #[test]
+    #[ignore = "needs vendor/libmpv and a sample video"]
+    fn ab_loop_of_a_real_file() {
+        let sample = std::env::var("METALMPV_SAMPLE")
+            .unwrap_or_else(|_| "D:/Projects/video_converter/samples/test.mp4".into());
+        let api = sys::api().unwrap();
+        let mpv = Mpv::new(
+            api,
+            &[
+                ("vo", "null"),
+                ("ao", "null"),
+                ("idle", "yes"),
+                ("terminal", "no"),
+                ("keep-open", "yes"),
+            ],
+        )
+        .unwrap();
+        let mut player = Player {
+            mpv,
+            state: State::default(),
+            scan_asked: None,
+            loading: false,
+            hwdec: true,
+            hwdec_copy: false,
+        };
+        for (prop, name, format) in PROPS {
+            player.mpv.observe(prop as u64, name, format);
+        }
+        let wait = |player: &mut Player, seconds: f64, until: &mut dyn FnMut(&State) -> bool| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs_f64(seconds);
+            while std::time::Instant::now() < deadline {
+                player.poll();
+                if until(&player.state) {
+                    return true;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            false
+        };
+        player.load(Path::new(&sample), None, None);
+        assert!(wait(&mut player, 5.0, &mut |s| s
+            .time
+            .is_some_and(|t| t > 0.2)));
+        // Set while playing, in the wrong order: kept in order.
+        player.set_loop(Some(1.5), Some(0.5));
+        assert!(wait(&mut player, 2.0, &mut |s| s.loop_a == Some(0.5)
+            && s.loop_b == Some(1.5)));
+        // Played past B once, it is back before it.
+        let (mut highest, mut passed, mut back) = (0.0f64, false, false);
+        wait(&mut player, 3.5, &mut |s| {
+            let t = s.time.unwrap_or(0.0);
+            highest = highest.max(t);
+            passed |= t > 1.3;
+            back |= passed && t < 1.0;
+            false
+        });
+        eprintln!("highest {highest:.2}, back {back}");
+        assert!(back, "playback did not go back to A");
+        assert!(highest < 2.0, "playback went on past B: {highest}");
+        // Off.
+        player.set_loop(None, None);
+        assert!(wait(&mut player, 2.0, &mut |s| s.loop_a.is_none()
+            && s.loop_b.is_none()));
+        // The next file starts without them.
+        player.set_loop(Some(0.5), Some(1.5));
+        player.load(Path::new(&sample), None, None);
+        assert!(wait(&mut player, 3.0, &mut |s| s.loop_a.is_none()
+            && s.loop_b.is_none()
+            && s.time.is_some_and(|t| t > 1.8)));
     }
 
     /// A list mpv opens itself (as one at an address would be) gives its
