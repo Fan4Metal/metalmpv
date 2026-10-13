@@ -377,6 +377,16 @@ impl App {
     /// Look for the cover of the file playing once it is loaded, and take
     /// it when it is found.
     fn update_cover(&mut self, ctx: &egui::Context, state: &State) {
+        // Another entry's cover goes at once: an address looks for none,
+        // and kept the last file's.
+        let current = self.playlist.current_path();
+        if self
+            .cover
+            .as_ref()
+            .is_some_and(|c| Some(c.path.as_path()) != current)
+        {
+            self.cover = None;
+        }
         let wanted = self
             .playlist
             .current_path()
@@ -2299,6 +2309,9 @@ impl eframe::App for App {
             &state,
             cover,
             self.settings.panels_pinned,
+            self.playlist
+                .current_path()
+                .and_then(|p| self.playlist.channel(p)),
         );
         cmds.extend(info_cmds);
         let before = self.adjust.clone();

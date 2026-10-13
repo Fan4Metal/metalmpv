@@ -16,6 +16,7 @@ use crate::i18n::lang;
 use crate::info;
 use crate::input::Cmd;
 use crate::player::State;
+use crate::playlist::Channel;
 use crate::tracks::Track;
 
 /// The width of the labels' column.
@@ -78,6 +79,7 @@ impl InfoWindow {
         state: &State,
         cover: Option<CoverView<'_>>,
         pinned: bool,
+        channel: Option<&Channel>,
     ) -> Vec<Cmd> {
         let mut out = Vec::new();
         if !self.open {
@@ -115,7 +117,7 @@ impl InfoWindow {
                     ui.weak(tr!("No file is open.", "Файл не открыт."));
                     return;
                 }
-                self.header(ui, state, cover.as_ref());
+                self.header(ui, state, cover.as_ref(), channel);
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
@@ -173,13 +175,22 @@ impl InfoWindow {
     }
 
     /// The cover and the title, the artist and the album beside it.
-    fn header(&mut self, ui: &mut Ui, state: &State, cover: Option<&CoverView<'_>>) {
-        let title = info::tag(&state.metadata, &["title"])
-            .map(str::to_owned)
+    fn header(
+        &mut self,
+        ui: &mut Ui,
+        state: &State,
+        cover: Option<&CoverView<'_>>,
+        channel: Option<&Channel>,
+    ) {
+        // An IPTV list's channel by the list's name (a stream's title is
+        // its file's, "index.m3u8"), with its group in place of an album.
+        let title = channel
+            .and_then(|c| c.title.clone())
+            .or_else(|| info::tag(&state.metadata, &["title"]).map(str::to_owned))
             .or_else(|| state.title.clone())
             .unwrap_or_default();
         let artist = info::artist(&state.metadata);
-        let album = info::album(&state.metadata);
+        let album = info::album(&state.metadata).or_else(|| channel?.group.clone());
         ui.horizontal_top(|ui| {
             if let Some(c) = cover {
                 let size = fit(c.texture.size_vec2(), vec2(THUMB, THUMB));
