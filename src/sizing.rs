@@ -51,9 +51,47 @@ pub fn placed(current: [i32; 4], size: [i32; 2], work: [i32; 4]) -> [i32; 4] {
     [left, top, left + size[0], top + size[1]]
 }
 
+/// `rect` (a window being moved) with its centre on the centre of `work`
+/// along each axis where it is within `reach` pixels of it.
+pub fn snapped_to_centre(rect: [i32; 4], work: [i32; 4], reach: i32) -> [i32; 4] {
+    let shift = |a: i32, b: i32, lo: i32, hi: i32| {
+        // Doubled: the centres of odd sizes stay whole numbers.
+        let d = (lo + hi) - (a + b);
+        if d.abs() <= 2 * reach { d / 2 } else { 0 }
+    };
+    let dx = shift(rect[0], rect[2], work[0], work[2]);
+    let dy = shift(rect[1], rect[3], work[1], work[3]);
+    [rect[0] + dx, rect[1] + dy, rect[2] + dx, rect[3] + dy]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snaps_near_the_centre_only() {
+        let work = [0, 0, 1920, 1040];
+        // 10 px right of the centre, 100 px above it: x snaps, y stays.
+        assert_eq!(
+            snapped_to_centre([570, 320, 1370, 420], work, 16),
+            [560, 320, 1360, 420]
+        );
+        // Both within reach.
+        assert_eq!(
+            snapped_to_centre([548, 260, 1348, 760], work, 16),
+            [560, 270, 1360, 770]
+        );
+        // Out of reach: as it was.
+        assert_eq!(
+            snapped_to_centre([600, 0, 1400, 500], work, 16),
+            [600, 0, 1400, 500]
+        );
+        // A second monitor to the left.
+        assert_eq!(
+            snapped_to_centre([-1350, 100, -550, 600], [-1920, 0, 0, 1040], 16),
+            [-1360, 100, -560, 600]
+        );
+    }
 
     #[test]
     fn fitted_letterboxes() {

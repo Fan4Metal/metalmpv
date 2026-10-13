@@ -30,6 +30,7 @@ const TIME_DISPLAY: &str = "time_display";
 const FULLSCREEN_TRANSPARENCY: &str = "fullscreen_transparency";
 const FULLSCREEN_TITLE: &str = "fullscreen_title";
 const INFO_PINNED: &str = "info_pinned";
+const SNAP_TO_CENTRE: &str = "snap_to_centre";
 const AUDIO_DEVICE: &str = "audio_device";
 const AUDIO_CHANNELS: &str = "audio_channels";
 const VOLUME_MAX: &str = "volume_max";
@@ -148,6 +149,8 @@ pub struct Settings {
     /// The information window stays at the player's top right corner;
     /// else it is moved by its title and egui keeps its place.
     pub info_pinned: bool,
+    /// The window, being moved, is drawn to the screen's centre lines.
+    pub snap_to_centre: bool,
     /// The output device as mpv names it; empty for Windows' default.
     pub audio_device: String,
     pub audio_channels: Channels,
@@ -201,6 +204,7 @@ impl Default for Settings {
             fullscreen_transparency: 12.0,
             fullscreen_title: true,
             info_pinned: true,
+            snap_to_centre: true,
             audio_device: String::new(),
             audio_channels: Channels::Auto,
             volume_max: 100.0,
@@ -283,6 +287,7 @@ impl Settings {
             ),
             fullscreen_title: flag(FULLSCREEN_TITLE, d.fullscreen_title),
             info_pinned: flag(INFO_PINNED, d.info_pinned),
+            snap_to_centre: flag(SNAP_TO_CENTRE, d.snap_to_centre),
             audio_device: get(AUDIO_DEVICE).unwrap_or_default(),
             audio_channels: get(AUDIO_CHANNELS)
                 .as_deref()
@@ -341,6 +346,7 @@ impl Settings {
         );
         storage.set_string(FULLSCREEN_TITLE, self.fullscreen_title.to_string());
         storage.set_string(INFO_PINNED, self.info_pinned.to_string());
+        storage.set_string(SNAP_TO_CENTRE, self.snap_to_centre.to_string());
         storage.set_string(AUDIO_DEVICE, self.audio_device.clone());
         storage.set_string(AUDIO_CHANNELS, self.audio_channels.name().into());
         storage.set_string(VOLUME_MAX, format!("{:.0}", self.volume_max));
@@ -421,6 +427,7 @@ mod tests {
             fullscreen_transparency: 40.0,
             fullscreen_title: false,
             info_pinned: false,
+            snap_to_centre: false,
             audio_device: "wasapi/{0.0.0.00000000}.{abc}".into(),
             audio_channels: Channels::Surround51,
             volume_max: 150.0,

@@ -355,6 +355,72 @@ pub fn set_rect(hwnd: isize, rect: [i32; 4]) {
     };
 }
 
+/// Whether a window being moved is drawn to the screen's centre lines
+/// ([`snap_to_centre`]).
+static SNAP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// While the user moves the window, its centre is drawn to the centre of
+/// the monitor's work area along each axis it comes near
+/// (`sizing::snapped_to_centre`); `on` can be changed at any time. The
+/// window is subclassed for `WM_MOVING` once.
+pub fn snap_to_centre(hwnd: isize, on: bool) {
+    use std::sync::Once;
+    use std::sync::atomic::Ordering;
+    use windows_sys::Win32::UI::Shell::SetWindowSubclass;
+    SNAP.store(on, Ordering::Relaxed);
+    static SUBCLASSED: Once = Once::new();
+    SUBCLASSED.call_once(|| unsafe {
+        SetWindowSubclass(hwnd as _, Some(moving_proc), 1, 0);
+    });
+}
+
+unsafe extern "system" fn moving_proc(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    msg: u32,
+    wparam: windows_sys::Win32::Foundation::WPARAM,
+    lparam: windows_sys::Win32::Foundation::LPARAM,
+    _id: usize,
+    _data: usize,
+) -> windows_sys::Win32::Foundation::LRESULT {
+    use std::sync::atomic::Ordering;
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromRect,
+    };
+    use windows_sys::Win32::UI::Shell::DefSubclassProc;
+    use windows_sys::Win32::UI::WindowsAndMessaging::WM_MOVING;
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn GetDpiForWindow(hwnd: isize) -> u32;
+    }
+    if msg == WM_MOVING && lparam != 0 && SNAP.load(Ordering::Relaxed) {
+        let rect = unsafe { &mut *(lparam as *mut RECT) };
+        let monitor = unsafe { MonitorFromRect(rect, MONITOR_DEFAULTTONEAREST) };
+        let mut info: MONITORINFO = unsafe { std::mem::zeroed() };
+        info.cbSize = size_of::<MONITORINFO>() as u32;
+        if unsafe { GetMonitorInfoW(monitor, &mut info) } != 0 {
+            let dpi = match unsafe { GetDpiForWindow(hwnd as isize) } {
+                0 => 96,
+                dpi => dpi as i32,
+            };
+            let w = info.rcWork;
+            let [left, top, right, bottom] = crate::sizing::snapped_to_centre(
+                [rect.left, rect.top, rect.right, rect.bottom],
+                [w.left, w.top, w.right, w.bottom],
+                16 * dpi / 96,
+            );
+            *rect = RECT {
+                left,
+                top,
+                right,
+                bottom,
+            };
+            return 1;
+        }
+    }
+    unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
+}
+
 /// The user's Pictures folder, wherever it was moved (OneDrive).
 pub fn pictures_dir() -> Option<std::path::PathBuf> {
     use std::os::windows::ffi::OsStringExt;

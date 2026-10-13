@@ -105,6 +105,7 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 |---|---|---|---|
 | General | Language | as in Windows | "System" follows the language of Windows |
 | General | Pin the information window | on | The information window stays at the player's top right corner; off, it is moved by its title |
+| General | Snap to the screen's centre | on | The window being moved stops with its centre on the screen's centre, across or up and down, when it comes within a few pixels of it; moved on, it comes away |
 | Updates | Check at start-up | off | See [Update check and privacy](#update-check-and-privacy); **Check now** asks at once |
 | General | Add the folder's files | off | One opened file brings the media files of its folder into the playlist |
 | Playback | Go on from where it stopped | on | A file of 5 minutes or more opened again starts where it was left, with a message on the screen; `Home` goes to the beginning. A file watched to its last 30 seconds, or stopped in its first 10 seconds, starts from the beginning. The last 200 files are remembered; **Forget all** clears the list |

@@ -151,6 +151,7 @@ impl App {
         let mut cloak = None;
         if let Some(hwnd) = hwnd {
             win::round_corners(hwnd);
+            win::snap_to_centre(hwnd, settings.snap_to_centre);
             crate::instance::listen(ctx, hwnd);
             if crate::MAXIMIZE_WHEN_SHOWN.swap(false, Ordering::Relaxed) {
                 win::cloak(hwnd, true);
@@ -1748,6 +1749,11 @@ impl eframe::App for App {
             && let Some(player) = &mut self.player
         {
             player.set_hwdec(self.settings.hwdec);
+        }
+        if self.settings_dialog.open
+            && let Some(hwnd) = self.hwnd
+        {
+            win::snap_to_centre(hwnd, self.settings.snap_to_centre);
         }
         if let Some(player) = &mut self.player {
             if changed.audio_channels {

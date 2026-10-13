@@ -495,6 +495,17 @@ fn general(ui: &mut Ui, settings: &mut Settings) {
             50.0,
             |ui| switch(ui, &mut settings.info_pinned),
         );
+        divider(ui);
+        row(
+            ui,
+            tr!("Snap to the screen's centre", "Притягивать к центру экрана"),
+            Some(tr!(
+                "The window being moved stops with its centre on the screen's centre, across or up and down, when it comes near; moved on, it comes away.",
+                "Перетаскиваемое окно останавливается центром на центре экрана по горизонтали или по вертикали, когда подходит к нему; если тянуть дальше, оно отрывается."
+            )),
+            50.0,
+            |ui| switch(ui, &mut settings.snap_to_centre),
+        );
     });
     section(
         ui,
@@ -1291,6 +1302,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.fullscreen_transparency = d.fullscreen_transparency;
     settings.fullscreen_title = d.fullscreen_title;
     settings.info_pinned = d.info_pinned;
+    settings.snap_to_centre = d.snap_to_centre;
     changed.audio_channels |= settings.audio_channels != d.audio_channels;
     changed.volume_max |= settings.volume_max != d.volume_max;
     changed.normalize |= settings.normalize != d.normalize;
