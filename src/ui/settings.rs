@@ -647,8 +647,8 @@ fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>) -> b
                 ui,
                 tr!("File name at the top", "Название файла вверху"),
                 Some(tr!(
-                    "A strip with the name across the top of the screen, shown with the control bar.",
-                    "Полоса с названием вдоль верхнего края экрана, появляется вместе с панелью управления."
+                    "A strip with the name across the top of the screen, shown while the pointer is near the top edge.",
+                    "Полоса с названием вдоль верхнего края экрана, появляется, когда указатель подведён к нему."
                 )),
                 50.0,
                 |ui| switch(ui, &mut settings.fullscreen_title),

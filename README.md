@@ -102,7 +102,7 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | Playback | Ctrl+Left / Right | 60 s | The step of `Ctrl+←` and `Ctrl+→`, on keyframes |
 | Playback | Marks on the seek bar | on | Cuts in the seek bar where the chapters start; also in the context menu |
 | Video | Hardware decoding (GPU) | on | Decoding on the graphics card where possible; the decoder in use is shown below |
-| Video | File name at the top | on | A strip with the file's name across the top in fullscreen, shown with the control bar |
+| Video | File name at the top | on | A strip with the file's name across the top in fullscreen, shown while the pointer is near the top edge |
 | Video | Panel transparency | 12 % | Transparency of the control bar and the file's name over the picture in fullscreen, 0–80 % |
 | Subtitles and OSD | Subtitles: font | default | A font installed in Windows, for text subtitles (SRT and the like); ASS subtitles keep their own fonts |
 | Subtitles and OSD | Subtitles: size | 100 % | The size of all subtitles, 50–300 % |
