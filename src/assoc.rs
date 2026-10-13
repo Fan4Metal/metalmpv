@@ -621,7 +621,11 @@ mod tests {
             .iter()
             .flat_map(|t| t.extensions.iter().copied())
             .collect();
-        let mut listed = crate::playlist::MEDIA_EXTENSIONS.to_vec();
+        let mut listed = [
+            crate::playlist::MEDIA_EXTENSIONS,
+            crate::playlist::PLAYLIST_EXTENSIONS,
+        ]
+        .concat();
         registered.sort_unstable();
         listed.sort_unstable();
         assert_eq!(registered, listed);

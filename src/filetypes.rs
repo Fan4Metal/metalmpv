@@ -23,11 +23,12 @@ pub struct FileType {
     pub kind: Kind,
 }
 
-/// What a type's files hold: the icon shows Play or a note.
+/// What a type's files hold: the icon shows Play, a note or a list.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Video,
     Audio,
+    Playlist,
 }
 
 /// The icon's band (white letters on it) and the ground of its picture.
@@ -73,6 +74,11 @@ const GREEN: Colors = Colors {
     band: [0x00, 0x86, 0x57],
     light: [0x66, 0xc8, 0x93],
 };
+/// Playlists: amber, a hue none of the media types has.
+const AMBER: Colors = Colors {
+    band: [0xc2, 0x7c, 0x0e],
+    light: [0xf2, 0xbe, 0x5a],
+};
 /// Flash.
 const PURPLE: Colors = Colors {
     band: [0x4e, 0x1f, 0x6b],
@@ -112,7 +118,9 @@ const fn audio(
     }
 }
 
-/// Every extension of `playlist::MEDIA_EXTENSIONS`, once (tested).
+/// Every extension of `playlist::MEDIA_EXTENSIONS` and
+/// `PLAYLIST_EXTENSIONS`, once (tested). New types go at the end: a
+/// type's icon is its place (`icon_id`), which Explorer remembers.
 pub const FILE_TYPES: &[FileType] = &[
     video(
         "mp4",
@@ -250,6 +258,17 @@ pub const FILE_TYPES: &[FileType] = &[
         PURPLE,
     ),
     audio("dts", "DTS", &["dts"], "DTS Audio", "Аудио DTS", PURPLE),
+    FileType {
+        kind: Kind::Playlist,
+        ..video(
+            "m3u",
+            "M3U",
+            &["m3u", "m3u8"],
+            "M3U Playlist",
+            "Плейлист M3U",
+            AMBER,
+        )
+    },
 ];
 
 /// Resource ID of the icon of `FILE_TYPES[i]` in the executable (the app

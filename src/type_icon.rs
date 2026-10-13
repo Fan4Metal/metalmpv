@@ -1,7 +1,7 @@
 //! Icons of the registered file types (`filetypes::FILE_TYPES`), qview's
 //! design in GOM Player's colours: a white page with a folded corner, a
-//! screen in the format's light colour with a white Play (video) or note
-//! (audio), and across the page a band in its dark colour with the
+//! screen in the format's light colour with a white Play (video), note
+//! (audio) or list with a Play (playlist), and across the page a band in its dark colour with the
 //! extension in a pixel font. Dependency-free, drawn at every size (not
 //! scaled), so that the letters stay sharp at 16 x 16: they sit on whole
 //! pixels at a whole scale, while the shapes are supersampled.
@@ -253,6 +253,12 @@ fn picture(t: &FileType, x: f32, y: f32, (x0, y0, x1, y1): (f32, f32, f32, f32))
                 && v >= -0.42 + (u - 0.04) * 0.55
                 && v <= -0.22 + (u - 0.04) * 0.75;
             head || stem || flag
+        }
+        Kind::Playlist => {
+            // Three lines of a list, a small Play before the first.
+            let line = |v0: f32, left: f32| (left..=0.42).contains(&u) && (v - v0).abs() <= 0.075;
+            let play = inside_triangle(u, v, (-0.42, -0.4), (-0.16, -0.27), (-0.42, -0.14));
+            play || line(-0.27, -0.06) || line(0.0, -0.42) || line(0.27, -0.42)
         }
     };
     if ink { WHITE } else { ground }
