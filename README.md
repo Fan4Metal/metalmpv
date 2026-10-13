@@ -105,6 +105,7 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 |---|---|---|---|
 | General | Language | as in Windows | "System" follows the language of Windows |
 | General | Pin the information window | on | The information window stays at the player's top right corner; off, it is moved by its title |
+| General | Over the other windows | never | Never, always, or while a file plays (not paused); `Ctrl+T` switches it |
 | General | Snap to the screen's centre | on | The window being moved stops with its centre on the screen's centre, across or up and down, when it comes within a few pixels of it; moved on, it comes away |
 | Updates | Check at start-up | off | See [Update check and privacy](#update-check-and-privacy); **Check now** asks at once |
 | General | Add the folder's files | off | One opened file brings the media files of its folder into the playlist |
@@ -165,6 +166,7 @@ The list of fonts has a search field at its top. The **Keys** category lists the
 | `Ctrl+O` | Open files |
 | `L`, middle click on the picture | Show or hide the playlist |
 | `R` | Repeat: off, the file, the list |
+| `Ctrl+T` | Over the other windows: never, always, while playing (also in the settings and the context menu) |
 | `Delete` | Remove the selected playlist entry |
 | `F5` | Settings |
 | `F1` | About |

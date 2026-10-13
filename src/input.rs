@@ -62,6 +62,9 @@ pub enum Cmd {
     PlaylistShuffle,
     /// Repeat off, the file, the list (`R`).
     CycleRepeat,
+    /// Over the other windows: never, always, while playing (`Ctrl+T`).
+    CycleOnTop,
+    SetOnTop(crate::settings::OnTop),
     SetRepeat(crate::playlist::Repeat),
     /// Open or close the tracks window (`T`).
     ToggleTracks,
@@ -157,7 +160,8 @@ pub fn command(key: Key, m: Modifiers, repeat: bool) -> Option<Cmd> {
         Key::F7 => Cmd::ToggleVideoPanel,
         Key::E if ctrl => Cmd::SaveFrame,
         Key::Delete => Cmd::Delete,
-        Key::T if !ctrl => Cmd::ToggleTracks,
+        Key::T if ctrl => Cmd::CycleOnTop,
+        Key::T => Cmd::ToggleTracks,
         Key::I if !ctrl => Cmd::ToggleInfo,
         Key::A if !ctrl => Cmd::CycleAudio,
         // S as in subtitles; J as in mpv.
@@ -258,6 +262,18 @@ mod tests {
         assert_eq!(
             command(Key::Comma, Modifiers::NONE, false),
             Some(Cmd::Frame { forward: false })
+        );
+    }
+
+    #[test]
+    fn ctrl_t_on_top_t_tracks() {
+        assert_eq!(
+            command(Key::T, Modifiers::COMMAND, false),
+            Some(Cmd::CycleOnTop)
+        );
+        assert_eq!(
+            command(Key::T, Modifiers::NONE, false),
+            Some(Cmd::ToggleTracks)
         );
     }
 

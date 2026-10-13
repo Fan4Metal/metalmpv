@@ -226,6 +226,8 @@ pub enum Osd {
     SubDelay(f64),
     /// The playback speed.
     Speed(f64),
+    /// When the window stays over the others.
+    OnTop(crate::settings::OnTop),
     /// What plays after the end of a file.
     Repeat(crate::playlist::Repeat),
     /// Free text: a file name, an error.
@@ -361,6 +363,17 @@ impl Osd {
                 (None, false) => "[ Aspect ratio as in the file ]".into(),
                 (None, true) => "[ Пропорции как в файле ]".into(),
             },
+            Osd::OnTop(on_top) => {
+                use crate::settings::OnTop;
+                match (on_top, ru) {
+                    (OnTop::Never, false) => "[ On top: never ]".into(),
+                    (OnTop::Always, false) => "[ On top: always ]".into(),
+                    (OnTop::Playing, false) => "[ On top: while playing ]".into(),
+                    (OnTop::Never, true) => "[ Поверх окон: никогда ]".into(),
+                    (OnTop::Always, true) => "[ Поверх окон: всегда ]".into(),
+                    (OnTop::Playing, true) => "[ Поверх окон: во время воспроизведения ]".into(),
+                }
+            }
             Osd::Repeat(repeat) => {
                 use crate::playlist::Repeat;
                 match (repeat, ru) {

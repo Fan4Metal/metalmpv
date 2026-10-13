@@ -26,7 +26,7 @@ use crate::mpv::Mpv;
 use crate::player::{Happened, Player, Seek, State};
 use crate::playlist::{self, Playlist, Repeat};
 use crate::resume::{Positions, Tracks};
-use crate::settings::Settings;
+use crate::settings::{OnTop, Settings};
 use crate::sizing;
 use crate::tracks::{self, Kind};
 use crate::ui::about::AboutDialog;
@@ -118,6 +118,8 @@ pub struct App {
     audio_device_used: String,
     /// What playback last asked Windows to keep on.
     awake: win::Awake,
+    /// The window is over the other windows now (`settings.on_top`).
+    on_top: bool,
 }
 
 impl App {
@@ -240,6 +242,7 @@ impl App {
             pending_picture: None,
             audio_device_used: String::new(),
             awake: win::Awake::No,
+            on_top: false,
         };
         app.open(files);
         app
@@ -848,6 +851,11 @@ impl App {
                     .map_or(1, |d| d.as_nanos() as u64);
                 self.playlist.shuffle(seed);
             }
+            Cmd::CycleOnTop => self.run(ctx, frame, Cmd::SetOnTop(self.settings.on_top.next())),
+            Cmd::SetOnTop(on_top) => {
+                self.settings.on_top = on_top;
+                self.osd.show(Osd::OnTop(on_top));
+            }
             Cmd::CycleRepeat => self.run(ctx, frame, Cmd::SetRepeat(self.settings.repeat.next())),
             Cmd::SetRepeat(repeat) => {
                 self.settings.repeat = repeat;
@@ -974,6 +982,26 @@ impl App {
     /// Keep the display on while a picture plays in sight and the computer
     /// awake while sound plays; let them sleep when paused, stopped or
     /// idle.
+    fn follow_on_top(&mut self, ctx: &egui::Context) {
+        let playing = self
+            .player
+            .as_ref()
+            .is_some_and(|p| !p.state.idle && !p.state.paused && !p.state.eof);
+        let on_top = match self.settings.on_top {
+            OnTop::Never => false,
+            OnTop::Always => true,
+            OnTop::Playing => playing,
+        };
+        if on_top != self.on_top {
+            self.on_top = on_top;
+            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(if on_top {
+                egui::WindowLevel::AlwaysOnTop
+            } else {
+                egui::WindowLevel::Normal
+            }));
+        }
+    }
+
     fn keep_awake(&mut self, minimized: bool) {
         let awake = match &self.player {
             Some(p) if !p.state.idle && !p.state.paused && !p.state.eof => {
@@ -1235,6 +1263,7 @@ impl App {
             fill: self.fill,
             aspect: self.adjust.aspect,
             repeat: self.settings.repeat,
+            on_top: self.settings.on_top,
         };
         response.context_menu(|ui| {
             context_menu(ui, state, playlist_visible, chapter_marks, marks, cmds)
@@ -1601,6 +1630,7 @@ fn context_menu(
         Cmd::ToggleFullscreen,
     );
     zoom_menu(ui, state, marks.fill, &mut menu_cmds);
+    on_top_menu(ui, marks.on_top, &mut menu_cmds);
     aspect_menu(ui, state, marks.aspect, &mut menu_cmds);
     speed_menu(ui, state, &mut menu_cmds);
     repeat_menu(ui, marks.repeat, &mut menu_cmds);
@@ -1635,6 +1665,22 @@ struct Marks {
     fill: bool,
     aspect: crate::adjust::Aspect,
     repeat: Repeat,
+    on_top: OnTop,
+}
+
+/// Over the other windows: never, always, while playing; the current
+/// marked.
+fn on_top_menu(ui: &mut egui::Ui, current: OnTop, out: &mut Vec<Cmd>) {
+    ui.menu_button(tr!("On top", "Поверх других окон"), |ui| {
+        for o in OnTop::ALL {
+            if ui.radio(current == o, o.label()).clicked() {
+                out.push(Cmd::SetOnTop(o));
+                ui.close();
+            }
+        }
+        ui.separator();
+        ui.weak(tr!("Ctrl+T switches it", "Ctrl+T переключает"));
+    });
 }
 
 /// Repeat off, the file or the list, the current marked.
@@ -1801,6 +1847,7 @@ impl eframe::App for App {
         self.follow_audio_device();
         let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         self.keep_awake(minimized);
+        self.follow_on_top(ctx);
     }
 
     fn ui(&mut self, root_ui: &mut egui::Ui, frame: &mut eframe::Frame) {

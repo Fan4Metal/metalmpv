@@ -14,7 +14,9 @@ use super::style;
 use crate::audio::{BOOSTS, Channels, Device, Passthrough, boost_label};
 use crate::fonts::Family;
 use crate::i18n::LangChoice;
-use crate::settings::{MAX_STEP, MAX_TRANSPARENCY, OSD_SCALE_RANGE, SUB_SCALE_RANGE, Settings};
+use crate::settings::{
+    MAX_STEP, MAX_TRANSPARENCY, OSD_SCALE_RANGE, OnTop, SUB_SCALE_RANGE, Settings,
+};
 use crate::update::{Status, Updates, release_url, version_of};
 
 /// The size of the window's content in points.
@@ -505,6 +507,23 @@ fn general(ui: &mut Ui, settings: &mut Settings) {
             )),
             50.0,
             |ui| switch(ui, &mut settings.snap_to_centre),
+        );
+        divider(ui);
+        row(
+            ui,
+            tr!("Over the other windows", "Поверх других окон"),
+            Some(tr!("Ctrl+T switches it.", "Ctrl+T переключает.")),
+            230.0,
+            |ui| {
+                egui::ComboBox::from_id_salt("settings_on_top")
+                    .selected_text(settings.on_top.label())
+                    .width(220.0)
+                    .show_ui(ui, |ui| {
+                        for o in OnTop::ALL {
+                            ui.selectable_value(&mut settings.on_top, o, o.label());
+                        }
+                    });
+            },
         );
     });
     section(
@@ -1099,7 +1118,7 @@ fn update_status(ui: &mut Ui, updates: &Updates) {
 
 /// The keys, as in the README.
 fn keys(ui: &mut Ui) {
-    let rows: [(&str, &str); 31] = [
+    let rows: [(&str, &str); 32] = [
         (
             tr!("Space", "Пробел"),
             tr!("Play / pause", "Воспроизведение / пауза"),
@@ -1204,6 +1223,13 @@ fn keys(ui: &mut Ui) {
             ),
         ),
         ("V", tr!("Subtitles off / on", "Субтитры выкл. / вкл.")),
+        (
+            "Ctrl+T",
+            tr!(
+                "Over the other windows: never, always, while playing",
+                "Поверх других окон: никогда, всегда, во время воспроизведения"
+            ),
+        ),
         (
             "R",
             tr!(
@@ -1324,6 +1350,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.fullscreen_title = d.fullscreen_title;
     settings.info_pinned = d.info_pinned;
     settings.snap_to_centre = d.snap_to_centre;
+    settings.on_top = d.on_top;
     changed.audio_channels |= settings.audio_channels != d.audio_channels;
     changed.volume_max |= settings.volume_max != d.volume_max;
     changed.normalize |= settings.normalize != d.normalize;
