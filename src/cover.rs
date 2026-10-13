@@ -1,9 +1,9 @@
 //! A file's cover art: the front cover of its tags (MP3, FLAC, OGG, Opus,
-//! M4A, MP4, WAV, APE and the like, read with lofty), an image attachment
-//! of a Matroska file (`cover.jpg`, read here), or for an audio file a
-//! picture next to it (`cover.jpg`, `folder.jpg`). mpv shows a cover only
-//! in place of the video, so the app finds it itself, on a thread of its
-//! own once a file is loaded.
+//! WAV, APE and the like, read with lofty; MP4's `covr` read here), an
+//! image attachment of a Matroska file (`cover.jpg`, read here), or for an
+//! audio file a picture next to it (`cover.jpg`, `folder.jpg`). mpv shows a
+//! cover only in place of the video, so the app finds it itself, on a
+//! thread of its own once a file is loaded.
 
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
@@ -104,8 +104,12 @@ fn extension(path: &Path) -> String {
 
 /// The bytes of the picture stored in the file.
 fn embedded(path: &Path) -> Option<Vec<u8>> {
-    if matches!(extension(path).as_str(), "mkv" | "mka" | "mk3d" | "webm") {
-        return matroska_cover(path);
+    match extension(path).as_str() {
+        "mkv" | "mka" | "mk3d" | "webm" => return matroska_cover(path),
+        "mp4" | "m4v" | "m4a" | "m4b" | "m4p" | "mov" | "3gp" | "3g2" | "f4v" => {
+            return mp4_cover(path);
+        }
+        _ => {}
     }
     use lofty::file::TaggedFileExt;
     use lofty::picture::PictureType;
@@ -176,6 +180,92 @@ fn decode(bytes: Vec<u8>, source: Source) -> Option<Cover> {
         image,
         source,
     })
+}
+
+// --- MP4 ----------------------------------------------------------------
+//
+// The cover is in moov/udta/meta/ilst/covr (iTunes' tags). Read here, not
+// with lofty: lofty 0.25 skips a box with a 64-bit size 8 bytes too far,
+// and a film over 4 GB has its mdat written so, before the moov.
+
+/// A box's type and the size of its data, the reader left at its data; a
+/// box of size 0 reaches `end`.
+fn mp4_box(r: &mut (impl Read + Seek), end: u64) -> Option<([u8; 4], u64)> {
+    let at = r.stream_position().ok()?;
+    if at + 8 > end {
+        return None;
+    }
+    let mut header = [0u8; 8];
+    r.read_exact(&mut header).ok()?;
+    let kind = [header[4], header[5], header[6], header[7]];
+    let (size, header_len) = match u32::from_be_bytes([header[0], header[1], header[2], header[3]])
+    {
+        0 => (end - at, 8),
+        1 => {
+            let mut size = [0u8; 8];
+            r.read_exact(&mut size).ok()?;
+            (u64::from_be_bytes(size), 16)
+        }
+        size => (u64::from(size), 8),
+    };
+    (size >= header_len && at.checked_add(size)? <= end).then_some((kind, size - header_len))
+}
+
+/// The end of the first box `kind` among the boxes up to `end`, the reader
+/// left at its data.
+fn mp4_child(r: &mut (impl Read + Seek), end: u64, kind: &[u8; 4]) -> Option<u64> {
+    loop {
+        let (found, size) = mp4_box(r, end)?;
+        let data = r.stream_position().ok()?;
+        if &found == kind {
+            return Some(data + size);
+        }
+        r.seek(SeekFrom::Start(data + size)).ok()?;
+    }
+}
+
+/// The cover of an MP4 (or QuickTime) file.
+fn mp4_cover(path: &Path) -> Option<Vec<u8>> {
+    let file = File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let mut r = BufReader::new(file);
+    let moov_end = mp4_child(&mut r, len, b"moov")?;
+    let moov = r.stream_position().ok()?;
+    // iTunes puts the tags in moov/udta/meta, some writers in moov/meta.
+    let meta_end = match mp4_child(&mut r, moov_end, b"udta")
+        .and_then(|udta_end| mp4_child(&mut r, udta_end, b"meta"))
+    {
+        Some(end) => end,
+        None => {
+            r.seek(SeekFrom::Start(moov)).ok()?;
+            mp4_child(&mut r, moov_end, b"meta")?
+        }
+    };
+    // ISO's meta starts with a version and flags, QuickTime's with a box.
+    let meta = r.stream_position().ok()?;
+    let mut peek = [0u8; 8];
+    r.read_exact(&mut peek).ok()?;
+    let children = if &peek[4..] == b"hdlr" {
+        meta
+    } else {
+        meta + 4
+    };
+    r.seek(SeekFrom::Start(children)).ok()?;
+    let ilst_end = mp4_child(&mut r, meta_end, b"ilst")?;
+    let covr_end = mp4_child(&mut r, ilst_end, b"covr")?;
+    // Its data boxes: a type (13 JPEG, 14 PNG), a locale, the picture.
+    loop {
+        let data_end = mp4_child(&mut r, covr_end, b"data")?;
+        let size = data_end - r.stream_position().ok()?;
+        if size > 8 {
+            r.seek_relative(8).ok()?;
+            let bytes = read_bytes(&mut r, size - 8, MAX_BYTES)?;
+            if image::guess_format(&bytes).is_ok() {
+                return Some(bytes);
+            }
+        }
+        r.seek(SeekFrom::Start(data_end)).ok()?;
+    }
 }
 
 // --- Matroska -----------------------------------------------------------
@@ -444,6 +534,52 @@ mod tests {
         assert_eq!(cover.extension, "png");
         assert_eq!(cover.size, [3, 2]);
         assert_eq!(cover.source, Source::Embedded);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// An MP4 box.
+    fn bx(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
+        let mut v = ((data.len() + 8) as u32).to_be_bytes().to_vec();
+        v.extend(kind);
+        v.extend_from_slice(data);
+        v
+    }
+
+    #[test]
+    fn mp4_cover_after_a_64_bit_mdat() {
+        let picture = png();
+        let mut covr_data = 14u32.to_be_bytes().to_vec();
+        covr_data.extend([0; 4]);
+        covr_data.extend(&picture);
+        let mut ilst = bx(b"\xA9nam", &bx(b"data", b"\0\0\0\x01\0\0\0\0Name"));
+        ilst.extend(bx(b"covr", &bx(b"data", &covr_data)));
+        let hdlr = bx(b"hdlr", &[0; 25]);
+        let meta = |full: bool| {
+            let mut data = if full { vec![0; 4] } else { Vec::new() };
+            data.extend(&hdlr);
+            data.extend(bx(b"ilst", &ilst));
+            bx(b"meta", &data)
+        };
+        let dir = std::env::temp_dir().join(format!("mp4_cover_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, moov) in [
+            ("itunes.mp4", bx(b"moov", &bx(b"udta", &meta(true)))),
+            ("quicktime.mov", bx(b"moov", &meta(false))),
+        ] {
+            let mut file = bx(b"ftyp", b"isom\0\0\x02\0isom");
+            // A 64-bit size: 1, the type, the size with its 16-byte header.
+            file.extend(1u32.to_be_bytes());
+            file.extend(b"mdat");
+            file.extend(36u64.to_be_bytes());
+            file.extend([0xAB; 20]);
+            file.extend(moov);
+            let path = dir.join(name);
+            std::fs::write(&path, &file).unwrap();
+            assert_eq!(mp4_cover(&path), Some(picture.clone()), "{name}");
+        }
+        let path = dir.join("none.mp4");
+        std::fs::write(&path, bx(b"moov", &bx(b"udta", &[]))).unwrap();
+        assert!(find(&path).is_none());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
