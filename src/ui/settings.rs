@@ -60,7 +60,7 @@ impl Page {
             Page::Text => tr!("Subtitles and OSD", "Субтитры и OSD"),
             Page::Files => tr!("File types", "Типы файлов"),
             Page::Updates => tr!("Updates", "Обновления"),
-            Page::Keys => tr!("Keys", "Клавиши"),
+            Page::Keys => tr!("Keyboard shortcuts", "Горячие клавиши"),
         }
     }
 

@@ -137,11 +137,11 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | Subtitles and OSD | On-screen messages: font | default | A font installed in Windows, for the yellow line in the top left corner |
 | Subtitles and OSD | On-screen messages: size | 100 % | 50–200 % of the usual size, which follows the height of the picture |
 
-The list of fonts has a search field at its top. The **Keys** category lists every action with its keys, which can be changed (see [Keyboard shortcuts](#keyboard-shortcuts)). The volume, the window and the playlist's visibility and width are remembered between runs.
+The list of fonts has a search field at its top. The **Keyboard shortcuts** category lists every action with its keys, which can be changed (see [Keyboard shortcuts](#keyboard-shortcuts)). The volume, the window and the playlist's visibility and width are remembered between runs.
 
 ## Keyboard shortcuts
 
-The keys below are the defaults. In the settings, the **Keys** category lists the actions in groups, each with its keys: a click on a key waits for the key combination (or the mouse's back or forward button, with `Ctrl`, `Alt` or `Shift` if wanted) that takes its place, **+** adds one more, the cross removes it, and `Esc` gives up. A combination another action had is taken from that action, and the page says so. A few actions without a default key can be given one: Stop, Load subtitles, Equalizer, Minimize and Maximize. **Reset the keys** puts them all back. The menus and tooltips show the keys as they are set. The mouse wheel, the double and middle clicks and the media keys stay as described; `Ctrl+V` cannot be chosen.
+The keys below are the defaults. In the settings, the **Keyboard shortcuts** category lists the actions in groups, each with its keys: a click on a key waits for the key combination (or the mouse's back or forward button, with `Ctrl`, `Alt` or `Shift` if wanted) that takes its place, **+** adds one more, the cross removes it, and `Esc` gives up. A combination another action had is taken from that action, and the page says so. A few actions without a default key can be given one: Stop, Load subtitles, Equalizer, Minimize and Maximize. **Reset the keys** puts them all back. The menus and tooltips show the keys as they are set. The mouse wheel, the double and middle clicks and the media keys stay as described; `Ctrl+V` cannot be chosen.
 
 | Key | Action |
 |---|---|
