@@ -152,6 +152,7 @@ The list of fonts has a search field at its top. The **Keys** category lists the
 | `Ctrl+=` / `Ctrl+-` | Sound later / earlier by 100 ms against the picture |
 | `Ctrl+0` | Sound back in sync |
 | `Page Up` / `Page Down` | Previous / next file of the playlist |
+| Media keys | Play/Pause, Stop, Previous and Next of a keyboard, a headset or a remote, while the player's window is active |
 | `Enter`, `F11`, double click | Fullscreen |
 | `1` / `2` / `3` / `4` | Window for the picture at 50 % / 100 % / 150 % / 200 % of the video's size |
 | `5` | The largest window the screen holds, without black bars |

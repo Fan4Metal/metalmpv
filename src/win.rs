@@ -356,25 +356,97 @@ pub fn set_rect(hwnd: isize, rect: [i32; 4]) {
 }
 
 /// Whether a window being moved is drawn to the screen's centre lines
-/// ([`snap_to_centre`]).
+/// ([`set_snap`]).
 static SNAP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// While the user moves the window, its centre is drawn to the centre of
-/// the monitor's work area along each axis it comes near
-/// (`sizing::snapped_to_centre`); `on` can be changed at any time. The
-/// window is subclassed for `WM_MOVING` once.
-pub fn snap_to_centre(hwnd: isize, on: bool) {
+/// What the window's messages asked for, for the app to take each frame
+/// ([`take_hooked`]).
+static HOOKED: std::sync::Mutex<Vec<Hooked>> = std::sync::Mutex::new(Vec::new());
+
+/// Wakes the app when something is hooked ([`hook_window`]).
+static WAKE: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>> = std::sync::OnceLock::new();
+
+/// A key of a keyboard, a headset or a remote that egui does not see.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MediaKey {
+    PlayPause,
+    Play,
+    Pause,
+    Stop,
+    Next,
+    Previous,
+}
+
+/// What the window's messages asked for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hooked {
+    Media(MediaKey),
+}
+
+/// Subclass the window once: media keys (`WM_KEYDOWN` with a
+/// `VK_MEDIA_*` key, which egui drops, and `WM_APPCOMMAND`, which headsets
+/// and remotes send) are queued for [`take_hooked`] and `wake` is called;
+/// while [`set_snap`] is on, a window being moved is drawn to the screen's
+/// centre lines (`WM_MOVING`).
+pub fn hook_window(hwnd: isize, wake: impl Fn() + Send + Sync + 'static) {
     use std::sync::Once;
-    use std::sync::atomic::Ordering;
     use windows_sys::Win32::UI::Shell::SetWindowSubclass;
-    SNAP.store(on, Ordering::Relaxed);
     static SUBCLASSED: Once = Once::new();
-    SUBCLASSED.call_once(|| unsafe {
-        SetWindowSubclass(hwnd as _, Some(moving_proc), 1, 0);
+    SUBCLASSED.call_once(|| {
+        let _ = WAKE.set(Box::new(wake));
+        unsafe { SetWindowSubclass(hwnd as _, Some(window_proc), 1, 0) };
     });
 }
 
-unsafe extern "system" fn moving_proc(
+/// While the user moves the window, its centre is drawn to the centre of
+/// the monitor's work area along each axis it comes near
+/// (`sizing::snapped_to_centre`).
+pub fn set_snap(on: bool) {
+    SNAP.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// What the window's messages asked for since the last call.
+pub fn take_hooked() -> Vec<Hooked> {
+    HOOKED
+        .lock()
+        .map(|mut q| std::mem::take(&mut *q))
+        .unwrap_or_default()
+}
+
+fn hook(what: Hooked) {
+    if let Ok(mut q) = HOOKED.lock() {
+        q.push(what);
+    }
+    if let Some(wake) = WAKE.get() {
+        wake();
+    }
+}
+
+/// The media key of a virtual key code.
+fn media_vk(vk: u32) -> Option<MediaKey> {
+    match vk {
+        0xB0 => Some(MediaKey::Next),      // VK_MEDIA_NEXT_TRACK
+        0xB1 => Some(MediaKey::Previous),  // VK_MEDIA_PREV_TRACK
+        0xB2 => Some(MediaKey::Stop),      // VK_MEDIA_STOP
+        0xB3 => Some(MediaKey::PlayPause), // VK_MEDIA_PLAY_PAUSE
+        _ => None,
+    }
+}
+
+/// The media key of a `WM_APPCOMMAND` command.
+fn media_command(command: u32) -> Option<MediaKey> {
+    match command {
+        11 => Some(MediaKey::Next),      // APPCOMMAND_MEDIA_NEXTTRACK
+        12 => Some(MediaKey::Previous),  // APPCOMMAND_MEDIA_PREVIOUSTRACK
+        13 => Some(MediaKey::Stop),      // APPCOMMAND_MEDIA_STOP
+        14 => Some(MediaKey::PlayPause), // APPCOMMAND_MEDIA_PLAY_PAUSE
+        46 => Some(MediaKey::Play),      // APPCOMMAND_MEDIA_PLAY
+        47 => Some(MediaKey::Pause),     // APPCOMMAND_MEDIA_PAUSE
+        _ => None,
+    }
+}
+
+unsafe extern "system" fn window_proc(
     hwnd: windows_sys::Win32::Foundation::HWND,
     msg: u32,
     wparam: windows_sys::Win32::Foundation::WPARAM,
@@ -383,42 +455,71 @@ unsafe extern "system" fn moving_proc(
     _data: usize,
 ) -> windows_sys::Win32::Foundation::LRESULT {
     use std::sync::atomic::Ordering;
+    use windows_sys::Win32::UI::Shell::DefSubclassProc;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{WM_APPCOMMAND, WM_KEYDOWN, WM_MOVING};
+    match msg {
+        WM_MOVING if lparam != 0 && SNAP.load(Ordering::Relaxed) => {
+            if unsafe { snap(hwnd as isize, lparam) } {
+                return 1;
+            }
+        }
+        WM_KEYDOWN => {
+            if let Some(key) = media_vk(wparam as u32) {
+                // Held keys repeat; one press is one command.
+                if lparam & (1 << 30) == 0 {
+                    hook(Hooked::Media(key));
+                }
+                return 0;
+            }
+        }
+        WM_APPCOMMAND => {
+            // GET_APPCOMMAND_LPARAM: the high word without the device bits.
+            let command = ((lparam as u32) >> 16) & !0xF000;
+            if let Some(key) = media_command(command) {
+                hook(Hooked::Media(key));
+                return 1;
+            }
+        }
+        _ => {}
+    }
+    unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
+}
+
+/// `WM_MOVING`: put the moved rectangle at `lparam` on the centre lines it
+/// is near; whether it could.
+unsafe fn snap(hwnd: isize, lparam: windows_sys::Win32::Foundation::LPARAM) -> bool {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromRect,
     };
-    use windows_sys::Win32::UI::Shell::DefSubclassProc;
-    use windows_sys::Win32::UI::WindowsAndMessaging::WM_MOVING;
     #[link(name = "user32")]
     unsafe extern "system" {
         fn GetDpiForWindow(hwnd: isize) -> u32;
     }
-    if msg == WM_MOVING && lparam != 0 && SNAP.load(Ordering::Relaxed) {
-        let rect = unsafe { &mut *(lparam as *mut RECT) };
-        let monitor = unsafe { MonitorFromRect(rect, MONITOR_DEFAULTTONEAREST) };
-        let mut info: MONITORINFO = unsafe { std::mem::zeroed() };
-        info.cbSize = size_of::<MONITORINFO>() as u32;
-        if unsafe { GetMonitorInfoW(monitor, &mut info) } != 0 {
-            let dpi = match unsafe { GetDpiForWindow(hwnd as isize) } {
-                0 => 96,
-                dpi => dpi as i32,
-            };
-            let w = info.rcWork;
-            let [left, top, right, bottom] = crate::sizing::snapped_to_centre(
-                [rect.left, rect.top, rect.right, rect.bottom],
-                [w.left, w.top, w.right, w.bottom],
-                16 * dpi / 96,
-            );
-            *rect = RECT {
-                left,
-                top,
-                right,
-                bottom,
-            };
-            return 1;
-        }
+    let rect = unsafe { &mut *(lparam as *mut RECT) };
+    let monitor = unsafe { MonitorFromRect(rect, MONITOR_DEFAULTTONEAREST) };
+    let mut info: MONITORINFO = unsafe { std::mem::zeroed() };
+    info.cbSize = size_of::<MONITORINFO>() as u32;
+    if unsafe { GetMonitorInfoW(monitor, &mut info) } == 0 {
+        return false;
     }
-    unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
+    let dpi = match unsafe { GetDpiForWindow(hwnd) } {
+        0 => 96,
+        dpi => dpi as i32,
+    };
+    let w = info.rcWork;
+    let [left, top, right, bottom] = crate::sizing::snapped_to_centre(
+        [rect.left, rect.top, rect.right, rect.bottom],
+        [w.left, w.top, w.right, w.bottom],
+        16 * dpi / 96,
+    );
+    *rect = RECT {
+        left,
+        top,
+        right,
+        bottom,
+    };
+    true
 }
 
 /// What playback needs Windows to keep on.
@@ -480,6 +581,16 @@ pub fn double_click_time() -> f64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn media_keys() {
+        use super::{MediaKey, media_command, media_vk};
+        assert_eq!(media_vk(0xB3), Some(MediaKey::PlayPause));
+        assert_eq!(media_vk(0xB0), Some(MediaKey::Next));
+        assert_eq!(media_vk(0x41), None);
+        assert_eq!(media_command(46), Some(MediaKey::Play));
+        assert_eq!(media_command(8), None);
+    }
+
     #[test]
     fn pictures_dir_is_found() {
         let dir = super::pictures_dir().expect("the Pictures folder");

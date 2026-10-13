@@ -153,7 +153,9 @@ impl App {
         let mut cloak = None;
         if let Some(hwnd) = hwnd {
             win::round_corners(hwnd);
-            win::snap_to_centre(hwnd, settings.snap_to_centre);
+            let wake = ctx.clone();
+            win::hook_window(hwnd, move || wake.request_repaint());
+            win::set_snap(settings.snap_to_centre);
             crate::instance::listen(ctx, hwnd);
             if crate::MAXIMIZE_WHEN_SHOWN.swap(false, Ordering::Relaxed) {
                 win::cloak(hwnd, true);
@@ -906,6 +908,27 @@ impl App {
         } else {
             [w, h]
         })
+    }
+
+    /// The media keys of a keyboard, a headset or a remote (the window's
+    /// messages, `win::hook_window`), as the player's commands.
+    fn take_hooked(&mut self) {
+        let paused = self
+            .player
+            .as_ref()
+            .is_none_or(|p| p.state.paused || p.state.idle);
+        for hooked in win::take_hooked() {
+            let win::Hooked::Media(key) = hooked;
+            let cmd = match key {
+                win::MediaKey::PlayPause => Some(Cmd::TogglePause),
+                win::MediaKey::Play => paused.then_some(Cmd::TogglePause),
+                win::MediaKey::Pause => (!paused).then_some(Cmd::TogglePause),
+                win::MediaKey::Stop => Some(Cmd::Stop),
+                win::MediaKey::Next => Some(Cmd::Next),
+                win::MediaKey::Previous => Some(Cmd::Prev),
+            };
+            self.pending.extend(cmd);
+        }
     }
 
     /// Keep the display on while a picture plays in sight and the computer
@@ -1697,6 +1720,7 @@ impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.updates.poll();
         self.take_events();
+        self.take_hooked();
         self.follow_audio_device();
         let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         self.keep_awake(minimized);
@@ -1828,10 +1852,8 @@ impl eframe::App for App {
         {
             player.set_hwdec(self.settings.hwdec);
         }
-        if self.settings_dialog.open
-            && let Some(hwnd) = self.hwnd
-        {
-            win::snap_to_centre(hwnd, self.settings.snap_to_centre);
+        if self.settings_dialog.open {
+            win::set_snap(self.settings.snap_to_centre);
         }
         if let Some(player) = &mut self.player {
             if changed.audio_channels {
