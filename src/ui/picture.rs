@@ -7,7 +7,7 @@
 use egui::{RichText, Ui, vec2};
 
 use super::style;
-use crate::adjust::{Adjust, Color};
+use crate::adjust::{Adjust, Aspect, Color};
 use crate::input::Cmd;
 
 /// The width of the window's content.
@@ -94,6 +94,18 @@ impl VideoPanel {
                     "Removes the steps in skies and dark scenes, on the graphics card",
                     "Убирает ступеньки на небе и в тёмных сценах, на видеокарте"
                 ));
+
+                heading(ui, tr!("Aspect ratio", "Пропорции"));
+                labelled(ui, tr!("Shape", "Форма кадра"), |ui| {
+                    egui::ComboBox::from_id_salt("video_aspect")
+                        .selected_text(adjust.aspect.label())
+                        .width(WIDTH - LABEL - 30.0)
+                        .show_ui(ui, |ui| {
+                            for a in Aspect::ALL {
+                                ui.selectable_value(&mut adjust.aspect, a, a.label());
+                            }
+                        });
+                });
 
                 heading(ui, tr!("Rotation and flips", "Поворот и отражение"));
                 ui.horizontal(|ui| {

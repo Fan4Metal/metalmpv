@@ -846,13 +846,13 @@ impl App {
             }
             Cmd::Close => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             Cmd::WindowScale(scale) => {
-                if let Some(video) = video_size(&state) {
+                if let Some(video) = self.picture_size(&state) {
                     self.size_window(ctx, frame, [video[0] * scale, video[1] * scale]);
                     self.osd.show(Osd::Scale(scale * 100.0));
                 }
             }
             Cmd::FitScreen => {
-                if let Some(video) = video_size(&state) {
+                if let Some(video) = self.picture_size(&state) {
                     // Far bigger than any screen: `size_window` scales it
                     // down to the work area, keeping its shape.
                     self.size_window(ctx, frame, video.map(|v| v * 1e4));
@@ -860,13 +860,23 @@ impl App {
                 }
             }
             Cmd::FitWindow => {
-                if let Some(video) = video_size(&state) {
+                if let Some(video) = self.picture_size(&state) {
                     let ppp = f64::from(ctx.pixels_per_point());
                     let area = self.picture_area.size();
                     let area = [f64::from(area.x) * ppp, f64::from(area.y) * ppp];
                     self.size_window(ctx, frame, sizing::fitted(video, area));
                     self.osd.show(Osd::FitWindow);
                 }
+            }
+            Cmd::SetAspect(aspect) => {
+                let before = self.adjust.clone();
+                self.adjust.aspect = aspect;
+                if let Some(player) = &mut self.player {
+                    player.adjust(&before, &self.adjust);
+                }
+                self.osd.show(Osd::Aspect(
+                    (aspect != crate::adjust::Aspect::Auto).then(|| aspect.label().to_owned()),
+                ));
             }
             Cmd::ToggleFill => {
                 if self.fill {
@@ -883,6 +893,18 @@ impl App {
     }
 
     /// The picture filling the screen, cropped, or whole (`fill`).
+    /// The picture's size as shown: the video's display size, turned by
+    /// the Video panel's rotation (done when the picture is drawn, so not
+    /// in mpv's `dwidth`/`dheight`).
+    fn picture_size(&self, state: &State) -> Option<[f64; 2]> {
+        let [w, h] = video_size(state)?;
+        Some(if self.adjust.rotate % 180 == 90 {
+            [h, w]
+        } else {
+            [w, h]
+        })
+    }
+
     /// Give mpv the chosen output device while Windows has it, else the
     /// default one; also when a device comes or goes, or the setting
     /// changes.
@@ -1120,13 +1142,15 @@ impl App {
                 cmds.push(Cmd::Volume(notches as f64 * input::VOLUME_STEP));
             }
         }
-        let (playlist_visible, chapter_marks, fill) = (
+        let (playlist_visible, chapter_marks, fill, aspect) = (
             self.settings.playlist_visible,
             self.settings.chapter_marks,
             self.fill,
+            self.adjust.aspect,
         );
         response.context_menu(|ui| {
-            context_menu(ui, state, playlist_visible, chapter_marks, fill, cmds)
+            let picture = Picture { fill, aspect };
+            context_menu(ui, state, playlist_visible, chapter_marks, picture, cmds)
         });
         if ui.input(|i| !i.raw.hovered_files.is_empty()) {
             ui.painter()
@@ -1429,7 +1453,7 @@ fn context_menu(
     state: &State,
     playlist_visible: bool,
     chapter_marks: bool,
-    fill: bool,
+    picture: Picture,
     cmds: &mut Vec<Cmd>,
 ) {
     // Gathered apart: `item` holds `cmds` until its last use.
@@ -1489,7 +1513,8 @@ fn context_menu(
         "Enter",
         Cmd::ToggleFullscreen,
     );
-    zoom_menu(ui, state, fill, &mut menu_cmds);
+    zoom_menu(ui, state, picture.fill, &mut menu_cmds);
+    aspect_menu(ui, state, picture.aspect, &mut menu_cmds);
     let list = if playlist_visible {
         tr!("Hide the playlist", "Скрыть список")
     } else {
@@ -1519,6 +1544,33 @@ fn context_menu(
 /// The picture's size: the window for 50 % to 200 % of the video, the
 /// largest window without black bars, the window to the picture shown,
 /// and the picture filling the window.
+/// What the context menu marks of the picture.
+struct Picture {
+    fill: bool,
+    aspect: crate::adjust::Aspect,
+}
+
+/// The picture's shape: the file's or a standard one, the current marked.
+fn aspect_menu(
+    ui: &mut egui::Ui,
+    state: &State,
+    current: crate::adjust::Aspect,
+    out: &mut Vec<Cmd>,
+) {
+    ui.menu_button(tr!("Aspect ratio", "Пропорции"), |ui| {
+        let video = video_size(state).is_some();
+        for a in crate::adjust::Aspect::ALL {
+            if ui
+                .add_enabled(video, egui::RadioButton::new(current == a, a.label()))
+                .clicked()
+            {
+                out.push(Cmd::SetAspect(a));
+                ui.close();
+            }
+        }
+    });
+}
+
 fn zoom_menu(ui: &mut egui::Ui, state: &State, fill: bool, out: &mut Vec<Cmd>) {
     ui.menu_button(tr!("Zoom", "Масштаб"), |ui| {
         let video = video_size(state).is_some();

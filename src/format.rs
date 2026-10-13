@@ -183,6 +183,8 @@ pub enum Osd {
     /// Fullscreen with the picture filling the screen, cropped, or the
     /// picture whole again.
     Fill(bool),
+    /// The picture's shape forced (its label), or the file's (`None`).
+    Aspect(Option<String>),
     /// The sound against the picture, in seconds (later when positive).
     AudioDelay(f64),
     /// Free text: a file name, an error.
@@ -311,6 +313,12 @@ impl Osd {
                 (false, false) => "[ Whole picture ]".into(),
                 (true, true) => "[ Полный экран без чёрных полос ]".into(),
                 (false, true) => "[ Картинка целиком ]".into(),
+            },
+            Osd::Aspect(shape) => match (shape, ru) {
+                (Some(s), false) => format!("[ Aspect ratio {s} ]"),
+                (Some(s), true) => format!("[ Пропорции {s} ]"),
+                (None, false) => "[ Aspect ratio as in the file ]".into(),
+                (None, true) => "[ Пропорции как в файле ]".into(),
             },
             Osd::AudioDelay(seconds) => {
                 let ms = (seconds * 1000.0).round();

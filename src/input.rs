@@ -93,6 +93,8 @@ pub enum Cmd {
     /// Fullscreen with the picture filling the screen, cropped, or the
     /// whole picture again, still in fullscreen (`6`).
     ToggleFill,
+    /// Force the picture's shape, or the file's again (the context menu).
+    SetAspect(crate::adjust::Aspect),
     Minimize,
     ToggleMaximize,
     Close,

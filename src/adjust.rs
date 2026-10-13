@@ -46,6 +46,52 @@ impl Color {
     }
 }
 
+/// The picture's shape: the file's, or one forced on it
+/// (`video-aspect-override`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Aspect {
+    #[default]
+    Auto,
+    R4x3,
+    R16x9,
+    R16x10,
+    R185,
+    R235,
+    R239,
+}
+
+impl Aspect {
+    pub const ALL: [Aspect; 7] = [
+        Aspect::Auto,
+        Aspect::R4x3,
+        Aspect::R16x9,
+        Aspect::R16x10,
+        Aspect::R185,
+        Aspect::R235,
+        Aspect::R239,
+    ];
+
+    /// mpv's `video-aspect-override` (-1: the file's).
+    pub fn option(self) -> &'static str {
+        match self {
+            Aspect::Auto => "-1",
+            Aspect::R4x3 => "4:3",
+            Aspect::R16x9 => "16:9",
+            Aspect::R16x10 => "16:10",
+            Aspect::R185 => "1.85:1",
+            Aspect::R235 => "2.35:1",
+            Aspect::R239 => "2.39:1",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Aspect::Auto => tr!("As in the file", "Как в файле"),
+            other => other.option(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Adjust {
     /// By [`Color::ALL`]'s order.
@@ -60,6 +106,7 @@ pub struct Adjust {
     pub sharpen: i64,
     pub denoise: bool,
     pub deband: bool,
+    pub aspect: Aspect,
 }
 
 impl Adjust {

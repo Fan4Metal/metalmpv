@@ -663,6 +663,12 @@ impl Player {
         if old.deband != new.deband {
             self.mpv.set("deband", &Value::Flag(new.deband));
         }
+        if old.aspect != new.aspect {
+            self.mpv.set(
+                "video-aspect-override",
+                &Value::Str(new.aspect.option().into()),
+            );
+        }
     }
 
     /// Save the frame on screen as it was decoded (without subtitles) to
@@ -938,6 +944,7 @@ mod tests {
         new.sharpen = 60;
         new.denoise = true;
         new.deband = true;
+        new.aspect = crate::adjust::Aspect::R4x3;
         player.adjust(&Adjust::default(), &new);
         player.mpv.observe(1, "vf", sys::MPV_FORMAT_NODE);
         player
