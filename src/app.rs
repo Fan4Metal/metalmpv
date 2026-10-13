@@ -2075,12 +2075,19 @@ fn chapters_menu(ui: &mut egui::Ui, state: &State, marks: bool, out: &mut Vec<Cm
 impl eframe::App for App {
     /// Every frame, and alone while the window is minimised: the player's
     /// events keep a playlist going.
-    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.updates.poll();
         self.take_events();
         self.take_hooked();
         self.follow_audio_device();
         let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
+        // eframe calls no `ui` for a minimised window: the thumbnail
+        // buttons' commands run here, else they waited for the window.
+        if minimized {
+            for cmd in std::mem::take(&mut self.pending) {
+                self.run(ctx, frame, cmd);
+            }
+        }
         self.keep_awake(minimized);
         self.follow_on_top(ctx);
         self.show_on_taskbar();
