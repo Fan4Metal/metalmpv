@@ -15,10 +15,8 @@ use crate::i18n::lang;
 use crate::info::{self, ChipAction, Subject, Tone};
 use crate::input::Cmd;
 use crate::playlist::Channel;
-use crate::tracks::Track;
+use crate::tracks::{Kind, Track};
 
-/// The width of the labels' column.
-const LABEL_WIDTH: f32 = 170.0;
 /// The side of the cover in the header.
 const THUMB: f32 = 120.0;
 /// The side of a channel's logo in the header.
@@ -133,9 +131,11 @@ impl InfoWindow {
                     ui.weak(tr!("No file is open.", "Файл не открыт."));
                     return;
                 }
+                let title = title_of(subject, channel.as_ref().map(|v| v.channel));
                 out.extend(self.header(
                     ui,
                     subject,
+                    &title,
                     cover.as_ref(),
                     channel.as_ref(),
                     look.colours,
@@ -182,7 +182,7 @@ impl InfoWindow {
                 ui.add_space(6.0);
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
-                    .show(ui, |ui| body(ui, subject, cover.as_ref(), &mut out));
+                    .show(ui, |ui| body(ui, subject, &title, cover.as_ref(), &mut out));
             });
         if !open {
             self.open = false;
@@ -203,6 +203,7 @@ impl InfoWindow {
         &mut self,
         ui: &mut Ui,
         subject: &Subject,
+        title: &str,
         cover: Option<&CoverView<'_>>,
         view: Option<&ChannelView<'_>>,
         colours: bool,
@@ -210,13 +211,6 @@ impl InfoWindow {
         let mut out = Vec::new();
         let state = subject.state;
         let channel = view.map(|v| v.channel);
-        // An IPTV list's channel by the list's name (a stream's title is
-        // its file's, "index.m3u8"), with its group in place of an album.
-        let title = channel
-            .and_then(|c| c.title.clone())
-            .or_else(|| info::tag(&state.metadata, &["title"]).map(str::to_owned))
-            .or_else(|| state.title.clone())
-            .unwrap_or_default();
         let artist = info::artist(&state.metadata);
         let album = info::album(&state.metadata).or_else(|| channel?.group.clone());
         ui.horizontal_top(|ui| {
@@ -329,32 +323,40 @@ fn fit(size: egui::Vec2, room: egui::Vec2) -> egui::Vec2 {
     size * scale
 }
 
-/// The file, the tags and the tracks.
-fn body(ui: &mut Ui, subject: &Subject, cover: Option<&CoverView<'_>>, out: &mut Vec<Cmd>) {
+/// The header's title: an IPTV list's channel by the list's name (a
+/// stream's title is its file's, "index.m3u8"), else the file's title tag,
+/// else mpv's title (the file's name).
+fn title_of(subject: &Subject, channel: Option<&Channel>) -> String {
+    channel
+        .and_then(|c| c.title.clone())
+        .or_else(|| info::tag(&subject.state.metadata, &["title"]).map(str::to_owned))
+        .or_else(|| subject.state.title.clone())
+        .unwrap_or_default()
+}
+
+/// The labels' column: as wide as the widest label of the window (folded
+/// tracks' too, so that unfolding one moves nothing), within these.
+const LABELS_MIN: f32 = 90.0;
+const LABELS_MAX: f32 = 200.0;
+/// A value longer than this many lines or characters is cut short, with
+/// "more" to show it all (a tag's lyrics, a description).
+const SHORT_LINES: usize = 3;
+const SHORT_CHARS: usize = 240;
+
+/// The file, the playback, the tags and the tracks, each a section that
+/// folds (egui's memory keeps which) and copies on a right click.
+fn body(
+    ui: &mut Ui,
+    subject: &Subject,
+    title: &str,
+    cover: Option<&CoverView<'_>>,
+    out: &mut Vec<Cmd>,
+) {
     let state = subject.state;
     let lang = lang();
-    heading(ui, tr!("File", "Файл"));
+    let name_label = tr!("Name", "Имя");
     let folder_label = tr!("Folder", "Папка");
-    for (label, value) in info::file_rows_in(lang, subject) {
-        if label == folder_label {
-            row_with(ui, &label, |ui| {
-                if ui
-                    .add(
-                        egui::Label::new(RichText::new(&value).color(style::accent_hover()))
-                            .sense(Sense::click())
-                            .wrap(),
-                    )
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .on_hover_text(tr!("Show in Explorer", "Показать в Проводнике"))
-                    .clicked()
-                {
-                    out.push(Cmd::ShowInFolder);
-                }
-            });
-        } else {
-            row(ui, &label, &value);
-        }
-    }
+    let mut file = info::file_rows_in(lang, subject);
     if let Some(c) = cover {
         let [w, h] = c.cover.size;
         let kind = c.cover.extension.to_uppercase();
@@ -371,51 +373,195 @@ fn body(ui: &mut Ui, subject: &Subject, cover: Option<&CoverView<'_>>, out: &mut
                 )
             }
         };
-        row(ui, tr!("Cover", "Обложка"), &value);
+        file.push((tr!("Cover", "Обложка").to_owned(), value));
     }
-
     let live = info::live_rows_in(lang, subject);
+    let tags = info::tags_in(lang, &state.metadata);
+    let tracks: Vec<Vec<(String, String)>> = state
+        .tracks
+        .iter()
+        .map(|t| info::track_rows_in(lang, t, subject))
+        .collect();
+
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let graph_label = tr!("Last minute", "За минуту");
+    let widest = file
+        .iter()
+        .chain(&live)
+        .chain(&tags)
+        .chain(tracks.iter().flatten())
+        .map(|(l, _)| l.as_str())
+        .chain([graph_label])
+        .map(|l| {
+            ui.fonts_mut(|f| f.layout_no_wrap(l.to_owned(), font.clone(), Color32::WHITE))
+                .size()
+                .x
+        })
+        .fold(0.0, f32::max);
+    let labels = (widest + 4.0).clamp(LABELS_MIN, LABELS_MAX);
+
+    let file_text = info::section_text(tr!("File", "Файл"), &file);
+    section(ui, "file", tr!("File", "Файл"), file_text, |ui| {
+        for (label, value) in &file {
+            // The header says the name already.
+            if label == name_label && value == title {
+                continue;
+            }
+            if label == folder_label {
+                row_with(ui, label, labels, |ui| {
+                    let link = ui
+                        .add(
+                            egui::Label::new(RichText::new(value).color(style::accent_hover()))
+                                .sense(Sense::click())
+                                .wrap(),
+                        )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text(tr!("Show in Explorer", "Показать в Проводнике"));
+                    if link.clicked() {
+                        out.push(Cmd::ShowInFolder);
+                    }
+                    copy_menu(&link, label, value);
+                });
+            } else {
+                row(ui, label, value, labels);
+            }
+        }
+    });
+
     if !live.is_empty() {
-        heading(ui, tr!("Playback", "Воспроизведение"));
-        for (label, value) in live {
-            row(ui, &label, &value);
-        }
-        if state.live.history.len() >= 2 {
-            row_with(ui, tr!("Last minute", "За минуту"), |ui| {
-                sparkline(ui, &state.live.history);
-            });
-        }
+        let heading = tr!("Playback", "Воспроизведение");
+        section(
+            ui,
+            "playback",
+            heading,
+            info::section_text(heading, &live),
+            |ui| {
+                for (label, value) in &live {
+                    row(ui, label, value, labels);
+                }
+                if state.live.history.len() >= 2 {
+                    row_with(ui, graph_label, labels, |ui| {
+                        sparkline(ui, &state.live.history);
+                    });
+                }
+            },
+        );
     }
 
-    let tags = info::tags_in(lang, &state.metadata);
     if !tags.is_empty() {
-        heading(ui, tr!("Tags", "Теги"));
-        for (label, value) in tags {
-            row(ui, &label, &value);
-        }
+        let heading = tr!("Tags", "Теги");
+        section(
+            ui,
+            "tags",
+            heading,
+            info::section_text(heading, &tags),
+            |ui| {
+                for (label, value) in &tags {
+                    long_row(ui, label, value, labels);
+                }
+            },
+        );
     }
 
     if !state.tracks.is_empty() {
-        heading(ui, tr!("Tracks", "Дорожки"));
-        for track in &state.tracks {
-            track_entry(ui, track, subject);
-            ui.add_space(4.0);
-        }
+        let heading = tr!("Tracks", "Дорожки");
+        let text = info::tracks_text_in(lang, subject);
+        section(ui, "tracks", heading, text, |ui| {
+            for kind in [Kind::Video, Kind::Audio, Kind::Sub] {
+                let of_kind: Vec<(&Track, &Vec<(String, String)>)> = state
+                    .tracks
+                    .iter()
+                    .zip(&tracks)
+                    .filter(|(t, _)| t.kind == kind)
+                    .collect();
+                if of_kind.is_empty() {
+                    continue;
+                }
+                let covers_only = of_kind.iter().all(|(t, _)| t.albumart);
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new(info::kind_in(lang, kind, covers_only))
+                        .small()
+                        .strong()
+                        .color(style::TEXT_WEAK),
+                );
+                for (track, rows) in of_kind {
+                    track_entry(ui, track, rows, subject, labels);
+                    ui.add_space(4.0);
+                }
+            }
+        });
     }
 }
 
-/// A track: its name and main details in one line, the playing ones
-/// brighter; a click on them or on the arrow unfolds all its rows (the open
-/// state is egui's memory, per track).
-fn track_entry(ui: &mut Ui, track: &Track, subject: &Subject) {
+/// A section: its heading, which folds it on a click (egui's memory keeps
+/// it) and copies it as text on a right click, then its rows.
+fn section(ui: &mut Ui, id: &str, title: &str, text: String, rows: impl FnOnce(&mut Ui)) {
+    let id = ui.make_persistent_id(("info_section", id));
+    let mut fold = CollapsingState::load_with_default_open(ui.ctx(), id, true);
+    ui.add_space(8.0);
+    let heading = ui
+        .horizontal(|ui| {
+            fold.show_toggle_button(ui, egui::collapsing_header::paint_default_icon);
+            ui.add(
+                egui::Label::new(
+                    RichText::new(title)
+                        .size(15.0)
+                        .strong()
+                        .color(style::TEXT_BRIGHT),
+                )
+                .sense(Sense::click()),
+            )
+        })
+        .inner;
+    if heading.clicked() {
+        fold.toggle(ui);
+    }
+    heading.context_menu(|ui| {
+        if ui
+            .button(tr!("Copy the section", "Копировать раздел"))
+            .clicked()
+        {
+            ui.ctx().copy_text(text);
+            ui.close();
+        }
+    });
+    fold.show_body_unindented(ui, |ui| {
+        ui.add_space(2.0);
+        rows(ui);
+    });
+}
+
+/// A track: a dot in the accent colour when it plays, its number and name
+/// over its main details; a click on them or on the arrow unfolds its
+/// rows (egui's memory keeps it, per track; the picture on screen starts
+/// unfolded).
+fn track_entry(
+    ui: &mut Ui,
+    track: &Track,
+    rows: &[(String, String)],
+    subject: &Subject,
+    labels: f32,
+) {
     let state = subject.state;
     let lang = lang();
     let id = ui.make_persistent_id(("track_rows", track.kind, track.id));
-    let mut fold = CollapsingState::load_with_default_open(ui.ctx(), id, false);
+    let on_screen = track.kind == Kind::Video && track.selected && !track.albumart;
+    let mut fold = CollapsingState::load_with_default_open(ui.ctx(), id, on_screen);
     let header = ui.horizontal_top(|ui| {
         fold.show_toggle_button(ui, egui::collapsing_header::paint_default_icon);
+        let (dot, _) = ui.allocate_exact_size(vec2(8.0, 18.0), Sense::hover());
+        if track.selected {
+            ui.painter()
+                .circle_filled(dot.center(), 3.5, style::accent());
+        }
         ui.vertical(|ui| {
-            let heading = info::track_heading_in(lang, track, &state.tracks);
+            let n = track.number(&state.tracks);
+            let heading = if track.albumart {
+                info::kind_in(lang, track.kind, true).to_owned()
+            } else {
+                format!("{n}. {}", track.name_in(lang, n))
+            };
             let color = if track.selected {
                 style::TEXT_BRIGHT
             } else {
@@ -452,8 +598,8 @@ fn track_entry(ui: &mut Ui, track: &Track, subject: &Subject) {
     }
     fold.show_body_unindented(ui, |ui| {
         ui.add_space(4.0);
-        for (label, value) in info::track_rows_in(lang, track, subject) {
-            row(ui, &label, &value);
+        for (label, value) in rows {
+            row(ui, label, value, labels);
         }
     });
 }
@@ -614,28 +760,74 @@ fn chip(ui: &mut Ui, chip: &info::Chip, colours: bool) -> egui::Response {
     }
 }
 
-fn heading(ui: &mut Ui, text: &str) {
-    ui.add_space(10.0);
-    ui.label(
-        RichText::new(text)
-            .size(15.0)
-            .strong()
-            .color(style::TEXT_BRIGHT),
-    );
-    ui.add_space(2.0);
-}
-
-/// A label on the left, the value wrapped on the right.
-fn row(ui: &mut Ui, label: &str, value: &str) {
-    row_with(ui, label, |ui| {
-        ui.add(egui::Label::new(value).wrap());
+/// A label on the left in a column `labels` wide, the value wrapped on the
+/// right, selectable, and copied by its menu.
+fn row(ui: &mut Ui, label: &str, value: &str, labels: f32) {
+    row_with(ui, label, labels, |ui| {
+        let response = ui.add(egui::Label::new(value).wrap().selectable(true));
+        copy_menu(&response, label, value);
     });
 }
 
-fn row_with(ui: &mut Ui, label: &str, value: impl FnOnce(&mut Ui)) {
+/// A row whose value may be long: cut to its first lines with "more" to
+/// show it all (egui's memory keeps it, per label).
+fn long_row(ui: &mut Ui, label: &str, value: &str, labels: f32) {
+    let Some(short) = cut_short(value) else {
+        row(ui, label, value, labels);
+        return;
+    };
+    let id = ui.make_persistent_id(("long_row", label));
+    let open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+    row_with(ui, label, labels, |ui| {
+        let text = if open { value } else { short.as_str() };
+        let response = ui.add(egui::Label::new(text).wrap().selectable(true));
+        copy_menu(&response, label, value);
+        let more = if open {
+            tr!("less", "свернуть")
+        } else {
+            tr!("more", "ещё")
+        };
+        if ui.link(more).clicked() {
+            ui.data_mut(|d| d.insert_temp(id, !open));
+        }
+    });
+}
+
+/// The start of a value longer than [`SHORT_LINES`] lines or
+/// [`SHORT_CHARS`] characters, with "…"; `None` for a short one.
+fn cut_short(value: &str) -> Option<String> {
+    let lines: Vec<&str> = value.lines().collect();
+    if lines.len() <= SHORT_LINES && value.chars().count() <= SHORT_CHARS {
+        return None;
+    }
+    let start = lines[..lines.len().min(SHORT_LINES)].join("\n");
+    let mut short: String = start.chars().take(SHORT_CHARS).collect();
+    short = short.trim_end().to_owned();
+    short.push('…');
+    Some(short)
+}
+
+/// The menu of a value: copy it, or the row.
+fn copy_menu(response: &egui::Response, label: &str, value: &str) {
+    response.context_menu(|ui| {
+        if ui.button(tr!("Copy", "Копировать")).clicked() {
+            ui.ctx().copy_text(value.to_owned());
+            ui.close();
+        }
+        if ui
+            .button(tr!("Copy the row", "Копировать строку"))
+            .clicked()
+        {
+            ui.ctx().copy_text(format!("{label}: {value}"));
+            ui.close();
+        }
+    });
+}
+
+fn row_with(ui: &mut Ui, label: &str, labels: f32, value: impl FnOnce(&mut Ui)) {
     ui.horizontal_top(|ui| {
-        ui.allocate_ui_with_layout(vec2(LABEL_WIDTH, 0.0), Layout::top_down(Align::Min), |ui| {
-            ui.set_width(LABEL_WIDTH);
+        ui.allocate_ui_with_layout(vec2(labels, 0.0), Layout::top_down(Align::Min), |ui| {
+            ui.set_width(labels);
             ui.add(egui::Label::new(RichText::new(label).color(style::TEXT_WEAK)).wrap());
         });
         let width = ui.available_width();
@@ -644,4 +836,19 @@ fn row_with(ui: &mut Ui, label: &str, value: impl FnOnce(&mut Ui)) {
             value(ui);
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn long_values_cut_short() {
+        assert_eq!(cut_short("One line"), None);
+        assert_eq!(cut_short("1\n2\n3\n4\n5").as_deref(), Some("1\n2\n3…"));
+        let long = "word ".repeat(100);
+        let short = cut_short(&long).unwrap();
+        assert!(short.ends_with("word…"));
+        assert!(short.chars().count() <= SHORT_CHARS + 1);
+    }
 }

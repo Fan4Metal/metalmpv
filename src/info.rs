@@ -1161,44 +1161,60 @@ pub fn track_heading_in(lang: Lang, track: &Track, tracks: &[Track]) -> String {
     format!("{kind} {n}: {}", track.name_in(lang, n))
 }
 
-/// Everything the window shows, as text for the clipboard.
-pub fn report_in(lang: Lang, s: &Subject) -> String {
-    let state = s.state;
-    let ru = lang == Lang::Ru;
-    let mut text = String::new();
-    let mut section = |title: &str, rows: Vec<(String, String)>| {
-        if rows.is_empty() {
-            return;
+/// A section as text: its title, then a line per row with the labels in
+/// a column, as MediaInfo writes them ("Format       : Matroska"); the
+/// lines of a long value go on under its first.
+pub fn section_text(title: &str, rows: &[(String, String)]) -> String {
+    let width = rows
+        .iter()
+        .map(|(l, _)| l.chars().count())
+        .max()
+        .unwrap_or(0);
+    let mut text = format!("{title}\n");
+    for (label, value) in rows {
+        let pad = " ".repeat(width - label.chars().count());
+        let mut lines = value.lines();
+        let first = lines.next().unwrap_or_default();
+        text.push_str(&format!("{label}{pad} : {first}\n"));
+        for line in lines {
+            text.push_str(&format!("{}   {line}\n", " ".repeat(width)));
         }
-        if !text.is_empty() {
-            text.push('\n');
-        }
-        text.push_str(title);
-        text.push('\n');
-        for (label, value) in rows {
-            text.push_str(&format!("{label}: {value}\n"));
-        }
-    };
-    section(if ru { "Файл" } else { "File" }, file_rows_in(lang, s));
-    section(
-        if ru {
-            "Воспроизведение"
-        } else {
-            "Playback"
-        },
-        live_rows_in(lang, s),
-    );
-    section(
-        if ru { "Теги" } else { "Tags" },
-        tags_in(lang, &state.metadata),
-    );
-    for t in &state.tracks {
-        section(
-            &track_heading_in(lang, t, &state.tracks),
-            track_rows_in(lang, t, s),
-        );
     }
     text
+}
+
+/// The tracks as text: a section each.
+pub fn tracks_text_in(lang: Lang, s: &Subject) -> String {
+    let tracks = &s.state.tracks;
+    tracks
+        .iter()
+        .map(|t| {
+            section_text(
+                &track_heading_in(lang, t, tracks),
+                &track_rows_in(lang, t, s),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Everything the window shows, as text for the clipboard.
+pub fn report_in(lang: Lang, s: &Subject) -> String {
+    let ru = lang == Lang::Ru;
+    let title = |en, ru_text| if ru { ru_text } else { en };
+    let mut parts: Vec<String> = [
+        (title("File", "Файл"), file_rows_in(lang, s)),
+        (title("Playback", "Воспроизведение"), live_rows_in(lang, s)),
+        (title("Tags", "Теги"), tags_in(lang, &s.state.metadata)),
+    ]
+    .into_iter()
+    .filter(|(_, rows)| !rows.is_empty())
+    .map(|(title, rows)| section_text(title, &rows))
+    .collect();
+    if !s.state.tracks.is_empty() {
+        parts.push(tracks_text_in(lang, s));
+    }
+    parts.join("\n")
 }
 
 #[cfg(test)]
@@ -1502,6 +1518,19 @@ mod tests {
         assert_eq!(
             audio_out_in(Lang::En, &out).as_deref(),
             Some("44.1 kHz · 2.0 · 16-bit")
+        );
+    }
+
+    #[test]
+    fn section_texts() {
+        let rows = vec![
+            ("Format".to_owned(), "Matroska".to_owned()),
+            ("Size".to_owned(), "2.13 GB".to_owned()),
+            ("Comment".to_owned(), "One\nTwo".to_owned()),
+        ];
+        assert_eq!(
+            section_text("File", &rows),
+            "File\nFormat  : Matroska\nSize    : 2.13 GB\nComment : One\n          Two\n"
         );
     }
 
