@@ -1630,13 +1630,15 @@ impl App {
                 if let Some(id) = ctx.memory(|m| m.focused()) {
                     ctx.memory_mut(|m| m.surrender_focus(id));
                 }
-                // Esc here closes this window, not the program.
-                cmds.extend(input::keys(&ctx, &self.settings.keys).into_iter().map(
-                    |cmd| match cmd {
-                        Cmd::Escape => Cmd::TogglePlaylist,
-                        cmd => cmd,
-                    },
-                ));
+                // Esc here closes this window, not the program; so does
+                // the playlist's key (a player in fullscreen would show
+                // its own playlist for it).
+                for cmd in input::keys(&ctx, &self.settings.keys) {
+                    match cmd {
+                        Cmd::Escape | Cmd::TogglePlaylist => close = true,
+                        cmd => cmds.push(cmd),
+                    }
+                }
             }
             frameless::resize_edges(ui);
             egui::Panel::top("playlist_title")
