@@ -96,8 +96,21 @@ fn tabbed(ui: &mut Ui, all: &[Track], tab: &mut usize, wide: &mut bool) -> Vec<C
         });
     });
     ui.add_space(6.0);
+    // Both lists laid out unseen (an invisible Ui paints nothing and takes
+    // no input) for the taller: the window keeps that height whichever tab
+    // is shown, as the panel does; held by its bottom edge, it jumped.
+    let mut tallest = 0.0_f32;
+    for kind in [Kind::Audio, Kind::Sub] {
+        let rect = ui.available_rect_before_wrap();
+        let mut unseen = ui.new_child(egui::UiBuilder::new().max_rect(rect).invisible());
+        column(&mut unseen, all, kind, &mut Vec::new());
+        tallest = tallest.max(unseen.min_rect().height());
+    }
     let kind = if *tab == 0 { Kind::Audio } else { Kind::Sub };
-    column(ui, all, kind, &mut out);
+    ui.scope(|ui| {
+        ui.set_min_height(tallest);
+        column(ui, all, kind, &mut out);
+    });
     out
 }
 
