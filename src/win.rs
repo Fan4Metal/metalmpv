@@ -634,7 +634,7 @@ unsafe extern "system" fn window_proc(
             }
         }
         _ => {
-            if let Some(result) = media_message(msg, wparam, lparam) {
+            if let Some(result) = media_message(hwnd, msg, wparam, lparam) {
                 return result;
             }
         }
@@ -644,14 +644,22 @@ unsafe extern "system" fn window_proc(
 
 /// A media key's message (`WM_KEYDOWN` with a `VK_MEDIA_*` key,
 /// `WM_APPCOMMAND`), queued for [`take_hooked`]; its result if it was one.
+/// While the windows let the keys go ([`set_media_keys`] off), a media
+/// key goes to `DefWindowProc`, which makes it the `WM_APPCOMMAND` other
+/// players take: winit answers every key itself without it, and the key
+/// went nowhere.
 fn media_message(
+    hwnd: windows_sys::Win32::Foundation::HWND,
     msg: u32,
     wparam: windows_sys::Win32::Foundation::WPARAM,
     lparam: windows_sys::Win32::Foundation::LPARAM,
 ) -> Option<windows_sys::Win32::Foundation::LRESULT> {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{WM_APPCOMMAND, WM_KEYDOWN};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        DefWindowProcW, WM_APPCOMMAND, WM_KEYDOWN, WM_KEYUP,
+    };
     if !MEDIA_KEYS.load(std::sync::atomic::Ordering::Relaxed) {
-        return None;
+        return (matches!(msg, WM_KEYDOWN | WM_KEYUP) && media_vk(wparam as u32).is_some())
+            .then(|| unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) });
     }
     match msg {
         WM_KEYDOWN => {
@@ -967,7 +975,7 @@ unsafe extern "system" fn playlist_proc(
         fn GetDpiForWindow(hwnd: isize) -> u32;
     }
     let me = hwnd as isize;
-    if let Some(result) = media_message(msg, wparam, lparam) {
+    if let Some(result) = media_message(hwnd, msg, wparam, lparam) {
         return result;
     }
     match msg {
