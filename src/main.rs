@@ -116,7 +116,15 @@ fn main() -> eframe::Result {
                         .map_err(|e| e.to_string())
                         .and_then(|exe| assoc::register(&exe))
                 } else {
-                    assoc::unregister()
+                    // Uninstalling this copy leaves another's registration
+                    // (a portable copy registered since) alone.
+                    match std::env::current_exe().map(|exe| assoc::status(&exe)) {
+                        Ok(assoc::Status::OtherCopy(other)) => {
+                            log::info!("the file types are another copy's ({other}): kept");
+                            Ok(())
+                        }
+                        _ => assoc::unregister(),
+                    }
                 };
                 if let Err(e) = &result {
                     log::error!("{flag}: {e}");
