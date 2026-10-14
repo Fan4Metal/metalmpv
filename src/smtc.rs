@@ -320,8 +320,25 @@ impl Smtc {
 }
 
 impl Drop for Smtc {
+    /// The controls are the window's, not freed with this: left enabled
+    /// and playing, Windows kept the player as the session the media keys
+    /// and its flyout go to, with no handler (the setting turned off).
     fn drop(&mut self) {
-        unsafe { (self.vtbl().remove_button_pressed)(self.controls, self.token) };
+        let (c, v) = (self.controls, self.vtbl());
+        unsafe {
+            (v.put_playback_status)(c, STATUS_CLOSED);
+            let mut updater = std::ptr::null_mut();
+            if (v.get_display_updater)(c, &mut updater) >= 0 && !updater.is_null() {
+                let u = vtbl::<UpdaterVtbl>(updater);
+                (u.clear_all)(updater);
+                (u.update)(updater);
+                release(updater);
+            }
+            (v.put_is_enabled)(c, 0);
+            if self.token != 0 {
+                (v.remove_button_pressed)(c, self.token);
+            }
+        }
         release(self.controls);
     }
 }
