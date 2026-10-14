@@ -194,9 +194,18 @@ pub fn children<R: Read + Seek>(
         let size = size?;
         let data = r.stream_position().ok()?;
         each(r, id, size)?;
-        r.seek(SeekFrom::Start(data.checked_add(size)?)).ok()?;
+        go_to(r, data.checked_add(size)?)?;
     }
     Some(())
+}
+
+/// Move `r` to `at` from where it is: a `BufReader` keeps its buffer for a
+/// move within it, where a seek to a position dropped it and read 8 KB
+/// again for each small element.
+pub fn go_to(r: &mut impl Seek, at: u64) -> Option<()> {
+    let here = r.stream_position().ok()?;
+    let by = i64::try_from(i128::from(at) - i128::from(here)).ok()?;
+    r.seek_relative(by).ok()
 }
 
 #[cfg(test)]

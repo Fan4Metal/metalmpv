@@ -4,7 +4,7 @@
 //! 64-bit size 8 bytes too far, and a film over 4 GB has its mdat written
 //! so, before the moov.
 
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek};
 
 /// A box's type and the size of its data, the reader left at its data; a
 /// box of size 0 reaches `end`.
@@ -38,7 +38,7 @@ pub fn child(r: &mut (impl Read + Seek), end: u64, kind: &[u8; 4]) -> Option<u64
         if &found == kind {
             return Some(data + size);
         }
-        r.seek(SeekFrom::Start(data + size)).ok()?;
+        crate::ebml::go_to(r, data + size)?;
     }
 }
 
@@ -58,7 +58,7 @@ pub fn each_box<R: Read + Seek>(
     while let Some((kind, size)) = next_box(r, end) {
         let data = r.stream_position().ok()?;
         each(r, kind, data + size)?;
-        r.seek(SeekFrom::Start(data + size)).ok()?;
+        crate::ebml::go_to(r, data + size)?;
     }
     Some(())
 }
