@@ -1023,6 +1023,43 @@ pub fn pictures_dir() -> Option<std::path::PathBuf> {
     path
 }
 
+/// `time` in the local time zone, by the zone's rules of that date: the
+/// year, month, day, hour, minute and second. `None` before 1970.
+pub fn local_time(time: std::time::SystemTime) -> Option<[u16; 6]> {
+    use windows_sys::Win32::Foundation::{FILETIME, SYSTEMTIME};
+    // kernel32 is declared by hand, to spare a `windows-sys` feature.
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn FileTimeToSystemTime(file_time: *const FILETIME, system_time: *mut SYSTEMTIME) -> i32;
+        fn SystemTimeToTzSpecificLocalTime(
+            zone: *const core::ffi::c_void,
+            universal: *const SYSTEMTIME,
+            local: *mut SYSTEMTIME,
+        ) -> i32;
+    }
+    // FILETIME: 100 ns intervals since 1601.
+    let since = time.duration_since(std::time::UNIX_EPOCH).ok()?;
+    let ticks = u64::try_from(since.as_nanos() / 100).ok()? + 116_444_736_000_000_000;
+    let file_time = FILETIME {
+        dwLowDateTime: ticks as u32,
+        dwHighDateTime: (ticks >> 32) as u32,
+    };
+    let mut universal: SYSTEMTIME = unsafe { std::mem::zeroed() };
+    let mut local: SYSTEMTIME = unsafe { std::mem::zeroed() };
+    let ok = unsafe {
+        FileTimeToSystemTime(&file_time, &mut universal) != 0
+            && SystemTimeToTzSpecificLocalTime(std::ptr::null(), &universal, &mut local) != 0
+    };
+    ok.then_some([
+        local.wYear,
+        local.wMonth,
+        local.wDay,
+        local.wHour,
+        local.wMinute,
+        local.wSecond,
+    ])
+}
+
 /// The double-click time of Windows in seconds (egui assumes 0.3).
 pub fn double_click_time() -> f64 {
     #[link(name = "user32")]

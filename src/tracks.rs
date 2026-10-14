@@ -34,6 +34,11 @@ pub enum Kind {
 pub struct Track {
     /// mpv's id (`aid`/`sid`), counted per kind from 1.
     pub id: i64,
+    /// The track's id in the file (Matroska's track number), when mpv
+    /// knows it (`src-id`).
+    pub src_id: Option<i64>,
+    /// FFmpeg's stream index (`ff-index`).
+    pub ff_index: Option<i64>,
     pub kind: Kind,
     pub title: Option<String>,
     /// ISO 639 code as in the file (`rus`, `en`).
@@ -98,6 +103,8 @@ pub fn from_value(list: &Value) -> Vec<Track> {
             let flag = |key| t.get(key).is_some_and(Value::flag);
             Some(Track {
                 id: t.get("id")?.int()?,
+                src_id: t.get("src-id").and_then(Value::int),
+                ff_index: t.get("ff-index").and_then(Value::int),
                 kind,
                 title: text("title"),
                 lang: text("lang"),

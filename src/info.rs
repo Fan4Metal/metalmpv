@@ -9,7 +9,33 @@ use std::path::Path;
 
 use crate::i18n::Lang;
 use crate::player::{Scan, State, VideoParams};
+use crate::probe::{Facts, TrackFacts};
 use crate::tracks::{self, Kind, Track};
+
+/// What the window describes: the file, mpv's word on it and what its
+/// container says (`probe.rs`; `None` until read, and for addresses).
+#[derive(Clone, Copy)]
+pub struct Subject<'a> {
+    pub path: Option<&'a Path>,
+    pub state: &'a State,
+    pub facts: Option<&'a Facts>,
+}
+
+impl<'a> Subject<'a> {
+    /// What the container says of `track`.
+    fn of(&self, track: &Track) -> Option<&'a TrackFacts> {
+        self.facts?.track(track)
+    }
+
+    /// A track's average bitrate: mpv's (FFmpeg's demuxers), else the
+    /// container's statistics (Matroska written by mkvmerge).
+    fn bitrate(&self, track: &Track) -> Option<i64> {
+        track
+            .bitrate
+            .filter(|b| *b > 0)
+            .or_else(|| self.of(track)?.bitrate)
+    }
+}
 
 /// The tags shown first, in this order: mpv's names (any case) and the
 /// label in English and Russian.
@@ -188,7 +214,8 @@ pub fn kind_in(lang: Lang, kind: Kind, albumart: bool) -> &'static str {
 /// [`track_rows_in`] unfold below it):
 /// "HEVC · 3840×2160 · 23,976 fps · 10 бит · HDR (PQ) · 14,2 Мбит/с",
 /// "AAC · 5.1 · 48 кГц · 384 кбит/с".
-pub fn track_details_in(lang: Lang, track: &Track, state: &State) -> String {
+pub fn track_details_in(lang: Lang, track: &Track, s: &Subject) -> String {
+    let state = s.state;
     let ru = lang == Lang::Ru;
     let mut parts = Vec::new();
     if let Some(codec) = &track.codec {
@@ -242,7 +269,7 @@ pub fn track_details_in(lang: Lang, track: &Track, state: &State) -> String {
         }
         Kind::Sub => {}
     }
-    if let Some(bitrate) = track.bitrate.filter(|b| *b > 0) {
+    if let Some(bitrate) = s.bitrate(track) {
         parts.push(bitrate_in(lang, bitrate as f64));
     }
     let flags = [
@@ -260,7 +287,9 @@ pub fn track_details_in(lang: Lang, track: &Track, state: &State) -> String {
 
 /// A track's rows: its format, what the file states of it and, for the
 /// video track on screen, what the decoder says of the picture.
-pub fn track_rows_in(lang: Lang, track: &Track, state: &State) -> Vec<(String, String)> {
+pub fn track_rows_in(lang: Lang, track: &Track, s: &Subject) -> Vec<(String, String)> {
+    let state = s.state;
+    let facts = s.of(track);
     let ru = lang == Lang::Ru;
     let label = |en: &str, ru_text: &str| if ru { ru_text } else { en }.to_owned();
     let mut rows = Vec::new();
@@ -269,6 +298,9 @@ pub fn track_rows_in(lang: Lang, track: &Track, state: &State) -> Vec<(String, S
     }
     if let Some(profile) = &track.profile {
         rows.push((label("Profile", "Профиль"), profile.clone()));
+    }
+    if let Some(level) = facts.and_then(|f| f.level.as_deref()) {
+        rows.push((label("Level", "Уровень"), level_in(lang, level)));
     }
     // The decoder's word on the picture, for the track on screen only.
     let on_screen = track.kind == Kind::Video && track.selected && !track.albumart;
@@ -380,11 +412,17 @@ pub fn track_rows_in(lang: Lang, track: &Track, state: &State) -> Vec<(String, S
         }
         Kind::Sub => {}
     }
-    if let Some(bitrate) = track.bitrate.filter(|b| *b > 0) {
+    if let Some(bitrate) = s.bitrate(track) {
         rows.push((
             label("Bitrate", "Битрейт"),
             bitrate_in(lang, bitrate as f64),
         ));
+        if let Some(max) = facts.and_then(|f| f.max_bitrate).filter(|m| *m > bitrate) {
+            rows.push((
+                label("Peak bitrate", "Пиковый битрейт"),
+                bitrate_in(lang, max as f64),
+            ));
+        }
         if let (Some(w), Some(h), Some(fps)) = (track.width, track.height, track.fps) {
             let pixels = (w * h) as f64 * fps;
             if pixels > 0.0 && !track.albumart {
@@ -394,9 +432,19 @@ pub fn track_rows_in(lang: Lang, track: &Track, state: &State) -> Vec<(String, S
                 ));
             }
         }
-        if let Some(duration) = state.duration.filter(|_| !track.external) {
-            let bytes = bitrate as f64 * duration / 8.0;
-            let mut text = format!("≈ {}", size_in(lang, bytes as i64));
+        // The size the container counted, else one worked out.
+        let counted = facts.and_then(|f| f.bytes).map(|b| b as f64);
+        let worked_out = state
+            .duration
+            .filter(|_| !track.external)
+            .map(|d| bitrate as f64 * d / 8.0);
+        if let Some(bytes) = counted.or(worked_out) {
+            let size = size_in(lang, bytes as i64);
+            let mut text = if counted.is_some() {
+                size
+            } else {
+                format!("≈ {size}")
+            };
             if let Some(total) = state.file_size.filter(|s| *s > 0) {
                 let share = (bytes / total as f64 * 100.0).round().min(100.0);
                 text.push_str(&if ru {
@@ -406,6 +454,21 @@ pub fn track_rows_in(lang: Lang, track: &Track, state: &State) -> Vec<(String, S
                 });
             }
             rows.push((label("Stream size", "Размер потока"), text));
+        }
+    }
+    if let Some(frames) = facts.and_then(|f| f.frames) {
+        match track.kind {
+            Kind::Video if !track.albumart => {
+                rows.push((
+                    label("Frames", "Кадров"),
+                    crate::format::count_in(lang, frames),
+                ));
+            }
+            Kind::Sub => rows.push((
+                label("Entries", "Элементов"),
+                crate::format::count_in(lang, frames),
+            )),
+            _ => {}
         }
     }
     if on_screen {
@@ -442,7 +505,21 @@ pub fn track_rows_in(lang: Lang, track: &Track, state: &State) -> Vec<(String, S
         rows.push((label("Flags", "Признаки"), flags.join(", ")));
     }
     rows.extend(tags_in(lang, &track.tags));
+    if let Some(f) = facts {
+        rows.extend(tags_in(lang, &f.tags));
+    }
     rows
+}
+
+/// A codec's level: "4.1", "5.1, High tier"; "5.1, ярус High".
+fn level_in(lang: Lang, level: &str) -> String {
+    match level.strip_suffix(" High") {
+        Some(l) => match lang {
+            Lang::En => format!("{l}, High tier"),
+            Lang::Ru => format!("{l}, ярус High"),
+        },
+        None => level.to_owned(),
+    }
 }
 
 /// The chroma subsampling and the bits per component of an FFmpeg pixel
@@ -603,7 +680,8 @@ fn hdr_in(lang: Lang, params: &VideoParams) -> Option<String> {
 }
 
 /// The file's rows: name, folder, size, container, duration, bitrate.
-pub fn file_rows_in(lang: Lang, path: Option<&Path>, state: &State) -> Vec<(String, String)> {
+pub fn file_rows_in(lang: Lang, s: &Subject) -> Vec<(String, String)> {
+    let (path, state) = (s.path, s.state);
     let ru = lang == Lang::Ru;
     let label = |en: &str, ru_text: &str| if ru { ru_text } else { en }.to_owned();
     let mut rows = Vec::new();
@@ -637,6 +715,35 @@ pub fn file_rows_in(lang: Lang, path: Option<&Path>, state: &State) -> Vec<(Stri
     }
     if !state.chapters.is_empty() {
         rows.push((label("Chapters", "Главы"), state.chapters.len().to_string()));
+    }
+    if let Some(f) = s.facts {
+        // What mpv's tags already say is not said again.
+        if let Some(app) = f
+            .writing_app
+            .as_ref()
+            .filter(|a| tag(&state.metadata, &["encoder"]) != Some(a.as_str()))
+        {
+            rows.push((label("Written by", "Программа записи"), app.clone()));
+        }
+        if let Some(library) = f
+            .muxing_app
+            .as_ref()
+            .filter(|m| f.writing_app.as_ref() != Some(*m))
+        {
+            rows.push((label("Library", "Библиотека"), library.clone()));
+        }
+        let date = |t| crate::win::local_time(t).map(|d| crate::format::date_in(lang, d));
+        if tag(&state.metadata, &["creation_time"]).is_none()
+            && let Some(d) = f.written.and_then(date)
+        {
+            rows.push((label("Written", "Дата записи"), d));
+        }
+        if let Some(d) = f.created.and_then(date) {
+            rows.push((label("File created", "Файл создан"), d));
+        }
+        if let Some(d) = f.modified.and_then(date) {
+            rows.push((label("File modified", "Файл изменён"), d));
+        }
     }
     rows
 }
@@ -703,7 +810,8 @@ const AUDIO_CHIPS: usize = 4;
 /// bitrate), the picture (codec, size, fps, depth, HDR, bitrate), the
 /// sound (a chip per audio track, the playing one marked; the subtitles'
 /// count and language). What the list below says, at a glance.
-pub fn chips_in(lang: Lang, path: Option<&Path>, state: &State) -> Vec<Vec<Chip>> {
+pub fn chips_in(lang: Lang, s: &Subject) -> Vec<Vec<Chip>> {
+    let (path, state) = (s.path, s.state);
     let ru = lang == Lang::Ru;
     let mut rows = Vec::new();
 
@@ -768,11 +876,22 @@ pub fn chips_in(lang: Lang, path: Option<&Path>, state: &State) -> Vec<Vec<Chip>
         if let Some(codec) = &track.codec {
             let mut chip = Chip::new(tracks::codec_name(codec));
             let mut tip = track.codec_desc.clone().unwrap_or_default();
-            if let Some(profile) = &track.profile {
+            let level = s
+                .of(track)
+                .and_then(|f| f.level.as_deref())
+                .map(|l| level_in(lang, l));
+            let level = level.map(|l| {
+                if ru {
+                    format!("уровень {l}")
+                } else {
+                    format!("level {l}")
+                }
+            });
+            for part in [track.profile.clone(), level].into_iter().flatten() {
                 if !tip.is_empty() {
                     tip.push_str(" · ");
                 }
-                tip.push_str(profile);
+                tip.push_str(&part);
             }
             if !tip.is_empty() {
                 chip = chip.tip(tip);
@@ -819,7 +938,7 @@ pub fn chips_in(lang: Lang, path: Option<&Path>, state: &State) -> Vec<Vec<Chip>
                 picture.push(chip);
             }
         }
-        if let Some(bitrate) = track.bitrate.filter(|b| *b > 0) {
+        if let Some(bitrate) = s.bitrate(track) {
             picture.push(Chip::new(bitrate_in(lang, bitrate as f64)).tip(if ru {
                 "Битрейт видео"
             } else {
@@ -860,7 +979,7 @@ pub fn chips_in(lang: Lang, path: Option<&Path>, state: &State) -> Vec<Vec<Chip>
             "{} {}: {name}\n{}",
             kind_in(lang, Kind::Audio, false),
             i + 1,
-            track_details_in(lang, track, state)
+            track_details_in(lang, track, s)
         );
         sound.push(Chip {
             text: parts.join(" "),
@@ -927,7 +1046,8 @@ pub fn track_heading_in(lang: Lang, track: &Track, tracks: &[Track]) -> String {
 }
 
 /// Everything the window shows, as text for the clipboard.
-pub fn report_in(lang: Lang, path: Option<&Path>, state: &State) -> String {
+pub fn report_in(lang: Lang, s: &Subject) -> String {
+    let state = s.state;
     let ru = lang == Lang::Ru;
     let mut text = String::new();
     let mut section = |title: &str, rows: Vec<(String, String)>| {
@@ -943,10 +1063,7 @@ pub fn report_in(lang: Lang, path: Option<&Path>, state: &State) -> String {
             text.push_str(&format!("{label}: {value}\n"));
         }
     };
-    section(
-        if ru { "Файл" } else { "File" },
-        file_rows_in(lang, path, state),
-    );
+    section(if ru { "Файл" } else { "File" }, file_rows_in(lang, s));
     section(
         if ru { "Теги" } else { "Tags" },
         tags_in(lang, &state.metadata),
@@ -954,7 +1071,7 @@ pub fn report_in(lang: Lang, path: Option<&Path>, state: &State) -> String {
     for t in &state.tracks {
         section(
             &track_heading_in(lang, t, &state.tracks),
-            track_rows_in(lang, t, state),
+            track_rows_in(lang, t, s),
         );
     }
     text
@@ -1030,7 +1147,15 @@ mod tests {
 
     /// The rows' values by their English labels.
     fn rows_of(track: &Track, state: &State) -> Vec<(String, String)> {
-        track_rows_in(Lang::En, track, state)
+        track_rows_in(Lang::En, track, &subject(state))
+    }
+
+    fn subject(state: &State) -> Subject<'_> {
+        Subject {
+            path: None,
+            state,
+            facts: None,
+        }
     }
 
     fn value<'a>(rows: &'a [(String, String)], label: &str) -> Option<&'a str> {
@@ -1074,7 +1199,7 @@ mod tests {
             ..State::default()
         };
         assert_eq!(
-            track_details_in(Lang::En, &video, &state),
+            track_details_in(Lang::En, &video, &subject(&state)),
             "H.264 · 1920×960 · 24 fps · 7.4 Mb/s · default"
         );
         let rows = rows_of(&video, &state);
@@ -1119,15 +1244,84 @@ mod tests {
             ..Track::default()
         };
         assert_eq!(
-            track_details_in(Lang::Ru, &audio, &state),
+            track_details_in(Lang::Ru, &audio, &subject(&state)),
             "AAC · 5.1 · 48 кГц · 384 кбит/с"
         );
-        let rows = track_rows_in(Lang::Ru, &audio, &state);
+        let rows = track_rows_in(Lang::Ru, &audio, &subject(&state));
         assert_eq!(value(&rows, "Каналы"), Some("5.1 (5.1(side))"));
         assert_eq!(value(&rows, "Частота дискретизации"), Some("48 кГц"));
         assert_eq!(value(&rows, "Битрейт"), Some("384 кбит/с"));
         assert_eq!(value(&rows, "Признаки"), Some("комментарии"));
         assert_eq!(value(&rows, "Бит/(пиксель·кадр)"), None);
+    }
+
+    #[test]
+    fn container_facts() {
+        // mpv's own Matroska demuxer: no bitrate; mkvmerge's statistics.
+        let video = Track {
+            id: 1,
+            src_id: Some(1),
+            kind: Kind::Video,
+            codec: Some("hevc".into()),
+            profile: Some("Main 10".into()),
+            width: Some(3840),
+            height: Some(2160),
+            fps: Some(24.0),
+            selected: true,
+            ..Track::default()
+        };
+        let subs = Track {
+            id: 1,
+            src_id: Some(3),
+            kind: Kind::Sub,
+            ..Track::default()
+        };
+        let state = State {
+            idle: false,
+            duration: Some(6000.0),
+            file_size: Some(10_000_000_000),
+            tracks: vec![video.clone(), subs.clone()],
+            ..State::default()
+        };
+        let facts = Facts {
+            tracks: vec![
+                TrackFacts {
+                    number: Some(1),
+                    level: Some("5.1 High".into()),
+                    bitrate: Some(12_000_000),
+                    bytes: Some(9_000_000_000),
+                    frames: Some(144_000),
+                    tags: vec![("ENCODER".into(), "x265".into())],
+                    ..TrackFacts::default()
+                },
+                TrackFacts {
+                    number: Some(3),
+                    index: 2,
+                    frames: Some(1234),
+                    ..TrackFacts::default()
+                },
+            ],
+            ..Facts::default()
+        };
+        let s = Subject {
+            path: None,
+            state: &state,
+            facts: Some(&facts),
+        };
+        let rows = track_rows_in(Lang::En, &video, &s);
+        assert_eq!(value(&rows, "Level"), Some("5.1, High tier"));
+        assert_eq!(value(&rows, "Bitrate"), Some("12.0 Mb/s"));
+        assert_eq!(value(&rows, "Stream size"), Some("8.38 GB (90%)"));
+        assert_eq!(value(&rows, "Frames"), Some("144,000"));
+        assert_eq!(value(&rows, "Encoded with"), Some("x265"));
+        assert!(track_details_in(Lang::En, &video, &s).ends_with("12.0 Mb/s"));
+        let rows = track_rows_in(Lang::Ru, &subs, &s);
+        assert_eq!(value(&rows, "Элементов"), Some("1\u{a0}234"));
+        let chips = chips_in(Lang::En, &s);
+        assert_eq!(
+            chips[1][0].tip.as_deref(),
+            Some("Main 10 · level 5.1, High tier")
+        );
     }
 
     #[test]
@@ -1198,7 +1392,14 @@ mod tests {
             ..State::default()
         };
         let path = Path::new(r"D:\Films\La La Land.mkv");
-        let rows = chips_in(Lang::Ru, Some(path), &state);
+        let rows = chips_in(
+            Lang::Ru,
+            &Subject {
+                path: Some(path),
+                state: &state,
+                facts: None,
+            },
+        );
         let texts: Vec<Vec<&str>> = rows
             .iter()
             .map(|r| r.iter().map(|c| c.text.as_str()).collect())
@@ -1241,7 +1442,14 @@ mod tests {
             kind: Kind::Sub,
             ..Track::default()
         });
-        let rows = chips_in(Lang::En, Some(path), &state);
+        let rows = chips_in(
+            Lang::En,
+            &Subject {
+                path: Some(path),
+                state: &state,
+                facts: None,
+            },
+        );
         let sound: Vec<&str> = rows[2].iter().map(|c| c.text.as_str()).collect();
         assert_eq!(
             sound,
@@ -1263,8 +1471,11 @@ mod tests {
         state.file_format = Some("mpegts".into());
         let rows = chips_in(
             Lang::En,
-            Some(Path::new("https://x.invalid/live.ts")),
-            &state,
+            &Subject {
+                path: Some(Path::new("https://x.invalid/live.ts")),
+                state: &state,
+                facts: None,
+            },
         );
         assert_eq!(rows[0][0].text, "MPEG-TS");
         assert_eq!(rows[0][0].tone, Tone::Plain);

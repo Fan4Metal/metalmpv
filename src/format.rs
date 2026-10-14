@@ -167,6 +167,33 @@ pub fn clock(seconds: f64) -> String {
     )
 }
 
+/// A date and time to the minute ([`crate::win::local_time`]'s parts):
+/// `2024-05-01 14:32`, `01.05.2024 14:32`.
+pub fn date_in(lang: Lang, [y, mo, d, h, mi, _]: [u16; 6]) -> String {
+    match lang {
+        Lang::En => format!("{y}-{mo:02}-{d:02} {h:02}:{mi:02}"),
+        Lang::Ru => format!("{d:02}.{mo:02}.{y} {h:02}:{mi:02}"),
+    }
+}
+
+/// A count with its thousands apart: `224 891`, `224,891`.
+pub fn count_in(lang: Lang, n: u64) -> String {
+    let digits = n.to_string();
+    let sep = match lang {
+        Lang::En => ',',
+        // A no-break space, as Russian writes it.
+        Lang::Ru => '\u{a0}',
+    };
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(sep);
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// A share (0 to 1) as a percentage with one decimal: `12.5%`, `12,5%`.
 pub fn percent_in(lang: Lang, share: f64) -> String {
     let text = format!("{:.1}%", (share * 100.0).clamp(0.0, 100.0));
@@ -525,6 +552,16 @@ impl Osd {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dates_and_counts() {
+        let t = [2024, 5, 1, 9, 7, 30];
+        assert_eq!(date_in(Lang::En, t), "2024-05-01 09:07");
+        assert_eq!(date_in(Lang::Ru, t), "01.05.2024 09:07");
+        assert_eq!(count_in(Lang::En, 224_891), "224,891");
+        assert_eq!(count_in(Lang::Ru, 1_224_891), "1\u{a0}224\u{a0}891");
+        assert_eq!(count_in(Lang::Ru, 375), "375");
+    }
 
     #[test]
     fn speed_steps() {

@@ -80,6 +80,9 @@ pub struct App {
     adjust: Adjust,
     /// The cover of the file playing, while or once it is looked for.
     cover: Option<CoverSlot>,
+    /// What the container of the file playing says (`probe.rs`), read
+    /// when the information window first shows it.
+    facts: Option<FactsSlot>,
     updates: Updates,
     osd: OsdLine,
     hwnd: Option<isize>,
@@ -268,6 +271,7 @@ impl App {
             logos: crate::logos::Logos::default(),
             adjust: Adjust::default(),
             cover: None,
+            facts: None,
             settings_dialog: SettingsDialog::default(),
             updates,
             osd: OsdLine::default(),
@@ -426,6 +430,37 @@ impl App {
         });
         let time = resume.then_some((time, duration));
         self.positions.remember(Path::new(path), time, chosen);
+    }
+
+    /// Read what the container of the file playing says while the
+    /// information window is open (once per file), and take it when read.
+    fn update_facts(&mut self, ctx: &egui::Context, state: &State) {
+        let wanted = self
+            .playlist
+            .current_path()
+            .filter(|p| self.info.open && !state.idle && !playlist::is_url(p));
+        if let Some(path) = wanted
+            && self.facts.as_ref().is_none_or(|f| f.path != path)
+        {
+            self.facts = Some(FactsSlot {
+                path: path.to_path_buf(),
+                loading: Some(crate::probe::load(path.to_path_buf(), ctx)),
+                loaded: None,
+            });
+        }
+        let Some(slot) = &mut self.facts else {
+            return;
+        };
+        if let Some(rx) = &slot.loading {
+            match rx.try_recv() {
+                Ok(facts) => {
+                    slot.loading = None;
+                    slot.loaded = Some(facts);
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => slot.loading = None,
+            }
+        }
     }
 
     /// Look for the cover of the file playing once it is loaded, and take
@@ -2131,6 +2166,12 @@ struct CoverSlot {
     loaded: Option<(Cover, TextureHandle)>,
 }
 
+struct FactsSlot {
+    path: PathBuf,
+    loading: Option<std::sync::mpsc::Receiver<crate::probe::Facts>>,
+    loaded: Option<crate::probe::Facts>,
+}
+
 /// The font chosen for the OSD line, read from its file; `None` for the
 /// interface's font or a file that cannot be used.
 fn osd_font(settings: &Settings) -> Option<egui::FontData> {
@@ -2775,6 +2816,7 @@ impl eframe::App for App {
             self.seek_to(time, Seek::Exact);
         }
         self.update_cover(&ctx, &state);
+        self.update_facts(&ctx, &state);
         let cover = self
             .cover
             .as_ref()
@@ -2797,10 +2839,19 @@ impl eframe::App for App {
                 .filter(|_| self.settings.channel_logos && self.info.open)
                 .and_then(|url| self.logos.get(&ctx, url).cloned()),
         });
+        let path = self.playlist.current_path();
+        let subject = crate::info::Subject {
+            path,
+            state: &state,
+            facts: self
+                .facts
+                .as_ref()
+                .filter(|f| Some(f.path.as_path()) == path)
+                .and_then(|f| f.loaded.as_ref()),
+        };
         let info_cmds = self.info.show(
             &ctx,
-            self.playlist.current_path(),
-            &state,
+            &subject,
             cover,
             Look {
                 pinned: self.settings.panels_pinned,

@@ -4,7 +4,6 @@
 //! (`info.rs` words them), and a button that copies all of it as text. A
 //! click on the cover shows it big.
 
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use egui::collapsing_header::CollapsingState;
@@ -13,9 +12,8 @@ use egui::{Align, Color32, Layout, Rect, RichText, Sense, TextureHandle, Ui, vec
 use super::{icons, style, tool};
 use crate::cover::{Cover, Source};
 use crate::i18n::lang;
-use crate::info::{self, ChipAction, Tone};
+use crate::info::{self, ChipAction, Subject, Tone};
 use crate::input::Cmd;
-use crate::player::State;
 use crate::playlist::Channel;
 use crate::tracks::Track;
 
@@ -93,8 +91,7 @@ impl InfoWindow {
     pub fn show(
         &mut self,
         ctx: &egui::Context,
-        path: Option<&Path>,
-        state: &State,
+        subject: &Subject,
         cover: Option<CoverView<'_>>,
         look: Look,
         channel: Option<ChannelView<'_>>,
@@ -103,6 +100,7 @@ impl InfoWindow {
         if !self.open {
             return out;
         }
+        let state = subject.state;
         let screen = ctx.content_rect();
         let mut open = true;
         let window = egui::Window::new(tr!("File information", "Сведения о файле"))
@@ -137,8 +135,7 @@ impl InfoWindow {
                 }
                 out.extend(self.header(
                     ui,
-                    path,
-                    state,
+                    subject,
                     cover.as_ref(),
                     channel.as_ref(),
                     look.colours,
@@ -167,7 +164,7 @@ impl InfoWindow {
                         },
                     );
                     if copy.clicked() {
-                        ui.ctx().copy_text(info::report_in(lang(), path, state));
+                        ui.ctx().copy_text(info::report_in(lang(), subject));
                         self.copied = Some(Instant::now());
                     }
                     if cover.is_some()
@@ -185,7 +182,7 @@ impl InfoWindow {
                 ui.add_space(6.0);
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
-                    .show(ui, |ui| body(ui, path, state, cover.as_ref(), &mut out));
+                    .show(ui, |ui| body(ui, subject, cover.as_ref(), &mut out));
             });
         if !open {
             self.open = false;
@@ -205,13 +202,13 @@ impl InfoWindow {
     fn header(
         &mut self,
         ui: &mut Ui,
-        path: Option<&Path>,
-        state: &State,
+        subject: &Subject,
         cover: Option<&CoverView<'_>>,
         view: Option<&ChannelView<'_>>,
         colours: bool,
     ) -> Vec<Cmd> {
         let mut out = Vec::new();
+        let state = subject.state;
         let channel = view.map(|v| v.channel);
         // An IPTV list's channel by the list's name (a stream's title is
         // its file's, "index.m3u8"), with its group in place of an album.
@@ -273,7 +270,7 @@ impl InfoWindow {
                 if let Some(album) = album {
                     ui.add(egui::Label::new(RichText::new(album).color(style::TEXT_WEAK)).wrap());
                 }
-                let rows = info::chips_in(lang(), path, state);
+                let rows = info::chips_in(lang(), subject);
                 if !rows.is_empty() {
                     ui.add_space(6.0);
                 }
@@ -333,17 +330,12 @@ fn fit(size: egui::Vec2, room: egui::Vec2) -> egui::Vec2 {
 }
 
 /// The file, the tags and the tracks.
-fn body(
-    ui: &mut Ui,
-    path: Option<&Path>,
-    state: &State,
-    cover: Option<&CoverView<'_>>,
-    out: &mut Vec<Cmd>,
-) {
+fn body(ui: &mut Ui, subject: &Subject, cover: Option<&CoverView<'_>>, out: &mut Vec<Cmd>) {
+    let state = subject.state;
     let lang = lang();
     heading(ui, tr!("File", "Файл"));
     let folder_label = tr!("Folder", "Папка");
-    for (label, value) in info::file_rows_in(lang, path, state) {
+    for (label, value) in info::file_rows_in(lang, subject) {
         if label == folder_label {
             row_with(ui, &label, |ui| {
                 if ui
@@ -393,7 +385,7 @@ fn body(
     if !state.tracks.is_empty() {
         heading(ui, tr!("Tracks", "Дорожки"));
         for track in &state.tracks {
-            track_entry(ui, track, state);
+            track_entry(ui, track, subject);
             ui.add_space(4.0);
         }
     }
@@ -402,7 +394,8 @@ fn body(
 /// A track: its name and main details in one line, the playing ones
 /// brighter; a click on them or on the arrow unfolds all its rows (the open
 /// state is egui's memory, per track).
-fn track_entry(ui: &mut Ui, track: &Track, state: &State) {
+fn track_entry(ui: &mut Ui, track: &Track, subject: &Subject) {
+    let state = subject.state;
     let lang = lang();
     let id = ui.make_persistent_id(("track_rows", track.kind, track.id));
     let mut fold = CollapsingState::load_with_default_open(ui.ctx(), id, false);
@@ -426,7 +419,7 @@ fn track_entry(ui: &mut Ui, track: &Track, state: &State) {
                 response = response.on_hover_text(desc);
             }
             let mut clicked = response.clicked();
-            let details = info::track_details_in(lang, track, state);
+            let details = info::track_details_in(lang, track, subject);
             if !details.is_empty() {
                 clicked |= ui
                     .add(
@@ -446,7 +439,7 @@ fn track_entry(ui: &mut Ui, track: &Track, state: &State) {
     }
     fold.show_body_unindented(ui, |ui| {
         ui.add_space(4.0);
-        for (label, value) in info::track_rows_in(lang, track, state) {
+        for (label, value) in info::track_rows_in(lang, track, subject) {
             row(ui, &label, &value);
         }
     });

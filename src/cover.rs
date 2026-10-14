@@ -10,6 +10,9 @@ use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 
+use crate::ebml;
+use crate::mp4::child as mp4_child;
+
 /// Covers are shown at most this big; a larger one is scaled down.
 const MAX_SIDE: u32 = 2048;
 /// A picture bigger than this is not a cover.
@@ -196,46 +199,7 @@ fn decode(bytes: Vec<u8>, source: Source) -> Option<Cover> {
 
 // --- MP4 ----------------------------------------------------------------
 //
-// The cover is in moov/udta/meta/ilst/covr (iTunes' tags). Read here, not
-// with lofty: lofty 0.25 skips a box with a 64-bit size 8 bytes too far,
-// and a film over 4 GB has its mdat written so, before the moov.
-
-/// A box's type and the size of its data, the reader left at its data; a
-/// box of size 0 reaches `end`.
-fn mp4_box(r: &mut (impl Read + Seek), end: u64) -> Option<([u8; 4], u64)> {
-    let at = r.stream_position().ok()?;
-    if at + 8 > end {
-        return None;
-    }
-    let mut header = [0u8; 8];
-    r.read_exact(&mut header).ok()?;
-    let kind = [header[4], header[5], header[6], header[7]];
-    let (size, header_len) = match u32::from_be_bytes([header[0], header[1], header[2], header[3]])
-    {
-        0 => (end - at, 8),
-        1 => {
-            let mut size = [0u8; 8];
-            r.read_exact(&mut size).ok()?;
-            (u64::from_be_bytes(size), 16)
-        }
-        size => (u64::from(size), 8),
-    };
-    (size >= header_len && at.checked_add(size)? <= end).then_some((kind, size - header_len))
-}
-
-/// The end of the first box `kind` among the boxes up to `end`, the reader
-/// left at its data.
-fn mp4_child(r: &mut (impl Read + Seek), end: u64, kind: &[u8; 4]) -> Option<u64> {
-    loop {
-        let (found, size) = mp4_box(r, end)?;
-        let data = r.stream_position().ok()?;
-        if &found == kind {
-            return Some(data + size);
-        }
-        r.seek(SeekFrom::Start(data + size)).ok()?;
-    }
-}
-
+// The cover is in moov/udta/meta/ilst/covr (iTunes' tags).
 /// The cover of an MP4 (or QuickTime) file.
 fn mp4_cover(path: &Path) -> Option<Vec<u8>> {
     let file = File::open(path).ok()?;
@@ -271,7 +235,7 @@ fn mp4_cover(path: &Path) -> Option<Vec<u8>> {
         let size = data_end - r.stream_position().ok()?;
         if size > 8 {
             r.seek_relative(8).ok()?;
-            let bytes = read_bytes(&mut r, size - 8, MAX_BYTES)?;
+            let bytes = ebml::read_bytes(&mut r, size - 8, MAX_BYTES)?;
             if image::guess_format(&bytes).is_ok() {
                 return Some(bytes);
             }
@@ -281,139 +245,20 @@ fn mp4_cover(path: &Path) -> Option<Vec<u8>> {
 }
 
 // --- Matroska -----------------------------------------------------------
-//
-// Just enough of EBML to find the attachments: the Segment's SeekHead says
-// where they are (they may come after the clusters), else the Segment's
-// children are walked up to the first cluster.
 
-const EBML: u32 = 0x1A45_DFA3;
-const SEGMENT: u32 = 0x1853_8067;
-const SEEK_HEAD: u32 = 0x114D_9B74;
-const SEEK: u32 = 0x4DBB;
-const SEEK_ID: u32 = 0x53AB;
-const SEEK_POSITION: u32 = 0x53AC;
 const ATTACHMENTS: u32 = 0x1941_A469;
 const ATTACHED_FILE: u32 = 0x61A7;
 const FILE_NAME: u32 = 0x466E;
 const FILE_MIME_TYPE: u32 = 0x4660;
 const FILE_DATA: u32 = 0x465C;
-const CLUSTER: u32 = 0x1F43_B675;
-
-/// An element's id and the size of its data (`None`: unknown).
-fn element(r: &mut impl Read) -> Option<(u32, Option<u64>)> {
-    let (id, _) = vint(r, true)?;
-    let (size, all_ones) = vint(r, false)?;
-    Some((id as u32, (!all_ones).then_some(size)))
-}
-
-/// A variable-size integer; `marker` keeps its length marker (ids do).
-/// Also whether all its value bits are set (an unknown size).
-fn vint(r: &mut impl Read, marker: bool) -> Option<(u64, bool)> {
-    let mut first = [0u8];
-    r.read_exact(&mut first).ok()?;
-    let len = first[0].leading_zeros() as usize + 1;
-    if len > 8 {
-        return None;
-    }
-    let mask = if len == 8 { 0 } else { 0xFFu8 >> len };
-    let mut value = u64::from(if marker { first[0] } else { first[0] & mask });
-    let mut all_ones = first[0] & mask == mask;
-    for _ in 1..len {
-        let mut b = [0u8];
-        r.read_exact(&mut b).ok()?;
-        value = (value << 8) | u64::from(b[0]);
-        all_ones &= b[0] == 0xFF;
-    }
-    Some((value, all_ones))
-}
-
-fn read_bytes(r: &mut impl Read, size: u64, limit: u64) -> Option<Vec<u8>> {
-    if size > limit {
-        return None;
-    }
-    let mut data = vec![0; size as usize];
-    r.read_exact(&mut data).ok()?;
-    Some(data)
-}
-
-fn read_uint(r: &mut (impl Read + Seek), size: u64) -> Option<u64> {
-    if size > 8 {
-        // Not a number: skipped, so the next element is read where it is.
-        r.seek_relative(i64::try_from(size).ok()?).ok()?;
-        return None;
-    }
-    let data = read_bytes(r, size, 8)?;
-    Some(data.iter().fold(0, |v, b| (v << 8) | u64::from(*b)))
-}
 
 /// The cover attachment of a Matroska file.
 fn matroska_cover(path: &Path) -> Option<Vec<u8>> {
     let mut r = BufReader::new(File::open(path).ok()?);
-    let (id, size) = element(&mut r)?;
-    if id != EBML {
-        return None;
-    }
-    r.seek_relative(size? as i64).ok()?;
-    let (id, segment_size) = element(&mut r)?;
-    if id != SEGMENT {
-        return None;
-    }
-    let start = r.stream_position().ok()?;
-    let end = segment_size.map(|s| start + s);
-    let mut attachments_at = None;
-    // The Segment's children up to the first cluster (or the attachments).
-    for _ in 0..64 {
-        let at = r.stream_position().ok()?;
-        if end.is_some_and(|e| at >= e) {
-            break;
-        }
-        let Some((id, Some(size))) = element(&mut r) else {
-            break;
-        };
-        match id {
-            ATTACHMENTS => return attachment(&mut r, size),
-            SEEK_HEAD => {
-                let data = read_bytes(&mut r, size, 1 << 20)?;
-                attachments_at = attachments_at.or(seek_position(&data, ATTACHMENTS));
-            }
-            CLUSTER => break,
-            _ => r.seek_relative(size as i64).ok()?,
-        }
-    }
-    let position = attachments_at?;
-    r.seek(SeekFrom::Start(start.checked_add(position)?)).ok()?;
-    let (id, size) = element(&mut r)?;
-    (id == ATTACHMENTS).then_some(())?;
-    attachment(&mut r, size?)
-}
-
-/// Where the SeekHead in `data` puts element `wanted`, from the Segment's
-/// data.
-fn seek_position(data: &[u8], wanted: u32) -> Option<u64> {
-    let mut r = std::io::Cursor::new(data);
-    while (r.position() as usize) < data.len() {
-        let (id, size) = element(&mut r)?;
-        let size = size?;
-        if id != SEEK {
-            r.seek_relative(size as i64).ok()?;
-            continue;
-        }
-        let end = r.position() + size;
-        let (mut seek_id, mut position) = (None, None);
-        while r.position() < end {
-            let (id, size) = element(&mut r)?;
-            let size = size?;
-            match id {
-                SEEK_ID => seek_id = read_uint(&mut r, size),
-                SEEK_POSITION => position = read_uint(&mut r, size),
-                _ => r.seek_relative(size as i64).ok()?,
-            }
-        }
-        if seek_id == Some(u64::from(wanted)) {
-            return position;
-        }
-    }
-    None
+    let found = ebml::top_level(&mut r, &[ATTACHMENTS])?;
+    let (_, at, size) = found.first()?;
+    r.seek(SeekFrom::Start(*at)).ok()?;
+    attachment(&mut r, *size)
 }
 
 /// The cover among the Attachments element's files of `size` bytes: by
@@ -432,7 +277,7 @@ fn attachment(r: &mut (impl Read + Seek), size: u64) -> Option<Vec<u8>> {
     // ones. The name comes before the data in a Matroska file.
     let mut best: Option<(usize, Vec<u8>)> = None;
     while r.stream_position().ok()? < end {
-        let (id, size) = element(r)?;
+        let (id, size) = ebml::element(r)?;
         let size = size?;
         if id != ATTACHED_FILE {
             r.seek_relative(size as i64).ok()?;
@@ -441,12 +286,14 @@ fn attachment(r: &mut (impl Read + Seek), size: u64) -> Option<Vec<u8>> {
         let file_end = r.stream_position().ok()?.checked_add(size)?;
         let (mut name, mut mime, mut data) = (String::new(), String::new(), None);
         while r.stream_position().ok()? < file_end {
-            let (id, size) = element(r)?;
+            let (id, size) = ebml::element(r)?;
             let size = size?;
             match id {
-                FILE_NAME => name = String::from_utf8_lossy(&read_bytes(r, size, 4096)?).into(),
+                FILE_NAME => {
+                    name = String::from_utf8_lossy(&ebml::read_bytes(r, size, 4096)?).into()
+                }
                 FILE_MIME_TYPE => {
-                    mime = String::from_utf8_lossy(&read_bytes(r, size, 256)?).into();
+                    mime = String::from_utf8_lossy(&ebml::read_bytes(r, size, 256)?).into();
                 }
                 FILE_DATA
                     if (mime.starts_with("image/") || mime.is_empty())
@@ -454,7 +301,7 @@ fn attachment(r: &mut (impl Read + Seek), size: u64) -> Option<Vec<u8>> {
                             .as_ref()
                             .is_none_or(|(b, _)| rank(&name.to_lowercase()) < *b) =>
                 {
-                    data = read_bytes(r, size, MAX_BYTES);
+                    data = ebml::read_bytes(r, size, MAX_BYTES);
                     if data.is_none() {
                         r.seek_relative(size as i64).ok()?;
                     }
@@ -477,18 +324,8 @@ fn attachment(r: &mut (impl Read + Seek), size: u64) -> Option<Vec<u8>> {
 mod tests {
     use super::*;
 
-    /// An EBML element with a size of one or two bytes.
-    fn el(id: &[u8], data: &[u8]) -> Vec<u8> {
-        let mut v = id.to_vec();
-        if data.len() < 127 {
-            v.push(0x80 | data.len() as u8);
-        } else {
-            assert!(data.len() < 0x3FFF);
-            v.extend([0x40 | (data.len() >> 8) as u8, data.len() as u8]);
-        }
-        v.extend_from_slice(data);
-        v
-    }
+    use crate::ebml::tests::el;
+    use crate::mp4::tests::bx;
 
     fn png() -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -506,15 +343,6 @@ mod tests {
         file.extend(el(&[0x46, 0x60], mime.as_bytes()));
         file.extend(el(&[0x46, 0x5C], data));
         el(&[0x61, 0xA7], &file)
-    }
-
-    #[test]
-    fn vints() {
-        let mut r = std::io::Cursor::new([0x81u8, 0x40, 0x02, 0xFF, 0x1A, 0x45, 0xDF, 0xA3]);
-        assert_eq!(vint(&mut r, false), Some((1, false)));
-        assert_eq!(vint(&mut r, false), Some((2, false)));
-        assert_eq!(vint(&mut r, false), Some((0x7F, true)));
-        assert_eq!(vint(&mut r, true), Some((u64::from(EBML), false)));
     }
 
     #[test]
@@ -557,14 +385,6 @@ mod tests {
         assert_eq!(cover.size, [3, 2]);
         assert_eq!(cover.source, Source::Embedded);
         std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    /// An MP4 box.
-    fn bx(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
-        let mut v = ((data.len() + 8) as u32).to_be_bytes().to_vec();
-        v.extend(kind);
-        v.extend_from_slice(data);
-        v
     }
 
     #[test]
