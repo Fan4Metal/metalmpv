@@ -673,17 +673,6 @@ fn general(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
         divider(ui);
         row(
             ui,
-            tr!("Pin the panels", "Закрепить панели"),
-            Some(tr!(
-                "The file information and the Video, sound and subtitles panel. On, they stay at the player's top right corner, the panel left of the information when both are open; off, they are moved by their titles and keep their places.",
-                "Сведения о файле и панель «Видео, звук и субтитры». Включено — они стоят в правом верхнем углу плеера, панель левее сведений, если открыты обе; выключено — перетаскиваются за заголовок и остаются там, где их оставили."
-            )),
-            50.0,
-            |ui| switch(ui, &mut settings.panels_pinned),
-        );
-        divider(ui);
-        row(
-            ui,
             tr!(
                 "Colour in the file information",
                 "Цвета в сведениях о файле"
@@ -1693,7 +1682,6 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.remember_recent = d.remember_recent;
     settings.fullscreen_transparency = d.fullscreen_transparency;
     settings.fullscreen_title = d.fullscreen_title;
-    settings.panels_pinned = d.panels_pinned;
     settings.info_colours = d.info_colours;
     settings.snap_to_centre = d.snap_to_centre;
     settings.on_top = d.on_top;

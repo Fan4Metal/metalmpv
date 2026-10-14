@@ -1,7 +1,7 @@
 //! The Video, sound and subtitles panel (`U` or `F7`, the sliders button of the control
-//! bar): a floating window over the player, so that playback and the keys
-//! go on, pinned like the information window (left of it when both are
-//! open), with three tabs. Video: the picture's adjustments (`adjust.rs`):
+//! bar): a window over its button, as the tracks window is, that a press
+//! outside it closes; not an egui popup, so that playback and the keys go
+//! on while it is open (egui's popups take the keys), with three tabs. Video: the picture's adjustments (`adjust.rs`):
 //! the colour's sliders (a double click or the round arrow beside one puts
 //! it back to 0), the sharpness, the noise reduction and the debanding,
 //! the aspect ratio, the rotation and the flips, saving the frame, and
@@ -11,7 +11,7 @@
 
 use egui::{RichText, Ui, vec2};
 
-use super::{icons, info, style};
+use super::{icons, style};
 use crate::adjust::{Adjust, Aspect, Color};
 use crate::audio::{EQ_BANDS, EQ_RANGE, Equalizer, Preset, band_label};
 use crate::input::Cmd;
@@ -25,11 +25,14 @@ const WIDTH: f32 = 360.0;
 const LABEL: f32 = 110.0;
 /// The width of a slider's value.
 const VALUE: f32 = 44.0;
-/// The room between the panel and the information window beside it.
-const GAP: f32 = 8.0;
+/// The room between the panel and its button.
+const GAP: f32 = 6.0;
+/// The panel's corner from the window's bottom right one when there is no
+/// button (only the picture shown).
+const CORNER: f32 = 12.0;
 
 /// The panel's tab.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Tab {
     #[default]
     Video,
@@ -41,6 +44,8 @@ pub enum Tab {
 pub struct VideoPanel {
     pub open: bool,
     tab: Tab,
+    /// Where the panel was drawn last, for the presses outside it.
+    rect: Option<egui::Rect>,
 }
 
 /// What the Sound and Subtitles tabs edit: settings, kept between runs.
@@ -62,74 +67,80 @@ impl VideoPanel {
     }
 
     /// Draw the panel while it is open, editing `adjust` and `kept` in
-    /// place; the commands of its buttons. `has_video`: a frame can be
-    /// saved. A `pinned` panel stays at the player's top right corner, as
-    /// the information window does, and left of it while `beside_info`
-    /// (that window open and pinned); else it starts there, is moved by
-    /// its title and egui's memory keeps its place.
+    /// place; the commands of its buttons. It stands over `button` (the
+    /// control bar's, where it was drawn this frame), its right edge on the
+    /// button's, else at the window's bottom right corner; it scrolls when
+    /// the room above is short. A press outside it and its button closes
+    /// it, unless a popup of its own is open (a list, the colour picker):
+    /// the press is that one's. `has_video`: a frame can be saved.
     pub fn show(
         &mut self,
         ctx: &egui::Context,
+        button: Option<egui::Rect>,
         adjust: &mut Adjust,
         kept: Kept<'_>,
         has_video: bool,
-        pinned: bool,
-        beside_info: bool,
     ) -> Vec<Cmd> {
         let mut out = Vec::new();
         if !self.open {
+            self.rect = None;
+            return out;
+        }
+        let pressed = ctx.input(|i| {
+            i.pointer
+                .any_pressed()
+                .then(|| i.pointer.press_origin())
+                .flatten()
+        });
+        if let Some(p) = pressed
+            && !egui::Popup::is_any_open(ctx)
+            && !self.rect.is_some_and(|r| r.contains(p))
+            && !button.is_some_and(|b| b.contains(p))
+        {
+            self.open = false;
+            self.rect = None;
             return out;
         }
         let screen = ctx.content_rect();
-        let mut open = true;
-        let frame = egui::Frame::window(&ctx.style_of(egui::Theme::Dark))
-            .fill(style::PANEL_BG)
-            .corner_radius(8)
-            .inner_margin(12);
-        let outer = WIDTH + frame.total_margin().sum().x;
-        let mut corner = info::CORNER;
-        if beside_info {
-            corner.x -= info::WIDTH + GAP;
-        }
-        let window = egui::Window::new(tr!("Video, sound and subtitles", "Видео, звук и субтитры"))
-            .id(egui::Id::new("video_panel"))
-            .open(&mut open)
-            .collapsible(false);
-        let window = if pinned {
-            window.anchor(egui::Align2::RIGHT_TOP, corner)
-        } else {
-            // The same pivot as the anchor's: unpinning leaves it in place.
-            window
-                .pivot(egui::Align2::RIGHT_TOP)
-                .default_pos(screen.right_top() + corner)
+        let at = match button {
+            Some(b) => b.right_top() - vec2(0.0, GAP),
+            None => screen.right_bottom() - vec2(CORNER, CORNER),
         };
-        window
-            .resizable(false)
-            .min_width(outer)
-            .max_width(outer)
+        let frame = egui::Frame::popup(&ctx.style_of(egui::Theme::Dark))
+            .fill(style::PANEL_BG)
+            .inner_margin(12);
+        // The tabs, the separator and the frame take this much of it.
+        let room = (at.y - screen.top() - 72.0).max(160.0);
+        let shown = egui::Area::new(egui::Id::new("video_panel"))
+            .order(egui::Order::Foreground)
+            .pivot(egui::Align2::RIGHT_BOTTOM)
+            .fixed_pos(at)
             .constrain_to(screen)
-            .frame(frame)
             .show(ctx, |ui| {
-                ui.set_width(WIDTH);
-                ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.tab, Tab::Video, tr!("Video", "Видео"));
-                    ui.selectable_value(&mut self.tab, Tab::Sound, tr!("Sound", "Звук"));
-                    ui.selectable_value(
-                        &mut self.tab,
-                        Tab::Subtitles,
-                        tr!("Subtitles", "Субтитры"),
-                    );
+                frame.show(ui, |ui| {
+                    ui.set_width(WIDTH);
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut self.tab, Tab::Video, tr!("Video", "Видео"));
+                        ui.selectable_value(&mut self.tab, Tab::Sound, tr!("Sound", "Звук"));
+                        ui.selectable_value(
+                            &mut self.tab,
+                            Tab::Subtitles,
+                            tr!("Subtitles", "Субтитры"),
+                        );
+                    });
+                    ui.separator();
+                    egui::ScrollArea::vertical()
+                        .id_salt(("video_panel", self.tab))
+                        .max_height(room)
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| match self.tab {
+                            Tab::Video => video_tab(ui, adjust, has_video, &mut out),
+                            Tab::Sound => sound_tab(ui, kept.equalizer, kept.normalize),
+                            Tab::Subtitles => subtitles_tab(ui, kept.subs),
+                        });
                 });
-                ui.separator();
-                match self.tab {
-                    Tab::Video => video_tab(ui, adjust, has_video, &mut out),
-                    Tab::Sound => sound_tab(ui, kept.equalizer, kept.normalize),
-                    Tab::Subtitles => subtitles_tab(ui, kept.subs),
-                }
             });
-        if !open {
-            self.open = false;
-        }
+        self.rect = Some(shown.response.rect);
         out
     }
 }

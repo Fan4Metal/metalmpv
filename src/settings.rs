@@ -34,10 +34,11 @@ const CHAPTER_MARKS: &str = "chapter_marks";
 const TIME_DISPLAY: &str = "time_display";
 const FULLSCREEN_TRANSPARENCY: &str = "fullscreen_transparency";
 const FULLSCREEN_TITLE: &str = "fullscreen_title";
-const PANELS_PINNED: &str = "panels_pinned";
 const INFO_COLOURS: &str = "info_colours";
-/// The key before the Video, sound and subtitles panel was pinned too.
-const OLD_INFO_PINNED: &str = "info_pinned";
+/// Keys of settings there are no more, removed when saving: the panels
+/// could be unpinned (the information window is always pinned now, the
+/// Video, sound and subtitles panel stands over its button).
+const DROPPED: [&str; 2] = ["panels_pinned", "info_pinned"];
 const SNAP_TO_CENTRE: &str = "snap_to_centre";
 const REPEAT: &str = "repeat";
 const ON_TOP: &str = "on_top";
@@ -232,10 +233,6 @@ pub struct Settings {
     pub fullscreen_transparency: f64,
     /// A strip with the file's name at the top in fullscreen.
     pub fullscreen_title: bool,
-    /// The information window and the Video, sound and subtitles panel stay at the
-    /// player's top right corner (the panel left of the information);
-    /// else they are moved by their titles and egui keeps their places.
-    pub panels_pinned: bool,
     /// The chips of the information window in colour: the format as its
     /// file icon, the picture, the sound and the subtitles each in a hue.
     pub info_colours: bool,
@@ -313,7 +310,6 @@ impl Default for Settings {
             time_mode: TimeMode::Both,
             fullscreen_transparency: 12.0,
             fullscreen_title: true,
-            panels_pinned: true,
             info_colours: true,
             snap_to_centre: true,
             repeat: Repeat::Off,
@@ -419,7 +415,6 @@ impl Settings {
                 d.fullscreen_transparency,
             ),
             fullscreen_title: flag(FULLSCREEN_TITLE, d.fullscreen_title),
-            panels_pinned: flag(PANELS_PINNED, flag(OLD_INFO_PINNED, d.panels_pinned)),
             info_colours: flag(INFO_COLOURS, d.info_colours),
             snap_to_centre: flag(SNAP_TO_CENTRE, d.snap_to_centre),
             repeat: get(REPEAT)
@@ -545,9 +540,10 @@ impl Settings {
             format!("{:.0}", self.fullscreen_transparency),
         );
         storage.set_string(FULLSCREEN_TITLE, self.fullscreen_title.to_string());
-        storage.set_string(PANELS_PINNED, self.panels_pinned.to_string());
         storage.set_string(INFO_COLOURS, self.info_colours.to_string());
-        storage.remove_string(OLD_INFO_PINNED);
+        for key in DROPPED {
+            storage.remove_string(key);
+        }
         storage.set_string(SNAP_TO_CENTRE, self.snap_to_centre.to_string());
         storage.set_string(REPEAT, self.repeat.name().into());
         storage.set_string(ON_TOP, self.on_top.name().into());
@@ -653,7 +649,6 @@ mod tests {
             time_mode: TimeMode::Remaining,
             fullscreen_transparency: 40.0,
             fullscreen_title: false,
-            panels_pinned: false,
             info_colours: false,
             snap_to_centre: false,
             repeat: Repeat::All,
@@ -724,14 +719,15 @@ mod tests {
     }
 
     #[test]
-    fn the_old_pin_key_is_read() {
+    fn dropped_keys_are_removed() {
         let mut storage = MemStorage::default();
-        storage.set_string(OLD_INFO_PINNED, "false".into());
-        assert!(!Settings::load(&storage).panels_pinned);
-        storage.set_string(PANELS_PINNED, "true".into());
-        assert!(Settings::load(&storage).panels_pinned);
+        for key in DROPPED {
+            storage.set_string(key, "false".into());
+        }
         Settings::load(&storage).save(&mut storage);
-        assert_eq!(storage.get_string(OLD_INFO_PINNED), None);
+        for key in DROPPED {
+            assert_eq!(storage.get_string(key), None);
+        }
     }
 
     #[test]

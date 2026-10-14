@@ -75,6 +75,8 @@ pub struct App {
     goto_dialog: ui::goto::GoToDialog,
     /// The Video, sound and subtitles panel (`U`, `F7`) and the picture's adjustments it edits.
     video_panel: VideoPanel,
+    /// Where the control bar drew the panel's button this frame.
+    panel_button: Option<egui::Rect>,
     /// The pictures of IPTV channels (`logos.rs`).
     logos: crate::logos::Logos,
     adjust: Adjust,
@@ -268,6 +270,7 @@ impl App {
             url_dialog: ui::url::UrlDialog::default(),
             goto_dialog: ui::goto::GoToDialog::default(),
             video_panel: VideoPanel::default(),
+            panel_button: None,
             logos: crate::logos::Logos::default(),
             adjust: Adjust::default(),
             cover: None,
@@ -2057,6 +2060,7 @@ impl App {
                 && pointer.is_some_and(|p| p.y < screen.top() + FULLSCREEN_TITLE_HEIGHT + 16.0),
             bottom: pointer.is_some_and(|p| p.y > screen.bottom() - FULLSCREEN_BAR_ZONE)
                 || self.seek_drag.is_some()
+                || self.video_panel.open
                 || egui::Popup::is_id_open(ctx, crate::ui::tracks::popup_id()),
         }
     }
@@ -2098,6 +2102,7 @@ impl App {
             chapter_marks: self.settings.chapter_marks,
             time_mode: self.settings.time_mode,
             drag: &mut self.seek_drag,
+            panel_button: &mut self.panel_button,
         };
         egui::Area::new(egui::Id::new("fullscreen_controls"))
             .order(egui::Order::Foreground)
@@ -2690,6 +2695,7 @@ impl eframe::App for App {
                 chapter_marks: self.settings.chapter_marks,
                 time_mode: self.settings.time_mode,
                 drag: &mut self.seek_drag,
+                panel_button: &mut self.panel_button,
             };
             egui::Panel::bottom("controls")
                 .frame(
@@ -2857,7 +2863,6 @@ impl eframe::App for App {
             &subject,
             cover,
             Look {
-                pinned: self.settings.panels_pinned,
                 colours: self.settings.info_colours,
             },
             channel,
@@ -2871,14 +2876,12 @@ impl eframe::App for App {
             normalize: &mut self.settings.normalize,
             subs: &mut self.settings.sub,
         };
-        let pinned = self.settings.panels_pinned;
         let panel_cmds = self.video_panel.show(
             &ctx,
+            self.panel_button.take(),
             &mut self.adjust,
             kept,
             video_size(&state).is_some(),
-            pinned,
-            pinned && self.info.open,
         );
         cmds.extend(panel_cmds);
         if let Some(player) = &mut self.player {

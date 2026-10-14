@@ -24,10 +24,10 @@ const TOOL: f32 = 26.0;
 /// The side of a channel's logo in the header.
 const LOGO: f32 = 64.0;
 /// The window's width (egui's, with the frame).
-pub const WIDTH: f32 = 520.0;
+const WIDTH: f32 = 520.0;
 /// The window's top right corner from the player's: under the title row,
-/// a little in from the edge. The Video, sound and subtitles panel's too.
-pub const CORNER: egui::Vec2 = vec2(-23.0, 46.0);
+/// a little in from the edge.
+const CORNER: egui::Vec2 = vec2(-23.0, 46.0);
 
 /// How long Copy all shows a tick after a click.
 const COPIED_TICK: Duration = Duration::from_millis(1500);
@@ -51,8 +51,6 @@ pub struct ChannelView<'a> {
 /// How the window is shown, from the settings.
 #[derive(Clone, Copy, Debug)]
 pub struct Look {
-    /// At the player's top right corner, else where it was left.
-    pub pinned: bool,
     /// The chips in colour (`settings.info_colours`).
     pub colours: bool,
 }
@@ -82,11 +80,9 @@ impl InfoWindow {
         true
     }
 
-    /// Draw the window while it is open; the commands of its buttons. A
-    /// pinned window stays at the player's top right corner (anchored,
-    /// so it follows the corner as the player's window changes); else it
-    /// starts there, is moved by its title and egui's memory keeps its
-    /// place. The width is fixed; only the bottom edge is dragged, and
+    /// Draw the window while it is open; the commands of its buttons. It
+    /// stays at the player's top right corner (anchored, so it follows the
+    /// corner as the player's window changes). The width is fixed; only the bottom edge is dragged, and
     /// egui's memory keeps the height.
     pub fn show(
         &mut self,
@@ -107,15 +103,8 @@ impl InfoWindow {
             .id(egui::Id::new("file_info"))
             .open(&mut open)
             .collapsible(false);
-        let window = if look.pinned {
-            window.anchor(egui::Align2::RIGHT_TOP, CORNER)
-        } else {
-            // The same pivot as the anchor's: unpinning leaves it in place.
-            window
-                .pivot(egui::Align2::RIGHT_TOP)
-                .default_pos(screen.right_top() + CORNER)
-        };
         window
+            .anchor(egui::Align2::RIGHT_TOP, CORNER)
             .resizable([false, true])
             .default_height(620.0)
             .min_height(200.0)

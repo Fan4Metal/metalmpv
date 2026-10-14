@@ -24,6 +24,9 @@ pub struct Bar<'a> {
     pub time_mode: crate::format::TimeMode,
     /// The seek bar is being dragged: the position under the pointer.
     pub drag: &'a mut Option<f64>,
+    /// Where the Video, sound and subtitles panel's button is drawn: the
+    /// panel stands over it.
+    pub panel_button: &'a mut Option<Rect>,
 }
 
 /// Draw the bar in `ui` (its full width); the commands of its buttons.
@@ -263,6 +266,7 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
         if bar.video_panel_open {
             underline(ui, panel.rect);
         }
+        *bar.panel_button = Some(panel.rect);
         if panel.clicked() {
             out.push(Cmd::ToggleVideoPanel);
         }
