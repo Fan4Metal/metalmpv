@@ -44,6 +44,8 @@ pub enum Tab {
 pub struct VideoPanel {
     pub open: bool,
     tab: Tab,
+    /// The name being typed for the subtitles' look to save.
+    naming: Option<String>,
     /// Where the panel was drawn last, for the presses outside it.
     rect: Option<egui::Rect>,
 }
@@ -57,9 +59,16 @@ pub struct Kept<'a> {
     pub equalizer: &'a mut Equalizer,
     pub normalize: &'a mut bool,
     pub subs: &'a mut SubStyle,
+    /// The subtitles' looks the user saved.
+    pub sub_presets: &'a mut Vec<sub_style::Own>,
 }
 
 impl VideoPanel {
+    /// A name is being typed: the player's keys wait.
+    pub fn typing(&self) -> bool {
+        self.open && self.naming.is_some()
+    }
+
     pub fn toggle(&mut self) {
         self.open = !self.open;
     }
@@ -88,6 +97,7 @@ impl VideoPanel {
         let mut out = Vec::new();
         if !self.open {
             self.rect = None;
+            self.naming = None;
             return out;
         }
         let pressed = ctx.input(|i| {
@@ -103,6 +113,7 @@ impl VideoPanel {
         {
             self.open = false;
             self.rect = None;
+            self.naming = None;
             return out;
         }
         let screen = ctx.content_rect();
@@ -134,7 +145,9 @@ impl VideoPanel {
                     match self.tab {
                         Tab::Video => video_tab(ui, adjust, has_video, &mut out),
                         Tab::Sound => sound_tab(ui, kept),
-                        Tab::Subtitles => subtitles_tab(ui, kept.subs),
+                        Tab::Subtitles => {
+                            subtitles_tab(ui, kept.subs, kept.sub_presets, &mut self.naming)
+                        }
                     }
                 });
             });
@@ -410,26 +423,18 @@ fn sound_tab(ui: &mut Ui, kept: Kept<'_>) {
     );
 }
 
-fn subtitles_tab(ui: &mut Ui, style: &mut SubStyle) {
+fn subtitles_tab(
+    ui: &mut Ui,
+    style: &mut SubStyle,
+    own: &mut Vec<sub_style::Own>,
+    naming: &mut Option<String>,
+) {
     let d = SubStyle::default();
     let spacing = ui.spacing().item_spacing.x;
     ui.spacing_mut().slider_width = WIDTH - LABEL - VALUE - RESET - 3.0 * spacing;
     ui.spacing_mut().interact_size.x = VALUE;
     heading(ui, tr!("Style", "Стиль"));
-    labelled(ui, tr!("Ready-made", "Заготовка"), |ui| {
-        let preset = sub_style::Preset::of(style);
-        let name = preset.map_or(tr!("Own", "Свой"), sub_style::Preset::label);
-        egui::ComboBox::from_id_salt("sub_preset")
-            .selected_text(name)
-            .width(WIDTH - LABEL - 2.0 * spacing)
-            .show_ui(ui, |ui| {
-                for p in sub_style::Preset::ALL {
-                    if ui.selectable_label(preset == Some(p), p.label()).clicked() {
-                        p.apply(style);
-                    }
-                }
-            });
-    });
+    looks(ui, style, own, naming);
 
     heading(ui, tr!("Text", "Текст"));
     labelled(ui, tr!("Font", "Шрифт"), |ui| {
@@ -514,6 +519,116 @@ fn subtitles_tab(ui: &mut Ui, style: &mut SubStyle) {
         .size(12.0)
         .color(style::TEXT_WEAK),
     );
+}
+
+/// The ready-made looks and the user's own (the whole style, by name) in
+/// one list; beside it, saving the look as one's own and, for one's own,
+/// deleting it. Saving asks for a name in a row under the list (Enter
+/// saves, Esc gives up; the player's keys wait meanwhile).
+fn looks(
+    ui: &mut Ui,
+    style: &mut SubStyle,
+    own: &mut Vec<sub_style::Own>,
+    naming: &mut Option<String>,
+) {
+    let spacing = ui.spacing().item_spacing.x;
+    let mine = own.iter().position(|o| o.style == *style);
+    let preset = sub_style::Preset::of(style);
+    labelled(ui, tr!("Ready-made", "Заготовка"), |ui| {
+        let name = match (mine, preset) {
+            (Some(i), _) => own[i].name.clone(),
+            (None, Some(p)) => p.label().to_owned(),
+            (None, None) => tr!("Custom", "Другой").to_owned(),
+        };
+        egui::ComboBox::from_id_salt("sub_preset")
+            .selected_text(name)
+            .width(WIDTH - LABEL - 2.0 * RESET - 4.0 * spacing)
+            .show_ui(ui, |ui| {
+                for p in sub_style::Preset::ALL {
+                    let on = mine.is_none() && preset == Some(p);
+                    if ui.selectable_label(on, p.label()).clicked() {
+                        p.apply(style);
+                    }
+                }
+                if !own.is_empty() {
+                    ui.separator();
+                    ui.label(
+                        RichText::new(tr!("Mine", "Мои"))
+                            .small()
+                            .color(style::TEXT_WEAK),
+                    );
+                    for (i, o) in own.iter().enumerate() {
+                        if ui.selectable_label(mine == Some(i), &o.name).clicked() {
+                            *style = o.style.clone();
+                        }
+                    }
+                }
+            });
+        let save = super::tool(
+            ui,
+            tr!("Save as my own…", "Сохранить как свою…"),
+            naming.is_none(),
+            |p, o, c| icons::plus(p, o, 6.0, c),
+        );
+        if save.clicked() {
+            *naming = Some(mine.map(|i| own[i].name.clone()).unwrap_or_default());
+        }
+        let delete = super::tool(
+            ui,
+            tr!("Delete this look of mine", "Удалить эту свою заготовку"),
+            mine.is_some(),
+            |p, o, c| icons::trash(p, o, 6.0, c),
+        );
+        if delete.clicked()
+            && let Some(i) = mine
+        {
+            own.remove(i);
+        }
+    });
+    let Some(name) = naming else {
+        return;
+    };
+    let mut done = false;
+    labelled(ui, tr!("Name", "Название"), |ui| {
+        let field = ui.add(
+            egui::TextEdit::singleline(name)
+                .hint_text(tr!("My look", "Моя заготовка"))
+                .desired_width(WIDTH - LABEL - 2.0 * RESET - 4.0 * spacing),
+        );
+        if ui.memory(|m| m.focused().is_none()) {
+            field.request_focus();
+        }
+        let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let ok = super::tool(
+            ui,
+            tr!("Save", "Сохранить"),
+            !name.trim().is_empty(),
+            |p, o, c| icons::check(p, o, 6.0, c),
+        );
+        if (enter || ok.clicked()) && !name.trim().is_empty() {
+            sub_style::Own::save(own, name, style);
+            done = true;
+        }
+        let cancel = super::tool(ui, tr!("Cancel", "Отмена"), true, |p, o, c| {
+            icons::close(p, o, 5.0, c)
+        });
+        if cancel.clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            done = true;
+        }
+    });
+    if own.len() >= sub_style::MAX_OWN && !own.iter().any(|o| o.name == name.trim()) {
+        ui.label(
+            RichText::new(tr!(
+                "The list is full: the oldest look of mine gives way.",
+                "Список полон: самая старая своя заготовка уступит место."
+            ))
+            .size(12.0)
+            .color(style::TEXT_WEAK),
+        );
+    }
+    if done {
+        *naming = None;
+    }
 }
 
 /// A slider row with its reset: `format` is the step, the decimals shown

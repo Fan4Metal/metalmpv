@@ -106,6 +106,7 @@ const SUB_POS: &str = "sub_pos";
 const SUB_BOLD: &str = "sub_bold";
 const SUB_SHADOW: &str = "sub_shadow";
 const SUB_BOX: &str = "sub_box";
+const SUB_PRESETS: &str = "sub_presets";
 const OSD_FONT: &str = "osd_font";
 const OSD_FONT_FILE: &str = "osd_font_file";
 const OSD_SCALE: &str = "osd_scale";
@@ -259,6 +260,9 @@ pub struct Settings {
     pub passthrough: Passthrough,
     /// How subtitles look (`sub_style.rs`).
     pub sub: SubStyle,
+    /// The subtitles' looks the user saved; not a setting, Reset keeps
+    /// them.
+    pub sub_presets: Vec<sub_style::Own>,
     /// The font family of the OSD line, empty for the interface's.
     pub osd_font: String,
     /// The file and the face number of `osd_font`.
@@ -323,6 +327,7 @@ impl Default for Settings {
             equalizer: audio::Equalizer::default(),
             passthrough: Passthrough::Off,
             sub: SubStyle::default(),
+            sub_presets: Vec::new(),
             osd_font: String::new(),
             osd_font_file: None,
             osd_scale: 100.0,
@@ -474,6 +479,9 @@ impl Settings {
                 shadow: number(SUB_SHADOW, sub_style::SHADOW_RANGE, d.sub.shadow),
                 boxed: flag(SUB_BOX, d.sub.boxed),
             },
+            sub_presets: get(SUB_PRESETS)
+                .map(|v| sub_style::Own::from_text(&v))
+                .unwrap_or_default(),
             osd_font: osd_font
                 .as_ref()
                 .map(|(name, _)| name.clone())
@@ -566,6 +574,7 @@ impl Settings {
         storage.set_string(SUB_BOLD, self.sub.bold.to_string());
         storage.set_string(SUB_SHADOW, format!("{:.2}", self.sub.shadow));
         storage.set_string(SUB_BOX, self.sub.boxed.to_string());
+        storage.set_string(SUB_PRESETS, sub_style::Own::to_text(&self.sub_presets));
         match &self.osd_font_file {
             Some((path, index)) if !self.osd_font.is_empty() => {
                 storage.set_string(OSD_FONT, self.osd_font.clone());
@@ -675,6 +684,13 @@ mod tests {
                 shadow: 1.5,
                 boxed: true,
             },
+            sub_presets: vec![sub_style::Own {
+                name: "Вечер".into(),
+                style: SubStyle {
+                    scale: 120.0,
+                    ..SubStyle::default()
+                },
+            }],
             osd_font: "Segoe UI".into(),
             osd_font_file: Some((PathBuf::from(r"C:\Windows\Fonts\segoeui.ttf"), 0)),
             osd_scale: 80.0,

@@ -2656,7 +2656,8 @@ impl eframe::App for App {
 
         // The keys are the player's: no widget keeps the focus to take
         // Space or Enter as a click. A modal takes the keys while open.
-        let keys = !self.about.open
+        let keys = !self.video_panel.typing()
+            && !self.about.open
             && !self.settings_dialog.open
             && !self.url_dialog.is_open()
             && !self.goto_dialog.is_open();
@@ -2877,6 +2878,7 @@ impl eframe::App for App {
             equalizer: &mut self.settings.equalizer,
             normalize: &mut self.settings.normalize,
             subs: &mut self.settings.sub,
+            sub_presets: &mut self.settings.sub_presets,
         };
         let panel_cmds = self.video_panel.show(
             &ctx,

@@ -6,7 +6,8 @@
 //! `sub-outline-size`, `sub-shadow-offset`, `sub-border-style` and
 //! `sub-pos`. The size and the height apply to all subtitles; the rest
 //! only to text ones (SRT and the like): ASS subtitles keep their own
-//! styles. Kept between runs. [`Preset`]s set the look at once.
+//! styles. Kept between runs. [`Preset`]s set the look at once; the
+//! user's own looks ([`Own`]) are kept by name, the whole style.
 
 use std::ops::RangeInclusive;
 
@@ -61,31 +62,40 @@ impl Default for SubStyle {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Preset {
     Standard,
-    Yellow,
+    Thin,
     Bold,
     Soft,
+    ShadowOnly,
     Cream,
+    Mint,
     Boxed,
+    LightBox,
 }
 
 impl Preset {
-    pub const ALL: [Preset; 6] = [
+    pub const ALL: [Preset; 9] = [
         Preset::Standard,
-        Preset::Yellow,
+        Preset::Thin,
         Preset::Bold,
         Preset::Soft,
+        Preset::ShadowOnly,
         Preset::Cream,
+        Preset::Mint,
         Preset::Boxed,
+        Preset::LightBox,
     ];
 
     pub fn label(self) -> &'static str {
         match self {
             Preset::Standard => tr!("Standard", "Обычные"),
-            Preset::Yellow => tr!("Yellow", "Жёлтые"),
+            Preset::Thin => tr!("Thin outline", "Тонкая обводка"),
             Preset::Bold => tr!("Bold, thick outline", "Жирные, толстая обводка"),
             Preset::Soft => tr!("Soft, with a shadow", "Мягкие, с тенью"),
+            Preset::ShadowOnly => tr!("Shadow only, no outline", "Только тень, без обводки"),
             Preset::Cream => tr!("Cream", "Кремовые"),
+            Preset::Mint => tr!("Pale mint", "Бледно-мятные"),
             Preset::Boxed => tr!("On a dark box", "На тёмной подложке"),
+            Preset::LightBox => tr!("Dark on a light box", "Тёмные на светлой подложке"),
         }
     }
 
@@ -94,11 +104,14 @@ impl Preset {
     fn look(self) -> ([u8; 3], [u8; 3], f64, f64, bool, bool) {
         match self {
             Preset::Standard => ([255, 255, 255], [0, 0, 0], 1.65, 0.0, false, false),
-            Preset::Yellow => ([255, 224, 0], [0, 0, 0], 2.0, 1.0, false, false),
+            Preset::Thin => ([255, 255, 255], [0, 0, 0], 0.8, 0.0, false, false),
             Preset::Bold => ([255, 255, 255], [0, 0, 0], 3.0, 0.0, true, false),
             Preset::Soft => ([230, 230, 230], [26, 26, 26], 1.0, 1.5, false, false),
+            Preset::ShadowOnly => ([255, 255, 255], [0, 0, 0], 0.0, 2.0, false, false),
             Preset::Cream => ([255, 243, 196], [32, 28, 20], 1.5, 1.0, false, false),
+            Preset::Mint => ([214, 245, 228], [12, 32, 24], 1.5, 0.5, false, false),
             Preset::Boxed => ([255, 255, 255], [0, 0, 0], 2.5, 0.0, false, true),
+            Preset::LightBox => ([20, 20, 20], [235, 235, 235], 2.5, 0.0, false, true),
         }
     }
 
@@ -120,6 +133,117 @@ impl Preset {
             probe == *style
         })
     }
+}
+
+/// A look the user saved under a name: the whole style, the font, the
+/// size and the height too.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Own {
+    pub name: String,
+    pub style: SubStyle,
+}
+
+/// The most own looks kept; saving one more drops the oldest.
+pub const MAX_OWN: usize = 20;
+
+impl Own {
+    /// Keep `style` as `name` in `list`: in place of one of that name, else
+    /// at the end.
+    pub fn save(list: &mut Vec<Own>, name: &str, style: &SubStyle) {
+        let name = clean(name);
+        if name.is_empty() {
+            return;
+        }
+        match list.iter_mut().find(|o| o.name == name) {
+            Some(own) => own.style = style.clone(),
+            None => {
+                if list.len() >= MAX_OWN {
+                    list.remove(0);
+                }
+                list.push(Own {
+                    name,
+                    style: style.clone(),
+                });
+            }
+        }
+    }
+
+    /// The setting: a line each, the name and the style's fields after
+    /// tabs.
+    pub fn to_text(list: &[Own]) -> String {
+        list.iter()
+            .map(|o| {
+                let s = &o.style;
+                format!(
+                    "{}\t{}\t{:.0}\t{}\t{}\t{:.2}\t{:.0}\t{}\t{:.2}\t{}",
+                    o.name,
+                    clean(&s.font),
+                    s.scale,
+                    hex(s.color),
+                    hex(s.outline_color),
+                    s.outline,
+                    s.pos,
+                    s.bold,
+                    s.shadow,
+                    s.boxed
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// The looks of the setting; lines that are not understood are left
+    /// out, numbers kept within their ranges.
+    pub fn from_text(text: &str) -> Vec<Own> {
+        let within = |v: &str, range: RangeInclusive<f64>| {
+            v.parse::<f64>()
+                .ok()
+                .filter(|v| v.is_finite())
+                .map(|v| v.clamp(*range.start(), *range.end()))
+        };
+        text.lines()
+            .filter_map(|line| {
+                let f: Vec<&str> = line.split('\t').collect();
+                let [
+                    name,
+                    font,
+                    scale,
+                    color,
+                    outline_color,
+                    outline,
+                    pos,
+                    bold,
+                    shadow,
+                    boxed,
+                ] = f.as_slice()
+                else {
+                    return None;
+                };
+                let name = clean(name);
+                (!name.is_empty()).then_some(())?;
+                Some(Own {
+                    name,
+                    style: SubStyle {
+                        font: (*font).to_owned(),
+                        scale: within(scale, SCALE_RANGE)?,
+                        color: parse_hex(color)?,
+                        outline_color: parse_hex(outline_color)?,
+                        outline: within(outline, OUTLINE_RANGE)?,
+                        pos: within(pos, POS_RANGE)?,
+                        bold: bold.parse().ok()?,
+                        shadow: within(shadow, SHADOW_RANGE)?,
+                        boxed: boxed.parse().ok()?,
+                    },
+                })
+            })
+            .take(MAX_OWN)
+            .collect()
+    }
+}
+
+/// A name for a line of the setting: no tabs or line breaks, trimmed.
+fn clean(text: &str) -> String {
+    text.replace(['\t', '\n', '\r'], " ").trim().to_owned()
 }
 
 impl SubStyle {
@@ -234,5 +358,43 @@ mod tests {
         }
         style.color = [1, 2, 3];
         assert_eq!(Preset::of(&style), None);
+    }
+
+    #[test]
+    fn own_looks() {
+        let mut list = Vec::new();
+        let style = SubStyle {
+            font: "Segoe UI".into(),
+            scale: 120.0,
+            color: [250, 240, 200],
+            bold: true,
+            boxed: true,
+            ..SubStyle::default()
+        };
+        Own::save(&mut list, "  Evening\tfilm ", &style);
+        Own::save(&mut list, "Plain", &SubStyle::default());
+        assert_eq!(list[0].name, "Evening film");
+        // The same name: replaced in place.
+        let bigger = SubStyle {
+            scale: 150.0,
+            ..style.clone()
+        };
+        Own::save(&mut list, "Evening film", &bigger);
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].style.scale, 150.0);
+        Own::save(&mut list, "   ", &style);
+        assert_eq!(list.len(), 2);
+
+        let text = Own::to_text(&list);
+        assert_eq!(Own::from_text(&text), list);
+        let broken =
+            format!("{text}\nonly a name\nX\tF\t100\t#GGGGGG\t#000000\t1\t100\tfalse\t0\tfalse");
+        assert_eq!(Own::from_text(&broken), list);
+
+        for i in 0..MAX_OWN {
+            Own::save(&mut list, &format!("Look {i}"), &style);
+        }
+        assert_eq!(list.len(), MAX_OWN);
+        assert_eq!(list[0].name, "Look 0", "the oldest went");
     }
 }
