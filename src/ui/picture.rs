@@ -27,7 +27,7 @@ use egui::{
     vec2,
 };
 
-use super::{icons, style};
+use super::{icons, popover, style};
 use crate::adjust::{self, Adjust, Aspect, Color, Deinterlace, ToneMap};
 use crate::audio::{self, Channels, EQ_BANDS, EQ_RANGE, Equalizer, OwnEq, Preset, band_label};
 use crate::input::Cmd;
@@ -42,17 +42,10 @@ const VALUE: f32 = 50.0;
 /// The width of a delay's value: "-12.50 s". A field that grew with a
 /// minus widened the panel, which shook as it was laid out again.
 const DELAY_VALUE: f32 = 64.0;
-/// The room between the panel and its button.
-const GAP: f32 = 6.0;
-/// The panel's corner from the window's bottom right one when there is no
-/// button (only the picture shown).
-const CORNER: f32 = 12.0;
 /// The delays' sliders reach this far either way; the keys go further.
 const DELAY_RANGE: f64 = 5.0;
 /// The gutter of the scroll bar while the tabs scroll.
 const SCROLL_GUTTER: f32 = 14.0;
-/// The room kept between the panel and the window's top edge.
-const EDGE: f32 = 8.0;
 /// The least height the tabs are given, however low the window.
 const MIN_ROOM: f32 = 120.0;
 /// The height of the row where a name is typed.
@@ -173,120 +166,89 @@ impl VideoPanel {
             self.naming = None;
             return out;
         }
-        let pressed = ctx.input(|i| {
-            i.pointer
-                .any_pressed()
-                .then(|| i.pointer.press_origin())
-                .flatten()
-        });
-        if let Some(p) = pressed
-            && !egui::Popup::is_any_open(ctx)
-            && !self.rect.is_some_and(|r| r.contains(p))
-            && !button.is_some_and(|b| b.contains(p))
-        {
+        if popover::pressed_outside(ctx, self.rect, button) {
             self.open = false;
             self.rect = None;
             self.naming = None;
             return out;
         }
-        let screen = ctx.content_rect();
-        let frame = egui::Frame::popup(&ctx.style_of(egui::Theme::Dark))
-            .fill(style::PANEL_BG)
-            .inner_margin(12);
         // A gutter for the scroll bar while the tabs scroll, so that it
         // does not run over the values (decided last frame: the width
         // places the panel).
         let content = WIDTH + if self.scrolls { SCROLL_GUTTER } else { 0.0 };
-        // The left edge from the width the panel is meant to have, not the
-        // one measured last frame: content a little wider moved the panel,
-        // and it shook as it was laid out again.
-        let outer = content + frame.total_margin().sum().x;
-        let right_bottom = match button {
-            Some(b) => b.right_top() - vec2(0.0, GAP),
-            None => screen.right_bottom() - vec2(CORNER, CORNER),
-        };
-        let at = right_bottom - vec2(outer, 0.0);
+        let corner = popover::corner(ctx, button);
         // The height there is for the head and a tab, over the button.
-        let limit = right_bottom.y - screen.top() - EDGE - frame.total_margin().sum().y;
-        let shown = egui::Area::new(egui::Id::new("video_panel"))
-            .order(egui::Order::Foreground)
-            .pivot(Align2::LEFT_BOTTOM)
-            .fixed_pos(at)
-            .constrain_to(screen)
-            .show(ctx, |ui| {
-                frame.show(ui, |ui| {
-                    ui.set_width(content);
-                    let top = ui.cursor().top();
-                    self.head(ui, now.has_video, &mut out);
-                    ui.add_space(4.0);
-                    let room = (limit - (ui.cursor().top() - top)).max(MIN_ROOM);
-                    // Every tab laid out unseen (an invisible Ui paints
-                    // nothing and takes no input) for the tallest: the
-                    // panel keeps that height whichever is shown, as one
-                    // held by its bottom edge jumped when they changed.
-                    let mut kept = kept;
-                    let mut tallest = 0.0_f32;
-                    for tab in Tab::ALL {
-                        let rect = ui.available_rect_before_wrap();
-                        let mut unseen =
-                            ui.new_child(egui::UiBuilder::new().max_rect(rect).invisible());
-                        let (mut no_name, mut no_cmds) = (None, Vec::new());
+        let margins = popover::frame(ctx).total_margin().sum().y;
+        let limit = corner.y - ctx.content_rect().top() - popover::EDGE - margins;
+        let shown = popover::show(ctx, "video_panel", corner, content, |ui| {
+            let top = ui.cursor().top();
+            self.head(ui, now.has_video, &mut out);
+            ui.add_space(4.0);
+            let room = (limit - (ui.cursor().top() - top)).max(MIN_ROOM);
+            // Every tab laid out unseen (an invisible Ui paints nothing and
+            // takes no input) for the tallest: the panel keeps that height
+            // whichever is shown, as one held by its bottom edge jumped
+            // when they changed.
+            let mut kept = kept;
+            let mut tallest = 0.0_f32;
+            for tab in Tab::ALL {
+                let rect = ui.available_rect_before_wrap();
+                let mut unseen = ui.new_child(egui::UiBuilder::new().max_rect(rect).invisible());
+                let (mut no_name, mut no_cmds) = (None, Vec::new());
+                tab_contents(
+                    &mut unseen,
+                    tab,
+                    adjust,
+                    &mut kept,
+                    now,
+                    &mut no_name,
+                    &mut no_cmds,
+                );
+                tallest = tallest.max(unseen.min_rect().height());
+            }
+            // The row where a name is typed, while it is.
+            if self.naming.is_some() {
+                tallest += NAME_ROW;
+            }
+            self.scrolls = tallest > room;
+            if self.scrolls {
+                // Too low a window: the tabs scroll under the head, the
+                // panel as high as there is room over the button.
+                egui::ScrollArea::vertical()
+                    .id_salt(("video_panel", self.tab as u8))
+                    .max_height(room)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.set_width(WIDTH);
                         tab_contents(
-                            &mut unseen,
-                            tab,
+                            ui,
+                            self.tab,
                             adjust,
                             &mut kept,
                             now,
-                            &mut no_name,
-                            &mut no_cmds,
+                            &mut self.naming,
+                            &mut out,
                         );
-                        tallest = tallest.max(unseen.min_rect().height());
-                    }
-                    // The row where a name is typed, while it is.
-                    if self.naming.is_some() {
-                        tallest += NAME_ROW;
-                    }
-                    self.scrolls = tallest > room;
-                    if self.scrolls {
-                        // Too low a window: the tabs scroll under the head,
-                        // the panel as high as there is room over the
-                        // button.
-                        egui::ScrollArea::vertical()
-                            .id_salt(("video_panel", self.tab as u8))
-                            .max_height(room)
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                ui.set_width(WIDTH);
-                                tab_contents(
-                                    ui,
-                                    self.tab,
-                                    adjust,
-                                    &mut kept,
-                                    now,
-                                    &mut self.naming,
-                                    &mut out,
-                                );
-                            });
-                    } else {
-                        // The room as a least height, not space added
-                        // after: that came with the spacing between items,
-                        // and the shorter tabs were taller by it.
-                        ui.scope(|ui| {
-                            ui.set_min_height(tallest);
-                            tab_contents(
-                                ui,
-                                self.tab,
-                                adjust,
-                                &mut kept,
-                                now,
-                                &mut self.naming,
-                                &mut out,
-                            );
-                        });
-                    }
+                    });
+            } else {
+                // The room as a least height, not space added after: that
+                // came with the spacing between items, and the shorter tabs
+                // were taller by it.
+                ui.scope(|ui| {
+                    ui.set_min_height(tallest);
+                    tab_contents(
+                        ui,
+                        self.tab,
+                        adjust,
+                        &mut kept,
+                        now,
+                        &mut self.naming,
+                        &mut out,
+                    );
                 });
-            });
-        self.rect = Some(shown.response.rect);
+            }
+        });
+        self.rect = Some(shown);
         out
     }
 
@@ -1631,7 +1593,7 @@ fn reset(ui: &mut Ui, enabled: bool, tip: &str) -> bool {
 
 /// A button's icon (`icons.rs`): the painter, the centre, the half width,
 /// the colour.
-type Icon = fn(&egui::Painter, egui::Pos2, f32, egui::Color32);
+pub(super) type Icon = fn(&egui::Painter, egui::Pos2, f32, egui::Color32);
 
 /// The side of a button's icon.
 const ICON: f32 = 16.0;
@@ -1639,7 +1601,7 @@ const ICON: f32 = 16.0;
 /// A button with `icon` before its text (or alone, `text` empty), its content centred in `size`
 /// when given; `setup` adds to the button (selected, a shortcut). The icon
 /// takes the text's colour, faded with it when the button is disabled.
-fn icon_button(
+pub(super) fn icon_button(
     ui: &mut Ui,
     icon: Icon,
     text: &str,

@@ -1,23 +1,58 @@
-//! The tracks window over the control bar's tracks button (`T`): the audio
-//! tracks and the subtitles side by side, each in a column of its own that
-//! scrolls when long. A choice applies at once and the window stays open,
-//! so both can be changed in one go; a click outside or Esc closes it. The
-//! same lists are submenus of the picture's context menu.
+//! The tracks window over the control bar's tracks button (`T`), as the
+//! Video, sound and subtitles panel is (`popover.rs`: the same frame and
+//! place, a press outside closes it, the keys go on): the audio tracks and
+//! the subtitles side by side, each in a column of its own that scrolls
+//! when long. A choice applies at once and the window stays open, so both
+//! can be changed in one go; `T` or `Esc` closes it too. The same lists are
+//! submenus of the picture's context menu.
 
 use egui::{Align2, Color32, FontId, Rect, Response, RichText, Sense, Stroke, Ui, pos2, vec2};
 
-use super::style;
+use super::{icons, popover, style};
 use crate::i18n::lang;
 use crate::input::Cmd;
 use crate::tracks::{self, Kind, Track};
 
-/// The id of the window, also for `Popup::toggle_id` (the `T` key).
-pub fn popup_id() -> egui::Id {
-    egui::Id::new("tracks_popup")
+/// The window, while open.
+#[derive(Default)]
+pub struct TracksWindow {
+    pub open: bool,
+    /// Where it was drawn last, for the presses outside it.
+    rect: Option<Rect>,
+}
+
+impl TracksWindow {
+    pub fn toggle(&mut self) {
+        self.open = !self.open;
+    }
+
+    /// Draw the window over `button` (the control bar's, where it was drawn
+    /// this frame; else the player's bottom right corner) while it is open;
+    /// the choices made.
+    pub fn show(&mut self, ctx: &egui::Context, button: Option<Rect>, all: &[Track]) -> Vec<Cmd> {
+        let mut out = Vec::new();
+        if !self.open {
+            self.rect = None;
+            return out;
+        }
+        if popover::pressed_outside(ctx, self.rect, button) {
+            self.open = false;
+            self.rect = None;
+            return out;
+        }
+        let corner = popover::corner(ctx, button);
+        let shown = popover::show(ctx, "tracks_window", corner, WIDTH, |ui| {
+            out = panel(ui, all);
+        });
+        self.rect = Some(shown);
+        out
+    }
 }
 
 /// The width of a column.
 const COLUMN: f32 = 270.0;
+/// The width of the window's content: the columns and the line between.
+const WIDTH: f32 = 2.0 * COLUMN + 13.0;
 /// The height of a row with a name only ("Off").
 const ROW: f32 = 30.0;
 /// The height of a track's row: the name, the badges under it.
@@ -28,7 +63,7 @@ const MAX_LIST: f32 = 300.0;
 /// The contents of the window.
 pub fn panel(ui: &mut Ui, all: &[Track]) -> Vec<Cmd> {
     let mut out = Vec::new();
-    ui.set_width(2.0 * COLUMN + 13.0);
+    ui.set_width(WIDTH);
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
             ui.set_width(COLUMN);
@@ -56,8 +91,14 @@ fn column(ui: &mut Ui, all: &[Track], kind: Kind, out: &mut Vec<Cmd>) {
     } else {
         tr!("Subtitles", "Субтитры")
     };
-    ui.label(RichText::new(title).strong().color(style::TEXT_BRIGHT));
-    ui.add_space(2.0);
+    // As the panel's groups: small and muted.
+    ui.label(
+        RichText::new(title)
+            .small()
+            .strong()
+            .color(style::TEXT_WEAK),
+    );
+    ui.add_space(4.0);
     let list = tracks::of_kind(all, kind);
     egui::ScrollArea::vertical()
         .id_salt(("tracks", audio))
@@ -96,9 +137,9 @@ fn column(ui: &mut Ui, all: &[Track], kind: Kind, out: &mut Vec<Cmd>) {
             }
         });
     if !audio {
-        ui.add_space(4.0);
-        if ui
-            .add(egui::Button::new(tr!("Load from a file…", "Загрузить из файла…")).frame(false))
+        ui.add_space(6.0);
+        let text = tr!("Load from a file…", "Загрузить из файла…");
+        if super::picture::icon_button(ui, icons::folder, text, None, |b| b)
             .on_hover_text(tr!(
                 "Subtitles from a file of their own (SRT, ASS, …)",
                 "Субтитры из отдельного файла (SRT, ASS, …)"

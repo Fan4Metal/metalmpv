@@ -15,6 +15,10 @@ pub struct Bar<'a> {
     pub playlist_visible: bool,
     /// The Video, sound and subtitles panel is open (its button underlined).
     pub video_panel_open: bool,
+    /// The tracks window is open (its button underlined).
+    pub tracks_open: bool,
+    /// Where the tracks button is drawn: the window stands over it.
+    pub tracks_button: &'a mut Option<Rect>,
     pub fullscreen: bool,
     pub has_prev: bool,
     pub has_next: bool,
@@ -244,12 +248,13 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
         let button = flat(ui, tracks_rect, &tip, any, |p, o, c, _| {
             icons::tracks(p, o, s, c)
         });
-        egui::Popup::from_toggle_button_response(&button)
-            .id(super::tracks::popup_id())
-            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-            .align(egui::RectAlign::TOP_END)
-            .gap(6.0)
-            .show(|ui| out.extend(super::tracks::panel(ui, &state.tracks)));
+        if bar.tracks_open {
+            underline(ui, button.rect);
+        }
+        *bar.tracks_button = Some(button.rect);
+        if button.clicked() {
+            out.push(Cmd::ToggleTracks);
+        }
     }
     let panel_rect = tracks_rect.translate(vec2(-(SMALL + GAP), 0.0));
     if panel_rect.left() > group.right() + 4.0 {

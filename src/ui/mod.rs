@@ -12,6 +12,7 @@ pub mod licenses;
 pub mod osd;
 pub mod picture;
 pub mod playlist;
+pub mod popover;
 pub mod settings;
 pub mod style;
 pub mod title;

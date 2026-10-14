@@ -77,6 +77,9 @@ pub struct App {
     video_panel: VideoPanel,
     /// Where the control bar drew the panel's button this frame.
     panel_button: Option<egui::Rect>,
+    /// The tracks window (`T`) and where the bar drew its button.
+    tracks_window: ui::tracks::TracksWindow,
+    tracks_button: Option<egui::Rect>,
     /// The audio filters mpv has (`App::sync_audio_filters`).
     af_applied: String,
     /// The pictures of IPTV channels (`logos.rs`).
@@ -283,6 +286,8 @@ impl App {
             goto_dialog: ui::goto::GoToDialog::default(),
             video_panel: VideoPanel::default(),
             panel_button: None,
+            tracks_window: ui::tracks::TracksWindow::default(),
+            tracks_button: None,
             af_applied,
             logos: crate::logos::Logos::default(),
             adjust,
@@ -1000,6 +1005,8 @@ impl App {
                 // Video panel, then fullscreen, then the program (as its
                 // close button: the settings are saved).
                 if self.info.close() {
+                } else if self.tracks_window.open {
+                    self.tracks_window.open = false;
                 } else if self.video_panel.open {
                     self.video_panel.open = false;
                 } else if frameless::is_fullscreen(ctx) {
@@ -1011,7 +1018,12 @@ impl App {
                 }
             }
             Cmd::ToggleInfo => self.info.toggle(),
-            Cmd::ToggleVideoPanel => self.video_panel.toggle(),
+            Cmd::ToggleVideoPanel => {
+                self.video_panel.toggle();
+                if self.video_panel.open {
+                    self.tracks_window.open = false;
+                }
+            }
             Cmd::ShowEqualizer => self.video_panel.open_on(ui::picture::Tab::Sound),
             Cmd::SaveFrame => self.save_frame(&state),
             Cmd::OpenRecent(i) => {
@@ -1104,8 +1116,12 @@ impl App {
                 self.osd.show(Osd::Repeat(repeat));
             }
             Cmd::ToggleTracks => {
-                if !state.idle {
-                    egui::Popup::toggle_id(ctx, crate::ui::tracks::popup_id());
+                if !state.idle || self.tracks_window.open {
+                    self.tracks_window.toggle();
+                    // The two windows stand at the same place.
+                    if self.tracks_window.open {
+                        self.video_panel.open = false;
+                    }
                 }
             }
             Cmd::CycleAudio => self.cycle_track(Kind::Audio),
@@ -2105,7 +2121,7 @@ impl App {
             bottom: pointer.is_some_and(|p| p.y > screen.bottom() - FULLSCREEN_BAR_ZONE)
                 || self.seek_drag.is_some()
                 || self.video_panel.open
-                || egui::Popup::is_id_open(ctx, crate::ui::tracks::popup_id()),
+                || self.tracks_window.open,
         }
     }
 
@@ -2123,7 +2139,12 @@ impl App {
         let rest = Self::pointer_rest(ctx);
         if rest < HIDE_AFTER {
             ctx.request_repaint_after(HIDE_AFTER - rest);
-        } else if !panels.top && !panels.bottom && !self.info.open && !self.video_panel.open {
+        } else if !panels.top
+            && !panels.bottom
+            && !self.info.open
+            && !self.video_panel.open
+            && !self.tracks_window.open
+        {
             ctx.set_cursor_icon(CursorIcon::None);
         }
         let screen = ctx.content_rect();
@@ -2140,6 +2161,7 @@ impl App {
             state,
             playlist_visible: false,
             video_panel_open: self.video_panel.open,
+            tracks_open: self.tracks_window.open,
             fullscreen: true,
             has_prev: self.playlist.prev_in(self.settings.repeat).is_some(),
             has_next: self.playlist.next_in(self.settings.repeat).is_some(),
@@ -2147,6 +2169,7 @@ impl App {
             time_mode: self.settings.time_mode,
             drag: &mut self.seek_drag,
             panel_button: &mut self.panel_button,
+            tracks_button: &mut self.tracks_button,
         };
         egui::Area::new(egui::Id::new("fullscreen_controls"))
             .order(egui::Order::Foreground)
@@ -2734,6 +2757,7 @@ impl eframe::App for App {
                 state: &state,
                 playlist_visible: self.settings.playlist_visible,
                 video_panel_open: self.video_panel.open,
+                tracks_open: self.tracks_window.open,
                 fullscreen: false,
                 has_prev: self.playlist.prev_in(self.settings.repeat).is_some(),
                 has_next: self.playlist.next_in(self.settings.repeat).is_some(),
@@ -2741,6 +2765,7 @@ impl eframe::App for App {
                 time_mode: self.settings.time_mode,
                 drag: &mut self.seek_drag,
                 panel_button: &mut self.panel_button,
+                tracks_button: &mut self.tracks_button,
             };
             egui::Panel::bottom("controls")
                 .frame(
@@ -2947,6 +2972,10 @@ impl eframe::App for App {
             },
         );
         cmds.extend(panel_cmds);
+        let track_cmds = self
+            .tracks_window
+            .show(&ctx, self.tracks_button.take(), &state.tracks);
+        cmds.extend(track_cmds);
         if let Some(player) = &mut self.player {
             if self.adjust != before {
                 player.adjust(&before, &self.adjust);
