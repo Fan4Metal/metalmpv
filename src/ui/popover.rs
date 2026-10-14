@@ -119,6 +119,10 @@ pub fn show(
 ) -> Rect {
     let frame = frame(ctx);
     let at = corner - vec2(width + frame.total_margin().sum().x, 0.0);
+    // An Area's Ui is as tall as it was last frame, so a list that scrolls
+    // could shrink with the player but never grow back: all the room over
+    // the corner is offered instead.
+    let room = corner.y - ctx.content_rect().top() - EDGE - frame.total_margin().sum().y;
     egui::Area::new(egui::Id::new(id))
         .order(egui::Order::Foreground)
         .pivot(Align2::LEFT_BOTTOM)
@@ -127,6 +131,7 @@ pub fn show(
         .show(ctx, |ui| {
             frame.show(ui, |ui| {
                 ui.set_width(width);
+                ui.set_max_height(room.max(0.0));
                 add(ui);
             });
         })
