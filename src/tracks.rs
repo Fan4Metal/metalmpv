@@ -482,6 +482,208 @@ const LANGUAGES: &[(&[&str], &str, &str)] = &[
     (&["ko", "kor"], "Korean", "Корейский"),
 ];
 
+/// Which subtitles a file opened for the first time shows, unless ones
+/// like those last chosen by hand are found (`prefer_last_tracks`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SubMode {
+    /// As the file marks them (a default or a forced track).
+    #[default]
+    File,
+    Off,
+    /// Only those marked forced: signs and foreign lines.
+    Forced,
+    /// In the languages chosen, in their order, else none (forced ones in
+    /// the sound's language still show).
+    Languages,
+}
+
+impl SubMode {
+    pub const ALL: [SubMode; 4] = [
+        SubMode::File,
+        SubMode::Off,
+        SubMode::Forced,
+        SubMode::Languages,
+    ];
+
+    /// The stored name.
+    pub fn name(self) -> &'static str {
+        match self {
+            SubMode::File => "file",
+            SubMode::Off => "off",
+            SubMode::Forced => "forced",
+            SubMode::Languages => "languages",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|m| m.name() == name)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SubMode::File => tr!("As the file marks them", "Как отмечено в файле"),
+            SubMode::Off => tr!("Off", "Выключены"),
+            SubMode::Forced => tr!("Forced only", "Только принудительные"),
+            SubMode::Languages => tr!("In the languages below", "На языках ниже"),
+        }
+    }
+}
+
+/// Which subtitle files beside a video are loaded with it (mpv's
+/// `sub-auto`), there and in its `Subs`, `Subtitles` or `Sub` folder.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SubAuto {
+    /// The video's name exactly: `Film.srt`.
+    Exact,
+    /// Names with the video's in them: `Film.rus.srt`, `Film.Forced.ass`.
+    #[default]
+    Fuzzy,
+    /// Every subtitle file of the folder.
+    All,
+    Off,
+}
+
+impl SubAuto {
+    pub const ALL: [SubAuto; 4] = [SubAuto::Exact, SubAuto::Fuzzy, SubAuto::All, SubAuto::Off];
+
+    /// The stored name, mpv's too (`no` for off).
+    pub fn name(self) -> &'static str {
+        match self {
+            SubAuto::Exact => "exact",
+            SubAuto::Fuzzy => "fuzzy",
+            SubAuto::All => "all",
+            SubAuto::Off => "off",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|m| m.name() == name)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SubAuto::Exact => tr!("The same name", "С тем же именем"),
+            SubAuto::Fuzzy => tr!("Names with the video's", "С именем видео в названии"),
+            SubAuto::All => tr!("All in the folder", "Все в папке"),
+            SubAuto::Off => tr!("None", "Никакие"),
+        }
+    }
+
+    fn option(self) -> &'static str {
+        match self {
+            SubAuto::Off => "no",
+            other => other.name(),
+        }
+    }
+}
+
+/// The tracks a file opened for the first time starts with: the sound's
+/// languages and the subtitles' (in order), which subtitles show, and the
+/// subtitle files loaded with it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TrackPrefs {
+    /// Language codes as kept (`rus`), at most [`TrackPrefs::MAX`].
+    pub audio: Vec<String>,
+    pub sub_mode: SubMode,
+    pub subs: Vec<String>,
+    pub sub_auto: SubAuto,
+}
+
+impl TrackPrefs {
+    /// Languages kept for the sound and for the subtitles each.
+    pub const MAX: usize = 3;
+
+    /// mpv's options for them. A file's language may be written with two
+    /// letters or three: each language is given with all its codes.
+    pub fn options(&self) -> Vec<(&'static str, String)> {
+        let codes = |list: &[String]| -> String {
+            list.iter()
+                .flat_map(|code| codes_of(code))
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        let slang = match self.sub_mode {
+            SubMode::Languages => codes(&self.subs),
+            _ => String::new(),
+        };
+        // Without a language matched: the track the file marks default
+        // (`subs-fallback`), and a forced one (`subs-fallback-forced`).
+        let (fallback, forced) = match self.sub_mode {
+            SubMode::File => ("default", "yes"),
+            SubMode::Off => ("no", "no"),
+            SubMode::Forced => ("no", "always"),
+            SubMode::Languages => ("no", "yes"),
+        };
+        vec![
+            ("alang", codes(&self.audio)),
+            ("slang", slang),
+            ("subs-fallback", fallback.into()),
+            ("subs-fallback-forced", forced.into()),
+            ("sub-auto", self.sub_auto.option().into()),
+            ("sub-file-paths", "Subs;Subtitles;Sub".into()),
+        ]
+    }
+
+    /// `rus,eng` as kept: known codes only, each once, at most [`Self::MAX`].
+    pub fn languages_from(text: &str) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for code in text.split(',').map(str::trim) {
+            if let Some(code) = language_code(code)
+                && !out.iter().any(|c| c == code)
+                && out.len() < Self::MAX
+            {
+                out.push(code.to_owned());
+            }
+        }
+        out
+    }
+}
+
+/// The language codes as kept, with their names in `lang`, for a list to
+/// choose from.
+pub fn languages(lang: Lang) -> Vec<(&'static str, &'static str)> {
+    LANGUAGES
+        .iter()
+        .map(|(codes, en, ru)| {
+            let name = match lang {
+                Lang::En => *en,
+                Lang::Ru => *ru,
+            };
+            (kept_code(codes), name)
+        })
+        .collect()
+}
+
+/// The code a language is kept under: its first of three letters.
+fn kept_code(codes: &[&'static str]) -> &'static str {
+    codes.iter().find(|c| c.len() == 3).unwrap_or(&codes[0])
+}
+
+/// The kept code of language `code` (any of its codes), if known.
+fn language_code(code: &str) -> Option<&'static str> {
+    let lower = code.to_ascii_lowercase();
+    LANGUAGES
+        .iter()
+        .find(|(codes, _, _)| codes.contains(&lower.as_str()))
+        .map(|(codes, _, _)| kept_code(codes))
+}
+
+/// All the codes of language `code` (`rus` gives `rus` and `ru`).
+fn codes_of(code: &str) -> Vec<&str> {
+    let lower = code.to_ascii_lowercase();
+    match LANGUAGES
+        .iter()
+        .find(|(codes, _, _)| codes.contains(&lower.as_str()))
+    {
+        Some((codes, _, _)) => {
+            let mut all = vec![kept_code(codes)];
+            all.extend(codes.iter().filter(|c| **c != kept_code(codes)));
+            all
+        }
+        None => vec![code],
+    }
+}
+
 /// The language of `code` in the interface's language; an unknown code
 /// as it is, in capitals.
 pub fn language_in(lang: Lang, code: &str) -> String {
@@ -507,6 +709,33 @@ fn words(text: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn track_preferences_as_mpv_options() {
+        let prefs = TrackPrefs {
+            audio: TrackPrefs::languages_from("rus, en,xx,rus,ger,fre"),
+            sub_mode: SubMode::Languages,
+            subs: vec!["eng".into()],
+            sub_auto: SubAuto::Off,
+        };
+        assert_eq!(prefs.audio, ["rus", "eng", "ger"]);
+        let options = prefs.options();
+        let get = |name| options.iter().find(|(n, _)| *n == name).unwrap().1.clone();
+        assert_eq!(get("alang"), "rus,ru,eng,en,ger,de,deu");
+        assert_eq!(get("slang"), "eng,en");
+        assert_eq!(get("subs-fallback"), "no");
+        assert_eq!(get("sub-auto"), "no");
+        let off = TrackPrefs {
+            sub_mode: SubMode::Forced,
+            ..TrackPrefs::default()
+        };
+        let options = off.options();
+        let get = |name| options.iter().find(|(n, _)| *n == name).unwrap().1.clone();
+        assert_eq!(get("slang"), "");
+        assert_eq!(get("subs-fallback-forced"), "always");
+        assert_eq!(get("sub-auto"), "fuzzy");
+        assert!(languages(Lang::Ru).contains(&("rus", "Русский")));
+    }
 
     #[test]
     fn format_names() {

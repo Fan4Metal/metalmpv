@@ -34,6 +34,7 @@ pub enum Page {
     #[default]
     General,
     Playback,
+    Tracks,
     Video,
     Files,
     Keys,
@@ -41,9 +42,10 @@ pub enum Page {
 }
 
 impl Page {
-    const ALL: [Page; 6] = [
+    const ALL: [Page; 7] = [
         Page::General,
         Page::Playback,
+        Page::Tracks,
         Page::Video,
         Page::Files,
         Page::Keys,
@@ -54,6 +56,7 @@ impl Page {
         match self {
             Page::General => tr!("General", "Общие"),
             Page::Playback => tr!("Playback", "Воспроизведение"),
+            Page::Tracks => tr!("Tracks", "Дорожки"),
             Page::Video => tr!("Video", "Видео"),
             Page::Files => tr!("File types", "Типы файлов"),
             Page::Updates => tr!("Updates", "Обновления"),
@@ -71,6 +74,10 @@ impl Page {
             Page::Playback => tr!(
                 "What is remembered of the files played; how far the arrow keys move playback; the chapter marks; files not fully downloaded; the media keys.",
                 "Что запоминается о воспроизведённых файлах; на сколько перематывают клавиши со стрелками; метки глав; неполные файлы; медиаклавиши."
+            ),
+            Page::Tracks => tr!(
+                "The sound and the subtitles a file starts with, and the subtitle files loaded with it.",
+                "С каким звуком и субтитрами начинается файл и какие файлы субтитров подхватываются."
             ),
             Page::Video => tr!(
                 "How video is decoded; the panels in fullscreen.",
@@ -259,6 +266,7 @@ impl SettingsDialog {
                                 Page::General => general(ui, settings, &mut changed),
                                 Page::Updates => updates_page(ui, updates),
                                 Page::Playback => playback(ui, settings, &mut changed),
+                                Page::Tracks => tracks_page(ui, settings),
                                 Page::Video => changed.hwdec |= video(ui, settings, hwdec_current),
                                 Page::Files => self.file_types.show(ui),
                                 Page::Keys => self.keys_page(ui, &mut settings.keys, &mut changed),
@@ -776,31 +784,6 @@ fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
         divider(ui);
         row(
             ui,
-            tr!("Remember the tracks", "Запоминать дорожки"),
-            Some(tr!(
-                "A file opened again plays the audio track and the subtitles (or none) chosen in it last time.",
-                "Файл при повторном открытии воспроизводится с той звуковой дорожкой и теми субтитрами (или без них), что были выбраны в нём в прошлый раз."
-            )),
-            50.0,
-            |ui| switch(ui, &mut settings.remember_tracks),
-        );
-        divider(ui);
-        row(
-            ui,
-            tr!(
-                "Like tracks in new files",
-                "В новых файлах — похожие дорожки"
-            ),
-            Some(tr!(
-                "A file opened for the first time plays the audio track and the subtitles most like those last chosen by hand, by title and language: the same voice-over in the next episode of a series.",
-                "Файл, открытый впервые, воспроизводится со звуковой дорожкой и субтитрами, больше всего похожими на последние выбранные вручную, по названию и языку: та же озвучка в следующей серии сериала."
-            )),
-            50.0,
-            |ui| switch(ui, &mut settings.prefer_last_tracks),
-        );
-        divider(ui);
-        row(
-            ui,
             tr!("Remember the recent files", "Запоминать недавние файлы"),
             Some(tr!(
                 "The start screen lists the files played last; off, none are kept and the list is cleared.",
@@ -906,6 +889,161 @@ fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                     });
             },
         );
+    });
+}
+
+/// The languages of the sound and the subtitles, which subtitles show,
+/// the subtitle files loaded, and the tracks remembered or chosen alike.
+fn tracks_page(ui: &mut Ui, settings: &mut Settings) {
+    use crate::tracks::{SubAuto, SubMode};
+    let prefs = &mut settings.track_prefs;
+    section(ui, tr!("Sound", "Звук"), |ui| {
+        row(
+            ui,
+            tr!("Languages", "Языки"),
+            Some(tr!(
+                "A file opened for the first time plays the first of these languages it has; none of them, or none chosen: the track the file marks.",
+                "Файл, открытый впервые, играет первый из этих языков, который в нём есть; если ни одного нет или они не выбраны — дорожку, отмеченную в файле."
+            )),
+            LANGUAGES_WIDTH,
+            |ui| language_list(ui, "audio_languages", &mut prefs.audio),
+        );
+    });
+    section(ui, tr!("Subtitles", "Субтитры"), |ui| {
+        row(
+            ui,
+            tr!("Shown", "Показывать"),
+            Some(tr!(
+                "Which subtitles a file opened for the first time shows. Forced ones carry the signs and the lines in other languages.",
+                "Какие субтитры показывает файл, открытый впервые. Принудительные содержат надписи и реплики на других языках."
+            )),
+            230.0,
+            |ui| {
+                egui::ComboBox::from_id_salt("settings_sub_mode")
+                    .selected_text(prefs.sub_mode.label())
+                    .width(220.0)
+                    .show_ui(ui, |ui| {
+                        for m in SubMode::ALL {
+                            ui.selectable_value(&mut prefs.sub_mode, m, m.label());
+                        }
+                    });
+            },
+        );
+        divider(ui);
+        let by_language = prefs.sub_mode == SubMode::Languages;
+        row(
+            ui,
+            tr!("Languages", "Языки"),
+            Some(tr!(
+                "With \"In the languages below\": the first of them the file has; none of them, only forced subtitles in the sound's language.",
+                "При «На языках ниже»: первый из них, который есть в файле; если ни одного нет — только принудительные субтитры на языке звука."
+            )),
+            LANGUAGES_WIDTH,
+            |ui| {
+                ui.add_enabled_ui(by_language, |ui| {
+                    language_list(ui, "sub_languages", &mut prefs.subs);
+                });
+            },
+        );
+        divider(ui);
+        row(
+            ui,
+            tr!("Load from the folder", "Подхватывать из папки"),
+            Some(tr!(
+                "Subtitle files beside the video, and in its Subs, Subtitles or Sub folder, loaded with it.",
+                "Файлы субтитров рядом с видео и в его папке Subs, Subtitles или Sub, загружаемые вместе с ним."
+            )),
+            230.0,
+            |ui| {
+                egui::ComboBox::from_id_salt("settings_sub_auto")
+                    .selected_text(prefs.sub_auto.label())
+                    .width(220.0)
+                    .show_ui(ui, |ui| {
+                        for a in SubAuto::ALL {
+                            ui.selectable_value(&mut prefs.sub_auto, a, a.label());
+                        }
+                    });
+            },
+        );
+    });
+    section(ui, tr!("Choice", "Выбор дорожек"), |ui| {
+        row(
+            ui,
+            tr!("Remember the tracks", "Запоминать дорожки"),
+            Some(tr!(
+                "A file opened again plays the audio track and the subtitles (or none) chosen in it last time.",
+                "Файл при повторном открытии воспроизводится с той звуковой дорожкой и теми субтитрами (или без них), что были выбраны в нём в прошлый раз."
+            )),
+            50.0,
+            |ui| switch(ui, &mut settings.remember_tracks),
+        );
+        divider(ui);
+        row(
+            ui,
+            tr!(
+                "Like tracks in new files",
+                "В новых файлах — похожие дорожки"
+            ),
+            Some(tr!(
+                "A file opened for the first time plays the audio track and the subtitles most like those last chosen by hand, by title and language: the same voice-over in the next episode of a series. Before the languages above.",
+                "Файл, открытый впервые, воспроизводится со звуковой дорожкой и субтитрами, больше всего похожими на последние выбранные вручную, по названию и языку: та же озвучка в следующей серии сериала. Важнее языков выше."
+            )),
+            50.0,
+            |ui| switch(ui, &mut settings.prefer_last_tracks),
+        );
+    });
+}
+
+/// The width of three language lists in a row.
+const LANGUAGES_WIDTH: f32 = 3.0 * LANGUAGE_WIDTH + 2.0 * 6.0;
+const LANGUAGE_WIDTH: f32 = 104.0;
+
+/// Up to `TrackPrefs::MAX` languages in order, a list each; "—" takes a
+/// language out, and the ones after it move up.
+fn language_list(ui: &mut Ui, id: &str, list: &mut Vec<String>) {
+    use crate::tracks::{TrackPrefs, languages};
+    let all = languages(crate::i18n::lang());
+    let name = |code: &str| {
+        all.iter()
+            .find(|(c, _)| *c == code)
+            .map_or(code.to_owned(), |(_, n)| (*n).to_owned())
+    };
+    ui.spacing_mut().item_spacing.x = 6.0;
+    ui.horizontal(|ui| {
+        for i in 0..TrackPrefs::MAX {
+            // A list after the first empty one waits for it.
+            let shown = i <= list.len();
+            let mut chosen = list.get(i).cloned().unwrap_or_default();
+            ui.add_enabled_ui(shown, |ui| {
+                egui::ComboBox::from_id_salt((id, i))
+                    .selected_text(if chosen.is_empty() {
+                        "—".to_owned()
+                    } else {
+                        name(&chosen)
+                    })
+                    .width(LANGUAGE_WIDTH)
+                    .height(320.0)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut chosen, String::new(), "—");
+                        for (code, label) in &all {
+                            // Each language once.
+                            let taken = list.iter().enumerate().any(|(j, c)| j != i && c == code);
+                            if !taken {
+                                ui.selectable_value(&mut chosen, (*code).to_owned(), *label);
+                            }
+                        }
+                    });
+            });
+            if chosen != list.get(i).cloned().unwrap_or_default() {
+                if chosen.is_empty() {
+                    list.truncate(i);
+                } else if i < list.len() {
+                    list[i] = chosen;
+                } else {
+                    list.push(chosen);
+                }
+            }
+        }
     });
 }
 
@@ -1609,6 +1747,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.chapter_marks = d.chapter_marks;
     settings.resume_playback = d.resume_playback;
     settings.remember_tracks = d.remember_tracks;
+    settings.track_prefs = d.track_prefs;
     settings.prefer_last_tracks = d.prefer_last_tracks;
     settings.stay_in_incomplete = d.stay_in_incomplete;
     settings.remember_recent = d.remember_recent;

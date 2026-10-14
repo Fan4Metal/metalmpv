@@ -45,6 +45,10 @@ const REPEAT: &str = "repeat";
 const ON_TOP: &str = "on_top";
 const INTERFACE: &str = "interface";
 const MEDIA_KEYS: &str = "media_keys";
+const AUDIO_LANGUAGES: &str = "audio_languages";
+const SUB_MODE: &str = "sub_mode";
+const SUB_LANGUAGES: &str = "sub_languages";
+const SUB_AUTO: &str = "sub_auto";
 const KEYS: &str = "keys";
 const ACCENT: &str = "accent";
 const PLAYLIST_DETACHED: &str = "playlist_detached";
@@ -439,6 +443,9 @@ pub struct Settings {
     pub sub_ass_override: bool,
     /// Subtitles go in the black bars where there are any.
     pub sub_margins: bool,
+    /// The sound's and the subtitles' languages and which subtitles a new
+    /// file starts with; the subtitle files loaded with it.
+    pub track_prefs: crate::tracks::TrackPrefs,
     /// The picture's adjustments are kept between runs, as `adjust`.
     pub keep_adjust: bool,
     pub adjust: crate::adjust::Adjust,
@@ -513,6 +520,7 @@ impl Default for Settings {
             sub_presets: Vec::new(),
             sub_ass_override: false,
             sub_margins: true,
+            track_prefs: crate::tracks::TrackPrefs::default(),
             keep_adjust: false,
             adjust: crate::adjust::Adjust::default(),
             osd_font: String::new(),
@@ -683,6 +691,24 @@ impl Settings {
                 .unwrap_or_default(),
             sub_ass_override: flag(SUB_ASS_OVERRIDE, d.sub_ass_override),
             sub_margins: flag(SUB_MARGINS, d.sub_margins),
+            track_prefs: crate::tracks::TrackPrefs {
+                audio: get(AUDIO_LANGUAGES)
+                    .as_deref()
+                    .map(crate::tracks::TrackPrefs::languages_from)
+                    .unwrap_or_default(),
+                sub_mode: get(SUB_MODE)
+                    .as_deref()
+                    .and_then(crate::tracks::SubMode::from_name)
+                    .unwrap_or_default(),
+                subs: get(SUB_LANGUAGES)
+                    .as_deref()
+                    .map(crate::tracks::TrackPrefs::languages_from)
+                    .unwrap_or_default(),
+                sub_auto: get(SUB_AUTO)
+                    .as_deref()
+                    .and_then(crate::tracks::SubAuto::from_name)
+                    .unwrap_or_default(),
+            },
             keep_adjust: flag(KEEP_ADJUST, d.keep_adjust),
             adjust: get(ADJUST)
                 .filter(|_| flag(KEEP_ADJUST, d.keep_adjust))
@@ -763,6 +789,11 @@ impl Settings {
         storage.set_string(ON_TOP, self.on_top.name().into());
         storage.set_string(INTERFACE, self.interface.name().into());
         storage.set_string(MEDIA_KEYS, self.media_keys.name().into());
+        let prefs = &self.track_prefs;
+        storage.set_string(AUDIO_LANGUAGES, prefs.audio.join(","));
+        storage.set_string(SUB_MODE, prefs.sub_mode.name().into());
+        storage.set_string(SUB_LANGUAGES, prefs.subs.join(","));
+        storage.set_string(SUB_AUTO, prefs.sub_auto.name().into());
         storage.set_string(KEYS, self.keys.to_setting());
         storage.set_string(ACCENT, self.accent.name());
         storage.set_string(AUDIO_DEVICE, self.audio_device.clone());
@@ -912,6 +943,12 @@ mod tests {
             },
             sub_ass_override: true,
             sub_margins: false,
+            track_prefs: crate::tracks::TrackPrefs {
+                audio: vec!["rus".into(), "eng".into()],
+                sub_mode: crate::tracks::SubMode::Languages,
+                subs: vec!["eng".into()],
+                sub_auto: crate::tracks::SubAuto::All,
+            },
             keep_adjust: true,
             adjust: crate::adjust::Adjust {
                 zoom: 150,

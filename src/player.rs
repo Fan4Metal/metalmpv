@@ -781,6 +781,8 @@ pub struct Player {
     hwdec_copy: bool,
     /// Filters on the processor are set (`vf` not empty).
     filters_on: bool,
+    /// A new file starts without subtitles (`tracks::SubMode::Off`).
+    subs_off: bool,
     last_seek: Option<SeekMark>,
     /// The audio filters mpv has, and those before the last change
     /// ([`Player::resync_audio`]).
@@ -820,6 +822,7 @@ impl Player {
             hwdec: true,
             hwdec_copy: false,
             filters_on: false,
+            subs_off: false,
             last_seek: None,
             data_end_at: None,
             af: String::new(),
@@ -1051,7 +1054,10 @@ impl Player {
                 options.push(format!("aid={}", id(t.audio)));
                 options.push(format!("sid={}", id(t.sub)));
             }
-            None => options.extend(["aid=auto".to_owned(), "sid=auto".to_owned()]),
+            None => {
+                let sid = if self.subs_off { "no" } else { "auto" };
+                options.extend(["aid=auto".to_owned(), format!("sid={sid}")]);
+            }
         }
         options.push("vid=auto".to_owned());
         if self.hwdec_copy && !self.filters_on {
@@ -1370,6 +1376,16 @@ impl Player {
         self.mpv.set("hwdec", &Value::Str(value.into()));
     }
 
+    /// The languages and the subtitles a new file starts with, and the
+    /// subtitle files loaded with it (`tracks::TrackPrefs`); from the next
+    /// file on.
+    pub fn set_track_prefs(&mut self, prefs: &tracks::TrackPrefs) {
+        for (name, value) in prefs.options() {
+            self.mpv.set(name, &Value::Str(value));
+        }
+        self.subs_off = prefs.sub_mode == tracks::SubMode::Off;
+    }
+
     /// Enlarge the picture to fill the window, cropping what is beyond it
     /// (mpv's `panscan` 1), or show it whole (0).
     pub fn set_fill(&mut self, on: bool) {
@@ -1610,6 +1626,7 @@ mod tests {
             hwdec: true,
             hwdec_copy: false,
             filters_on: false,
+            subs_off: false,
             last_seek: None,
             data_end_at: None,
             af: String::new(),
@@ -1699,6 +1716,7 @@ mod tests {
             hwdec: true,
             hwdec_copy: false,
             filters_on: false,
+            subs_off: false,
             last_seek: None,
             data_end_at: None,
             af: String::new(),
@@ -1823,6 +1841,7 @@ mod tests {
                 hwdec: true,
                 hwdec_copy: false,
                 filters_on: false,
+                subs_off: false,
                 last_seek: None,
                 data_end_at: None,
                 af: String::new(),
@@ -1903,6 +1922,7 @@ mod tests {
             hwdec: true,
             hwdec_copy: false,
             filters_on: false,
+            subs_off: false,
             last_seek: None,
             data_end_at: None,
             af: String::new(),
@@ -1992,6 +2012,94 @@ mod tests {
         assert!(found.iter().any(|t| t.kind == Kind::Video));
     }
 
+    /// The languages and the subtitles' mode choose a new file's tracks:
+    /// `cargo test track_prefs -- --ignored --nocapture` (a film with
+    /// Ukrainian and English sound and English subtitles in METALMPV_SAMPLE,
+    /// or the default below).
+    #[test]
+    #[ignore = "needs vendor/libmpv and a film with several languages"]
+    fn track_prefs_choose_the_tracks() {
+        // Highlander (TeamHD): sixteen Russian sound tracks, then two
+        // Ukrainian, two English; Russian and English subtitles.
+        let sample = std::env::var("METALMPV_SAMPLE").unwrap_or_else(|_| {
+            "D:/Films/Highlander.1986.REMASTERED.1080p.BluRay.16xRus.2xUkr.2xEng.TeamHD-Атлас31.mkv"
+                .into()
+        });
+        let api = sys::api().unwrap();
+        let mpv = Mpv::new(
+            api,
+            &[
+                ("vo", "null"),
+                ("ao", "null"),
+                ("idle", "yes"),
+                ("terminal", "no"),
+            ],
+        )
+        .unwrap();
+        let mut player = Player {
+            mpv,
+            state: State::default(),
+            scan_asked: None,
+            live_asked: None,
+            loading: false,
+            starts_due: 0,
+            stopped: false,
+            hwdec: true,
+            hwdec_copy: false,
+            filters_on: false,
+            subs_off: false,
+            last_seek: None,
+            data_end_at: None,
+            af: String::new(),
+            af_before: String::new(),
+        };
+        observe_all(&player.mpv);
+        let chosen = |player: &mut Player, prefs: tracks::TrackPrefs| {
+            player.set_track_prefs(&prefs);
+            player.load(Path::new(&sample), None, None);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while std::time::Instant::now() < deadline {
+                player.poll();
+                if !player.loading && player.state.tracks.len() > 3 {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            // The selection settles with the track list.
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            player.poll();
+            let lang = |kind| {
+                tracks::selected(&player.state.tracks, kind)
+                    .map(|t| t.lang.clone().unwrap_or_default())
+            };
+            (lang(Kind::Audio), lang(Kind::Sub))
+        };
+        use tracks::{SubMode, TrackPrefs};
+        let (audio, sub) = chosen(
+            &mut player,
+            TrackPrefs {
+                audio: vec!["ukr".into(), "eng".into()],
+                sub_mode: SubMode::Languages,
+                subs: vec!["eng".into()],
+                ..TrackPrefs::default()
+            },
+        );
+        eprintln!("ukr, eng / eng: {audio:?} {sub:?}");
+        assert_eq!(audio.as_deref(), Some("ukr"));
+        assert_eq!(sub.as_deref(), Some("eng"));
+        let (audio, sub) = chosen(
+            &mut player,
+            TrackPrefs {
+                audio: vec!["eng".into()],
+                sub_mode: SubMode::Off,
+                ..TrackPrefs::default()
+            },
+        );
+        eprintln!("eng / off: {audio:?} {sub:?}");
+        assert_eq!(audio.as_deref(), Some("eng"));
+        assert_eq!(sub, None);
+    }
+
     /// A track chosen in one file is not carried to the next:
     /// `cargo test tracks_start_afresh -- --ignored` (a video with sound in
     /// METALMPV_SAMPLE, or the default below).
@@ -2022,6 +2130,7 @@ mod tests {
             hwdec: true,
             hwdec_copy: false,
             filters_on: false,
+            subs_off: false,
             last_seek: None,
             data_end_at: None,
             af: String::new(),
@@ -2244,6 +2353,7 @@ mod tests {
             hwdec: true,
             hwdec_copy: false,
             filters_on: false,
+            subs_off: false,
             last_seek: None,
             data_end_at: None,
             af: String::new(),
@@ -2501,6 +2611,7 @@ mod tests {
             hwdec: true,
             hwdec_copy: false,
             filters_on: false,
+            subs_off: false,
             last_seek: None,
             data_end_at: None,
             af: String::new(),

@@ -270,6 +270,7 @@ impl App {
                     player.set_sub_style(&settings.sub);
                 }
                 player.set_sub_layout(settings.sub_ass_override, settings.sub_margins);
+                player.set_track_prefs(&settings.track_prefs);
                 if settings.keep_adjust {
                     player.adjust(&Adjust::default(), &settings.adjust);
                 }
@@ -3276,6 +3277,7 @@ impl eframe::App for App {
             self.fullscreen_controls(&ctx, &state, &title, &mut cmds);
         }
 
+        let prefs_before = self.settings.track_prefs.clone();
         // As before the panel changes them.
         let layout_before = (self.settings.sub_ass_override, self.settings.sub_margins);
         let changed = self.settings_dialog.show(
@@ -3302,6 +3304,11 @@ impl eframe::App for App {
             && let Some(player) = &mut self.player
         {
             player.set_hwdec(self.settings.hwdec);
+        }
+        if self.settings.track_prefs != prefs_before
+            && let Some(player) = &mut self.player
+        {
+            player.set_track_prefs(&self.settings.track_prefs);
         }
         if self.settings_dialog.open {
             win::set_snap(self.settings.snap_to_centre);
