@@ -957,10 +957,12 @@ impl App {
         match cmd {
             Cmd::TogglePause => {
                 if state.idle {
-                    // After Stop or a failed file: play the current entry again.
+                    // After Stop or a failed file: play the current entry
+                    // again, or the one after its place when it was removed.
                     if let Some(i) = self
                         .playlist
                         .current()
+                        .or_else(|| self.playlist.next())
                         .or((!self.playlist.is_empty()).then_some(0))
                     {
                         self.play(i);
