@@ -323,6 +323,7 @@ const STAY_IN_INCOMPLETE: &str = "stay_in_incomplete";
 const LAST_AUDIO: &str = "last_audio";
 const LAST_SUB: &str = "last_sub";
 const RECENT: &str = "recent_files";
+const BOOKMARKS: &str = "bookmarks";
 const REMEMBER_RECENT: &str = "remember_recent";
 
 /// How many recent files are kept.
@@ -581,6 +582,9 @@ pub struct Settings {
     /// The files played last, the latest first (the start screen). Not a
     /// setting, so Reset keeps them; Forget all clears them.
     pub recent: Vec<PathBuf>,
+    /// The bookmarks, the latest first (`bookmarks.rs`). Not a setting,
+    /// so Reset keeps them.
+    pub bookmarks: Vec<crate::bookmarks::Bookmark>,
 }
 
 impl Default for Settings {
@@ -647,6 +651,7 @@ impl Default for Settings {
             last_sub: None,
             remember_recent: true,
             recent: Vec::new(),
+            bookmarks: Vec::new(),
         }
     }
 }
@@ -921,6 +926,9 @@ impl Settings {
                         .collect()
                 })
                 .unwrap_or_default(),
+            bookmarks: get(BOOKMARKS)
+                .map(|v| crate::bookmarks::from_text(&v))
+                .unwrap_or_default(),
         }
     }
 
@@ -1067,6 +1075,7 @@ impl Settings {
             .map(|p| p.display().to_string())
             .collect();
         storage.set_string(RECENT, recent.join("\n"));
+        storage.set_string(BOOKMARKS, crate::bookmarks::to_text(&self.bookmarks));
     }
 }
 
@@ -1201,6 +1210,10 @@ mod tests {
             last_sub: Some(None),
             remember_recent: false,
             recent: vec![PathBuf::from(r"D:\Films\a.mkv"), PathBuf::from(r"E:\b.mp4")],
+            bookmarks: vec![crate::bookmarks::Bookmark {
+                path: PathBuf::from(r"D:\Films\a.mkv"),
+                time: 754.5,
+            }],
         };
         let mut storage = MemStorage::default();
         s.save(&mut storage);

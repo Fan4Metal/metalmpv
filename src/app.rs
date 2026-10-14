@@ -105,6 +105,9 @@ pub struct App {
     hwnd: Option<isize>,
     /// The file dialog open, on a thread of its own.
     dialogs: Dialogs,
+    /// Where the next file loaded starts, a bookmark's place (taken by
+    /// `play` when the file is that one).
+    start_at: Option<(PathBuf, f64)>,
     /// The app icon of the title row and of the start screen, each at its
     /// size.
     icon: ui::IconCache,
@@ -351,6 +354,7 @@ impl App {
             osd: OsdLine::default(),
             hwnd,
             dialogs: Dialogs::default(),
+            start_at: None,
             icon: None,
             start_icon: None,
             window_icon: style::Accent::Blue,
@@ -460,9 +464,14 @@ impl App {
         self.osd.clear_at_end();
         self.remember_position();
         let left = self.positions.get(&path);
-        let start = left
+        let bookmark = self
+            .start_at
+            .take()
+            .filter(|(p, _)| crate::bookmarks::same_path(p, &path))
+            .map(|(_, t)| t);
+        let start = bookmark.or(left
             .and_then(|l| l.time)
-            .filter(|_| self.settings.resume_playback && !again);
+            .filter(|_| self.settings.resume_playback && !again));
         let tracks = left
             .and_then(|l| l.tracks)
             .filter(|_| self.settings.remember_tracks);
@@ -480,7 +489,9 @@ impl App {
         if let Some(player) = &mut self.player {
             player.load(&path, start, tracks);
         }
-        if let Some(t) = start {
+        if let Some(time) = bookmark {
+            self.osd.show(Osd::Bookmark { added: false, time });
+        } else if let Some(t) = start {
             let at = crate::format::time(Some(t), false);
             let key = crate::keymap::shortcut(Cmd::Start);
             self.osd.show(Osd::Text(if key.is_empty() {
@@ -726,6 +737,29 @@ impl App {
                 )
             }
         }));
+    }
+
+    /// Go to bookmark `b`: a seek in the file playing, else its file played
+    /// from there (its playlist entry, or the file opened).
+    fn go_to_bookmark(&mut self, b: crate::bookmarks::Bookmark, state: &State) {
+        let playing = self.playlist.current_path().filter(|_| !state.idle);
+        if playing.is_some_and(|p| b.is_of(p)) {
+            if let Some(player) = &mut self.player {
+                player.seek_to(b.time, Seek::Exact);
+            }
+            self.osd.show(Osd::Bookmark {
+                added: false,
+                time: b.time,
+            });
+            return;
+        }
+        let entry = self.playlist.items().iter().position(|p| b.is_of(p));
+        // `play` starts the file there (paths compared without case).
+        self.start_at = Some((b.path.clone(), b.time));
+        match entry {
+            Some(i) => self.play(i),
+            None => self.open(vec![b.path]),
+        }
     }
 
     /// Change the picture's adjustments and give mpv what changed.
@@ -1492,6 +1526,25 @@ impl App {
                 self.osd.show(Osd::VoiceBoost(self.settings.voice_boost));
                 ctx.request_repaint();
             }
+            Cmd::AddBookmark => {
+                if let (false, Some(time), Some(path)) =
+                    (state.idle, state.time, self.playlist.current_path())
+                {
+                    crate::bookmarks::add(&mut self.settings.bookmarks, path, time);
+                    self.osd.show(Osd::Bookmark { added: true, time });
+                }
+            }
+            Cmd::GoToBookmark(i) => {
+                if let Some(b) = self.settings.bookmarks.get(i).cloned() {
+                    self.go_to_bookmark(b, &state);
+                }
+            }
+            Cmd::DeleteBookmark(i) => {
+                if i < self.settings.bookmarks.len() {
+                    self.settings.bookmarks.remove(i);
+                }
+            }
+            Cmd::ClearBookmarks => self.settings.bookmarks.clear(),
             Cmd::ToggleUpmix => {
                 self.settings.upmix = !self.settings.upmix;
                 self.osd.show(Osd::Upmix(self.settings.upmix));
@@ -2397,6 +2450,15 @@ impl App {
             repeat: self.settings.repeat,
             on_top: self.settings.on_top,
             playlist_detached: self.settings.playlist_detached,
+            bookmarks: self
+                .settings
+                .bookmarks
+                .iter()
+                .map(|b| {
+                    let here = self.playlist.current_path().is_some_and(|p| b.is_of(p));
+                    (b.label(), here)
+                })
+                .collect(),
         };
         // As Windows' menus do: the right button opens the menu when let go
         // and a press anywhere off the menus closes it, however the pointer
@@ -3027,6 +3089,7 @@ fn context_menu(
     speed_menu(ui, state, &mut menu_cmds);
     repeat_menu(ui, marks.repeat, &mut menu_cmds);
     loop_menu(ui, state, &mut menu_cmds);
+    bookmarks_menu(ui, state, &marks.bookmarks, &mut menu_cmds);
     let list = if playlist_visible {
         tr!("Hide the playlist", "Скрыть плейлист")
     } else {
@@ -3057,6 +3120,48 @@ fn context_menu(
     cmds.extend(menu_cmds);
 }
 
+/// The bookmarks: add one here, then each (a click goes there, the cross
+/// deletes it; those of the file playing marked), and delete them all.
+fn bookmarks_menu(ui: &mut egui::Ui, state: &State, list: &[(String, bool)], out: &mut Vec<Cmd>) {
+    ui.menu_button(tr!("Bookmarks", "Закладки"), |ui| {
+        let add = egui::Button::new(tr!("Add a bookmark here", "Добавить закладку здесь"))
+            .shortcut_text(keymap::shortcut(Cmd::AddBookmark));
+        if ui.add_enabled(!state.idle, add).clicked() {
+            out.push(Cmd::AddBookmark);
+            ui.close();
+        }
+        ui.separator();
+        if list.is_empty() {
+            ui.weak(tr!("No bookmarks yet", "Закладок пока нет"));
+        }
+        for (i, (label, here)) in list.iter().enumerate() {
+            ui.horizontal(|ui| {
+                let tip = tr!("Delete the bookmark", "Удалить закладку");
+                let delete = ui::tool(ui, tip, true, |p, o, c| ui::icons::close(p, o, 4.0, c));
+                if delete.clicked() {
+                    // The menu stays open: more may go.
+                    out.push(Cmd::DeleteBookmark(i));
+                }
+                let go = egui::Button::new(label.as_str()).selected(*here);
+                if ui.add(go).clicked() {
+                    out.push(Cmd::GoToBookmark(i));
+                    ui.close();
+                }
+            });
+        }
+        if !list.is_empty() {
+            ui.separator();
+            if ui
+                .button(tr!("Delete all bookmarks", "Удалить все закладки"))
+                .clicked()
+            {
+                out.push(Cmd::ClearBookmarks);
+                ui.close();
+            }
+        }
+    });
+}
+
 /// The width of the playlist's own window the first time, in points.
 const PLAYLIST_WIDTH: f32 = 300.0;
 
@@ -3080,6 +3185,8 @@ struct Marks {
     repeat: Repeat,
     on_top: OnTop,
     playlist_detached: bool,
+    /// The bookmarks' labels, and whether each is of the file playing.
+    bookmarks: Vec<(String, bool)>,
 }
 
 /// The interfaces, the current marked.

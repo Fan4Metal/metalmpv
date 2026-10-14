@@ -12,6 +12,7 @@ mod adjust;
 mod app;
 mod assoc;
 mod audio;
+mod bookmarks;
 mod chapters;
 mod cover;
 mod dialog;

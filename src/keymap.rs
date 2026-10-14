@@ -301,6 +301,7 @@ actions! {
     Position "position" Playback Cmd::ShowPosition, [Chord::key(Key::Tab)];
     TimeDisplay "time_display" Playback Cmd::CycleTime, [];
     GoToTime "go_to_time" Playback Cmd::GoToTime, [Chord::ctrl(Key::G)];
+    AddBookmark "add_bookmark" Playback Cmd::AddBookmark, [Chord::ctrl(Key::B)];
     Repeat "repeat" Playback Cmd::CycleRepeat, [Chord::key(Key::R)];
     LoopA "loop_a" Playback Cmd::LoopA, [Chord::key(Key::OpenBracket)];
     LoopB "loop_b" Playback Cmd::LoopB, [Chord::key(Key::CloseBracket)];
@@ -430,6 +431,7 @@ impl Action {
                 "Позиция и глава на экране"
             ),
             Action::GoToTime => tr!("Go to time…", "Перейти ко времени…"),
+            Action::AddBookmark => tr!("Add a bookmark here", "Добавить закладку здесь"),
             Action::PrevChapter => tr!(
                 "Previous chapter (the start of this one after 5 s)",
                 "Предыдущая глава (после 5 с — начало текущей)"

@@ -331,6 +331,11 @@ pub enum Osd {
     Normalize(bool),
     VoiceBoost(bool),
     Upmix(bool),
+    /// A bookmark added (`true`) or gone to, at `time`.
+    Bookmark {
+        added: bool,
+        time: f64,
+    },
     /// Fullscreen with the picture filling the screen, cropped, or the
     /// picture whole again.
     Fill(bool),
@@ -551,6 +556,15 @@ impl Osd {
                 (true, true) => "[ Усиление речи включено ]".into(),
                 (false, true) => "[ Усиление речи выключено ]".into(),
             },
+            Osd::Bookmark { added, time } => {
+                let at = time_line_of(*time);
+                match (added, ru) {
+                    (true, false) => format!("[ Bookmark added: {at} ]"),
+                    (true, true) => format!("[ Закладка добавлена: {at} ]"),
+                    (false, false) => format!("[ Bookmark: {at} ]"),
+                    (false, true) => format!("[ Закладка: {at} ]"),
+                }
+            }
             Osd::Upmix(on) => match (on, ru) {
                 (true, false) => "[ Stereo to 5.1 on ]".into(),
                 (false, false) => "[ Stereo to 5.1 off ]".into(),
@@ -659,6 +673,11 @@ impl Osd {
             Osd::Text(t) => t.clone(),
         }
     }
+}
+
+/// A time for a line: `12:34`, `1:23:45`.
+fn time_line_of(seconds: f64) -> String {
+    time(Some(seconds), false)
 }
 
 /// A whole number with its sign: "+4", "-6", "0".

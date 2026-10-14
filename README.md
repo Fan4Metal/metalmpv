@@ -87,6 +87,10 @@ When the file has chapters, the seek bar is cut at the start of each, and the to
 
 `Ctrl+G` or **Go to time…** in the picture's context menu opens a window with the position playing in its field, selected, so that a time typed replaces it. The field takes `1:23:45`, `83:20`, a number of seconds (`5000`), a fraction after a point or a comma (`1:23,5`), a share of the file (`50%`), or a move from the position playing (`+30`, `-1:00`, `+10%`); under the field the window shows the time this names, with its share of the file, or says that the text is not a time in this file. `Enter` or **Go** moves there to the exact frame; a time past the end goes to the end.
 
+### Bookmarks
+
+`Ctrl+B` or **Bookmarks → Add a bookmark here** in the picture's context menu keeps the file playing and the position. The **Bookmarks** submenu lists them, the latest first, each by the file's name and the time, those of the file playing marked: a click goes there, in the file playing at once, else playing its file from that place (its playlist entry, or the file opened); the cross beside one deletes it, and **Delete all bookmarks** deletes them all. Up to 30 are kept between runs, the oldest giving way; Reset in the settings keeps them.
+
 ### A-B repeat
 
 `[` marks the start of a stretch at the position playing and `]` its end; from then on, playback goes back to the start each time it reaches the end, until `\` turns the repeat off. An end marked without a start repeats from the beginning of the file, and an end before the start swaps the two. The points appear as yellow ticks on the seek bar with the stretch between them highlighted, the on-screen message gives them to a tenth of a second, and the **A-B repeat** submenu of the picture's context menu does the same. The points belong to the file: another file starts without them.
@@ -174,6 +178,7 @@ The keys below are the defaults. In the settings, the **Keyboard shortcuts** cat
 | `Ctrl+E` | Save the frame (into Pictures\MetalMPV unless another folder is chosen) |
 | `Tab` | Shows the position, the duration and the chapter playing on the screen |
 | `Ctrl+G` | Go to time: a window for a time in the file |
+| `Ctrl+B` | Add a bookmark at the position playing (the **Bookmarks** submenu of the context menu) |
 | `A` | Next audio track |
 | `S`, `J` | Next subtitles; after the last, none |
 | `V` | Subtitles off, and on again |

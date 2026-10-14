@@ -176,6 +176,12 @@ pub enum Cmd {
     ToggleVoiceBoost,
     /// Stereo spread over 5.1, or not.
     ToggleUpmix,
+    /// A bookmark at the place playing (`Ctrl+B`, the context menu).
+    AddBookmark,
+    /// Go to bookmark `n` (the context menu), opening its file.
+    GoToBookmark(usize),
+    DeleteBookmark(usize),
+    ClearBookmarks,
     Minimize,
     ToggleMaximize,
     Close,
