@@ -152,6 +152,10 @@ fn https_request(
     let (agent, host, path, headers) = (wide(agent), wide(host), wide(path), wide(headers));
     let verb = wide("GET");
     let t = timeout_ms;
+    // Each step has `timeout_ms`; the whole answer at most twice that, else
+    // a server sending a byte now and then held a thread for good.
+    let deadline = std::time::Instant::now()
+        + std::time::Duration::from_millis(2 * u64::try_from(timeout_ms).unwrap_or(10_000));
     // Declared in this order, the handles close request first.
     unsafe {
         let session = handle(WinHttpOpen(
@@ -208,8 +212,19 @@ fn https_request(
         ))?;
         let location = (!follow && (300..400).contains(&status))
             .then(|| {
-                let mut buf = [0u16; 2048];
-                let mut len = size_of_val(&buf) as u32;
+                // Asked for its length first: a CDN's signed address can be
+                // longer than any buffer guessed.
+                let mut len = 0u32;
+                WinHttpQueryHeaders(
+                    request.0,
+                    WINHTTP_QUERY_LOCATION,
+                    null(),
+                    null_mut(),
+                    &mut len,
+                    null_mut(),
+                );
+                let mut buf = vec![0u16; len as usize / 2 + 1];
+                let mut len = (buf.len() * 2) as u32;
                 let ok = WinHttpQueryHeaders(
                     request.0,
                     WINHTTP_QUERY_LOCATION,
@@ -237,6 +252,9 @@ fn https_request(
             body.extend_from_slice(&buf[..read as usize]);
             if body.len() > limit {
                 return Err(format!("the answer is larger than {limit} bytes"));
+            }
+            if std::time::Instant::now() > deadline {
+                return Err("the answer took too long".into());
             }
         }
         Ok((status, body, location))
