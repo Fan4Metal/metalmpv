@@ -10,6 +10,7 @@ use egui::{
     Stroke, Ui, pos2, vec2,
 };
 
+use super::osd::OsdStyle;
 use super::style::{self, Accent};
 use crate::audio::Device;
 use crate::fonts::Family;
@@ -1253,7 +1254,7 @@ fn shorten(text: &str, chars: usize) -> String {
     }
 }
 
-/// The font and the size of the OSD line, with a sample.
+/// The OSD line: on or off, its font, size and look, with a sample.
 fn osd_section(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
     section(
         ui,
@@ -1263,8 +1264,8 @@ fn osd_section(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                 ui,
                 tr!("Show messages", "Показывать сообщения"),
                 Some(tr!(
-                    "The yellow line in the top left corner after a seek, a volume change and the like. Off, only the line saying where the data of an incomplete file ends is shown.",
-                    "Жёлтая строка в левом верхнем углу после перемотки, смены громкости и т. п. Если выключено, показывается только строка о том, где кончаются данные недокачанного файла."
+                    "The line in the top left corner after a seek, a volume change and the like. Off, only the line saying where the data of an incomplete file ends is shown.",
+                    "Строка в левом верхнем углу после перемотки, смены громкости и т. п. Если выключено, показывается только строка о том, где кончаются данные недокачанного файла."
                 )),
                 50.0,
                 |ui| switch(ui, &mut settings.osd),
@@ -1289,15 +1290,94 @@ fn osd_section(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                 230.0,
                 |ui| percent(ui, &mut settings.osd_scale, OSD_SCALE_RANGE),
             );
+            osd_look(ui, &mut settings.osd_style);
             divider(ui);
-            osd_preview(ui, settings.osd_scale);
+            osd_preview(ui, settings.osd_scale, &settings.osd_style);
         },
     );
 }
 
-/// A line of the OSD in its font and size on a dark ground, as over a
-/// picture of medium height (the font chosen shows from the next frame).
-fn osd_preview(ui: &mut Ui, scale: f64) {
+/// The OSD line's look, as the subtitles': the colours, the outline, the
+/// shadow, boldness and the box; Default puts it back.
+fn osd_look(ui: &mut Ui, look: &mut OsdStyle) {
+    let d = OsdStyle::default();
+    let colour = |ui: &mut Ui, c: &mut [u8; 3]| {
+        egui::widgets::color_picker::color_edit_button_srgb(ui, c);
+    };
+    divider(ui);
+    row(ui, tr!("Letters", "Буквы"), None, 230.0, |ui| {
+        colour(ui, &mut look.color);
+    });
+    // With the box, the outline's colour and thickness are the box's
+    // colour and margin.
+    let (outline, thickness) = if look.boxed {
+        (tr!("Box", "Подложка"), tr!("Box margin", "Поля подложки"))
+    } else {
+        (
+            tr!("Outline", "Обводка"),
+            tr!("Outline thickness", "Толщина обводки"),
+        )
+    };
+    divider(ui);
+    row(ui, outline, None, 230.0, |ui| {
+        colour(ui, &mut look.outline_color);
+    });
+    divider(ui);
+    row(ui, thickness, None, 230.0, |ui| {
+        amount(ui, &mut look.outline, super::osd::OUTLINE_RANGE)
+    });
+    divider(ui);
+    ui.add_enabled_ui(!look.boxed, |ui| {
+        row(
+            ui,
+            tr!("Shadow", "Тень"),
+            look.boxed
+                .then_some(tr!("Not with the box.", "Не с подложкой.")),
+            230.0,
+            |ui| amount(ui, &mut look.shadow, super::osd::SHADOW_RANGE),
+        );
+    });
+    divider(ui);
+    row(ui, tr!("Bold", "Жирный"), None, 50.0, |ui| {
+        switch(ui, &mut look.bold)
+    });
+    divider(ui);
+    row(
+        ui,
+        tr!("A box behind the text", "Подложка под текстом"),
+        Some(tr!(
+            "A slightly see-through box of the outline's colour in place of the outline.",
+            "Полупрозрачная плашка цвета обводки вместо обводки."
+        )),
+        50.0,
+        |ui| switch(ui, &mut look.boxed),
+    );
+    divider(ui);
+    row(ui, tr!("Look", "Вид"), None, 230.0, |ui| {
+        let default = ui.add_enabled(
+            *look != d,
+            egui::Button::new(tr!("Default", "По умолчанию")),
+        );
+        if default.clicked() {
+            *look = d;
+        }
+    });
+}
+
+/// The outline's thickness or the shadow's offset.
+fn amount(ui: &mut Ui, value: &mut f64, range: std::ops::RangeInclusive<f64>) -> Response {
+    ui.spacing_mut().slider_width = 160.0;
+    ui.add(
+        egui::Slider::new(value, range)
+            .step_by(0.25)
+            .fixed_decimals(2),
+    )
+}
+
+/// A line of the OSD in its font, size and look on a ground from dark to
+/// light, as over a picture of medium height (the font chosen shows from
+/// the next frame).
+fn osd_preview(ui: &mut Ui, scale: f64, look: &OsdStyle) {
     // The OSD's size over a picture about 570 points high.
     let size = 22.0 * (scale / 100.0) as f32;
     ui.add_space(8.0);
@@ -1306,10 +1386,25 @@ fn osd_preview(ui: &mut Ui, scale: f64) {
         Sense::hover(),
     );
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 6.0, Color32::from_rgb(0x14, 0x16, 0x1a));
+    let (dark, light) = (
+        Color32::from_rgb(0x14, 0x16, 0x1a),
+        Color32::from_rgb(150, 158, 168),
+    );
+    let mut ground = egui::Mesh::default();
+    for (corner, color) in [
+        (rect.left_top(), dark),
+        (rect.right_top(), light),
+        (rect.right_bottom(), light),
+        (rect.left_bottom(), dark),
+    ] {
+        ground.colored_vertex(corner, color);
+    }
+    ground.add_triangle(0, 1, 2);
+    ground.add_triangle(0, 2, 3);
+    painter.add(ground);
     let text = tr!("[ Volume 80% ]", "[ Громкость 80% ]");
     let pos = rect.left_top() + vec2(size * 0.6, (rect.height() - size * 1.2) / 2.0);
-    super::osd::paint_text(&painter, pos, text, size, 1.0);
+    super::osd::paint_text(&painter, pos, text, size, look, 1.0);
     ui.add_space(8.0);
 }
 
@@ -1847,6 +1942,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     changed.keys |= settings.keys != d.keys;
     settings.keys = d.keys;
     settings.osd = d.osd;
+    settings.osd_style = d.osd_style;
     settings.osd_font = d.osd_font;
     settings.osd_font_file = d.osd_font_file;
     settings.osd_scale = d.osd_scale;

@@ -1,10 +1,12 @@
 //! The on-screen display: a line of yellow text in the top left corner of
 //! the picture after a seek, a volume change and the like, gone after a
-//! moment ("[ Назад 10 сек / Ключевой кадр / 00:01:23 (12,5%) ]").
+//! moment ("[ Назад 10 сек / Ключевой кадр / 00:01:23 (12,5%) ]"). Its look
+//! is the user's ([`OsdStyle`]), as the subtitles' is.
 
+use std::ops::RangeInclusive;
 use std::time::{Duration, Instant};
 
-use egui::{Align2, FontId, Rect, vec2};
+use egui::{Color32, FontId, Rect, Vec2, vec2};
 
 use super::style;
 use crate::format::Osd;
@@ -13,6 +15,44 @@ use crate::player::State;
 /// How long a line stays, the fade at its end included.
 const SHOWN: Duration = Duration::from_millis(2000);
 const FADE: Duration = Duration::from_millis(400);
+
+/// The outline's thickness and the shadow's offset, in points of a line
+/// 22 points high (they grow with the line).
+pub const OUTLINE_RANGE: RangeInclusive<f64> = 0.0..=4.0;
+pub const SHADOW_RANGE: RangeInclusive<f64> = 0.0..=4.0;
+/// The opacity of the box behind the text, of 255 (the subtitles' too).
+const BOX_ALPHA: u8 = 0xc0;
+/// The size the outline and the shadow are given for.
+const UNIT_SIZE: f32 = 22.0;
+
+/// How the OSD line looks: the letters' colour, the outline's colour and
+/// thickness, the shadow, boldness, and a box of the outline's colour in
+/// place of the outline. Kept in the settings.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OsdStyle {
+    pub color: [u8; 3],
+    pub outline_color: [u8; 3],
+    /// The outline's thickness; with `boxed`, the box's margin.
+    pub outline: f64,
+    pub shadow: f64,
+    pub bold: bool,
+    pub boxed: bool,
+}
+
+impl Default for OsdStyle {
+    /// Yellow with a thin black outline and a shadow.
+    fn default() -> Self {
+        let c = style::OSD;
+        Self {
+            color: [c.r(), c.g(), c.b()],
+            outline_color: [0, 0, 0],
+            outline: 1.0,
+            shadow: 1.0,
+            bold: false,
+            boxed: false,
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct OsdLine {
@@ -38,16 +78,17 @@ impl OsdLine {
         self.at_end = None;
     }
 
-    /// Paint the line over `video`, `scale` times its usual size (which
-    /// follows the picture's height). A seek's line shows where playback
-    /// actually landed (a keyframe seek lands near, not on, the target)
-    /// once mpv has finished the seek. With `passing` off (the OSD turned
-    /// off) only the line at the end is shown.
+    /// Paint the line over `video` in `look`, `scale` times its usual size
+    /// (which follows the picture's height). A seek's line shows where
+    /// playback actually landed (a keyframe seek lands near, not on, the
+    /// target) once mpv has finished the seek. With `passing` off (the OSD
+    /// turned off) only the line at the end is shown.
     pub fn paint(
         &mut self,
         ctx: &egui::Context,
         video: Rect,
         state: &State,
+        look: &OsdStyle,
         scale: f32,
         passing: bool,
     ) {
@@ -64,7 +105,7 @@ impl OsdLine {
         }
         let (Some((osd, _)), Some(age)) = (&mut self.line, age) else {
             if let Some(osd) = &self.at_end {
-                paint_line(ctx, video, &osd.text(), scale, 1.0);
+                paint_line(ctx, video, &osd.text(), look, scale, 1.0);
             }
             return;
         };
@@ -84,7 +125,7 @@ impl OsdLine {
         } else {
             1.0
         };
-        paint_line(ctx, video, &osd.text(), scale, alpha);
+        paint_line(ctx, video, &osd.text(), look, scale, alpha);
         // Woken for the fade, then every few frames through it.
         let next = if age < SHOWN - FADE {
             SHOWN - FADE - age
@@ -96,7 +137,14 @@ impl OsdLine {
 }
 
 /// One line of the OSD over `video`, `alpha` of its colour.
-fn paint_line(ctx: &egui::Context, video: Rect, text: &str, scale: f32, alpha: f32) {
+fn paint_line(
+    ctx: &egui::Context,
+    video: Rect,
+    text: &str,
+    look: &OsdStyle,
+    scale: f32,
+    alpha: f32,
+) {
     let size = (video.height() / 26.0).clamp(15.0, 30.0) * scale;
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
@@ -104,27 +152,64 @@ fn paint_line(ctx: &egui::Context, video: Rect, text: &str, scale: f32, alpha: f
     ));
     let painter = painter.with_clip_rect(video);
     let pos = video.left_top() + vec2(size * 0.6, size * 0.45);
-    paint_text(&painter, pos, text, size, alpha);
+    paint_text(&painter, pos, text, size, look, alpha);
 }
 
-/// The OSD's `text` from `pos` (its top left corner) at `size` points,
-/// with its shadow: also the settings' preview.
-pub fn paint_text(painter: &egui::Painter, pos: egui::Pos2, text: &str, size: f32, alpha: f32) {
+/// The OSD's `text` from `pos` (its top left corner) at `size` points in
+/// `look`, `alpha` of its colours: also the settings' preview. The outline
+/// is the letters drawn round them on two rings, the shadow the same
+/// further down and right, in black.
+pub fn paint_text(
+    painter: &egui::Painter,
+    pos: egui::Pos2,
+    text: &str,
+    size: f32,
+    look: &OsdStyle,
+    alpha: f32,
+) {
     let font = FontId::new(size, style::osd_family());
-    let shadow = egui::Color32::from_black_alpha((200.0 * alpha) as u8);
-    for d in [
-        vec2(1.5, 1.5),
-        vec2(-1.0, 1.0),
-        vec2(1.0, -1.0),
-        vec2(-1.0, -1.0),
-    ] {
-        painter.text(pos + d, Align2::LEFT_TOP, text, font.clone(), shadow);
+    let galley = painter.layout_no_wrap(text.to_owned(), font, Color32::WHITE);
+    let draw = |offset: Vec2, color: Color32| {
+        painter.galley_with_override_text_color(pos + offset, galley.clone(), color);
+    };
+    let rgb = |[r, g, b]: [u8; 3]| Color32::from_rgb(r, g, b).gamma_multiply(alpha);
+    let unit = size / UNIT_SIZE;
+    let outline = look.outline as f32 * unit;
+    let ring = |radius: f32| -> Vec<Vec2> {
+        if radius <= 0.0 {
+            return Vec::new();
+        }
+        (0..16)
+            .map(|i| {
+                let a = i as f32 * std::f32::consts::TAU / 16.0;
+                vec2(a.cos(), a.sin()) * radius
+            })
+            .collect()
+    };
+    if look.boxed {
+        let [r, g, b] = look.outline_color;
+        let fill = Color32::from_rgba_unmultiplied(r, g, b, BOX_ALPHA).gamma_multiply(alpha);
+        let text_rect = Rect::from_min_size(pos, galley.size());
+        let margin = vec2(size * 0.25, size * 0.05) + Vec2::splat(outline);
+        painter.rect_filled(text_rect.expand2(margin), size * 0.15, fill);
+    } else {
+        if look.shadow > 0.0 {
+            let shadow = Color32::from_black_alpha(170).gamma_multiply(alpha);
+            let offset = Vec2::splat(look.shadow as f32 * unit);
+            for o in ring(outline) {
+                draw(offset + o, shadow);
+            }
+            draw(offset, shadow);
+        }
+        for radius in [outline, outline / 2.0] {
+            for o in ring(radius) {
+                draw(o, rgb(look.outline_color));
+            }
+        }
     }
-    painter.text(
-        pos,
-        Align2::LEFT_TOP,
-        text,
-        font,
-        style::OSD.gamma_multiply(alpha),
-    );
+    let letters = rgb(look.color);
+    draw(Vec2::ZERO, letters);
+    if look.bold {
+        draw(vec2(size * 0.035, 0.0), letters);
+    }
 }

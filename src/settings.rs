@@ -17,6 +17,7 @@ use crate::keymap::Keymap;
 use crate::playlist::Repeat;
 use crate::sub_style::{self, SubStyle};
 use crate::tracks::Likeness;
+use crate::ui::osd::{self, OsdStyle};
 use crate::ui::style::Accent;
 
 const LANGUAGE: &str = "language";
@@ -299,6 +300,12 @@ const EQ_PRESETS: &str = "eq_presets";
 const KEEP_ADJUST: &str = "keep_adjust";
 const ADJUST: &str = "adjust";
 const OSD: &str = "osd";
+const OSD_COLOR: &str = "osd_color";
+const OSD_OUTLINE_COLOR: &str = "osd_outline_color";
+const OSD_OUTLINE: &str = "osd_outline";
+const OSD_SHADOW: &str = "osd_shadow";
+const OSD_BOLD: &str = "osd_bold";
+const OSD_BOX: &str = "osd_box";
 const OSD_FONT: &str = "osd_font";
 const OSD_FONT_FILE: &str = "osd_font_file";
 const OSD_SCALE: &str = "osd_scale";
@@ -529,6 +536,8 @@ pub struct Settings {
     /// The OSD line is shown; off, only the line of a stop where the data
     /// ran out is.
     pub osd: bool,
+    /// How the OSD line looks.
+    pub osd_style: OsdStyle,
     /// The font family of the OSD line, empty for the interface's.
     pub osd_font: String,
     /// The file and the face number of `osd_font`.
@@ -607,6 +616,7 @@ impl Default for Settings {
             keep_adjust: false,
             adjust: crate::adjust::Adjust::default(),
             osd: true,
+            osd_style: OsdStyle::default(),
             osd_font: String::new(),
             osd_font_file: None,
             osd_scale: 100.0,
@@ -818,6 +828,20 @@ impl Settings {
                 .map(|v| crate::adjust::Adjust::from_text(&v))
                 .unwrap_or_default(),
             osd: flag(OSD, d.osd),
+            osd_style: OsdStyle {
+                color: get(OSD_COLOR)
+                    .as_deref()
+                    .and_then(sub_style::parse_hex)
+                    .unwrap_or(d.osd_style.color),
+                outline_color: get(OSD_OUTLINE_COLOR)
+                    .as_deref()
+                    .and_then(sub_style::parse_hex)
+                    .unwrap_or(d.osd_style.outline_color),
+                outline: number(OSD_OUTLINE, osd::OUTLINE_RANGE, d.osd_style.outline),
+                shadow: number(OSD_SHADOW, osd::SHADOW_RANGE, d.osd_style.shadow),
+                bold: flag(OSD_BOLD, d.osd_style.bold),
+                boxed: flag(OSD_BOX, d.osd_style.boxed),
+            },
             osd_font: osd_font
                 .as_ref()
                 .map(|(name, _)| name.clone())
@@ -949,6 +973,13 @@ impl Settings {
             }
         }
         storage.set_string(OSD, self.osd.to_string());
+        let look = &self.osd_style;
+        storage.set_string(OSD_COLOR, sub_style::hex(look.color));
+        storage.set_string(OSD_OUTLINE_COLOR, sub_style::hex(look.outline_color));
+        storage.set_string(OSD_OUTLINE, format!("{:.2}", look.outline));
+        storage.set_string(OSD_SHADOW, format!("{:.2}", look.shadow));
+        storage.set_string(OSD_BOLD, look.bold.to_string());
+        storage.set_string(OSD_BOX, look.boxed.to_string());
         storage.set_string(OSD_SCALE, format!("{:.0}", self.osd_scale));
         match self.window_normal {
             Some(r) => storage.set_string(
@@ -1080,6 +1111,14 @@ mod tests {
                 },
             }],
             osd: false,
+            osd_style: OsdStyle {
+                color: [255, 255, 255],
+                outline_color: [10, 20, 30],
+                outline: 2.5,
+                shadow: 0.0,
+                bold: true,
+                boxed: true,
+            },
             osd_font: "Segoe UI".into(),
             osd_font_file: Some((PathBuf::from(r"C:\Windows\Fonts\segoeui.ttf"), 0)),
             osd_scale: 80.0,

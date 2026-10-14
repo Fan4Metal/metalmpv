@@ -127,9 +127,10 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | General | Snap to the screen's centre | on | While the window is moved, its centre is drawn to the screen's centre, across or up and down, when it comes within 8 pixels of it; moved on, it comes away |
 | General | Add the folder's files | off | One opened file brings the media files of its folder into the playlist |
 | General | Channel logos | on | The pictures an IPTV list gives its channels are fetched from their sites for the visible rows of the playlist, only over HTTPS and never from the local network, at most 512 KB each, PNG or JPEG only, and kept for 30 days in the `logos` folder next to the settings |
-| General | On-screen messages: show messages | on | The yellow line in the top left corner after a seek, a volume change and the like; off, only the line saying where the data of an incomplete file ends is shown |
-| General | On-screen messages: font | default | A font installed in Windows, for the yellow line in the top left corner |
-| General | On-screen messages: size | 100 % | 50–200 % of the usual size, which follows the height of the picture; a sample line under it shows the font and the size |
+| General | On-screen messages: show messages | on | The line in the top left corner after a seek, a volume change and the like; off, only the line saying where the data of an incomplete file ends is shown |
+| General | On-screen messages: font | default | A font installed in Windows, for the line in the top left corner |
+| General | On-screen messages: size | 100 % | 50–200 % of the usual size, which follows the height of the picture |
+| General | On-screen messages: look | yellow letters, thin black outline, shadow | As for the subtitles: the colour of the letters and of the outline, the outline's thickness (0–4), the shadow (0–4), bold letters, and a slightly see-through box of the outline's colour in place of the outline, the thickness then being its margin; **Default** brings the yellow line back; a sample line under them shows the font, the size and the look |
 | Playback | Go on from where it stopped | on | A file of 5 minutes or more opened again starts where it was left, with a message on the screen; `Home` goes to the beginning. A file watched to its last 30 seconds, or stopped in its first 10 seconds, starts from the beginning. The last 200 files are remembered; **Forget all** clears the list |
 | Playback | Remember the recent files | on | The start screen lists the files played last; when off, none are kept and the list is cleared |
 | Playback | Left / Right | 10 s | The step of `←` and `→`, on keyframes |

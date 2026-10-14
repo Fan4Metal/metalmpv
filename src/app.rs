@@ -2270,8 +2270,9 @@ impl App {
             rect
         };
         let scale = (self.settings.osd_scale / 100.0) as f32;
+        let look = &self.settings.osd_style;
         self.osd
-            .paint(ui.ctx(), osd_rect, state, scale, self.settings.osd);
+            .paint(ui.ctx(), osd_rect, state, look, scale, self.settings.osd);
     }
 
     /// The black area without a picture: the start screen, the title of an
