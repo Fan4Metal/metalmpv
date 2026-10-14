@@ -2299,11 +2299,11 @@ mod tests {
                 match event {
                     Event::Property { id: 100, value } if !af_set => {
                         let tracks = tracks::from_value(&value);
-                        if let Some(n) =
-                            tracks::selected(&tracks, Kind::Audio).and_then(|t| t.channels)
+                        if let Some(n) = tracks::selected(&tracks, Kind::Audio)
+                            .and_then(|t| audio::voice_layout(t.layout.as_deref(), t.channels))
                         {
-                            let af = audio::filters(false, &audio::Equalizer::default(), Some(n));
-                            eprintln!("{n} channels, af: {af}");
+                            let af = audio::filters(false, &audio::Equalizer::default(), Some(&n));
+                            eprintln!("{n}, af: {af}");
                             mpv.set("af", &Value::Str(af));
                             af_set = true;
                         }

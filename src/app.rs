@@ -85,9 +85,10 @@ pub struct App {
     tracks_button: Option<egui::Rect>,
     /// The audio filters mpv has (`App::sync_audio_filters`).
     af_applied: String,
-    /// The channels the voice's filter was made for: kept while a file
-    /// loads (no tracks yet), else it went and came back with each file.
-    af_voice: Option<i64>,
+    /// The channel layout the voice's filter was made for: kept while a
+    /// file loads (no tracks yet), else it went and came back with each
+    /// file.
+    af_voice: Option<String>,
     /// The pictures of IPTV channels (`logos.rs`).
     logos: crate::logos::Logos,
     adjust: Adjust,
@@ -556,12 +557,17 @@ impl App {
         let voice = if !self.settings.voice_boost {
             None
         } else if state.tracks.is_empty() {
-            self.af_voice
+            self.af_voice.clone()
         } else {
-            tracks::selected(&state.tracks, Kind::Audio).and_then(|t| t.channels)
+            tracks::selected(&state.tracks, Kind::Audio)
+                .and_then(|t| crate::audio::voice_layout(t.layout.as_deref(), t.channels))
         };
+        let af = crate::audio::filters(
+            self.settings.normalize,
+            &self.settings.equalizer,
+            voice.as_deref(),
+        );
         self.af_voice = voice;
-        let af = crate::audio::filters(self.settings.normalize, &self.settings.equalizer, voice);
         if af != self.af_applied {
             player.set_audio_filters(&af);
             self.af_applied = af;

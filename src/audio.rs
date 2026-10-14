@@ -161,35 +161,62 @@ pub fn band_label(hz: u32) -> String {
 /// How much the centre channel is raised to make speech clearer (+4 dB).
 const CENTRE_GAIN: f64 = 1.6;
 
-/// The filter that makes speech clearer in a track of `channels`: stereo
+/// mpv's names of the layouts whose third channel is the centre (FL, FR,
+/// FC, …); others name it elsewhere or not at all (`5.1(alsa)`, `quad`,
+/// `6.0(front)`, `2.1`).
+const CENTRE_THIRD: [&str; 18] = [
+    "3.0",
+    "3.1",
+    "4.0",
+    "4.1",
+    "5.0",
+    "5.0(side)",
+    "5.1",
+    "5.1(side)",
+    "6.0",
+    "6.1",
+    "6.1(back)",
+    "7.0",
+    "7.0(front)",
+    "7.1",
+    "7.1(wide)",
+    "7.1(wide-side)",
+    "hexagonal",
+    "octagonal",
+];
+
+/// The filter that makes speech clearer in a track of channel `layout`
+/// (mpv's name, `5.1(side)`, or its speakers, `fl-fr-fc-lfe`): stereo
 /// through FFmpeg's `dialoguenhance` (it finds the voice common to both
 /// sides and puts it in a centre, which the device's mix brings back),
-/// five channels and more by raising the centre (third in FFmpeg's order:
-/// FL, FR, FC, …). `None` for mono, where the voice is all there is, and
-/// for layouts whose third channel is not the centre (2.1).
-pub fn voice_filter(channels: i64) -> Option<String> {
-    match channels {
-        2 => Some("lavfi=[dialoguenhance]".to_owned()),
-        n if n >= 5 => {
-            let each: Vec<String> = (0..n)
-                .map(|i| {
-                    if i == 2 {
-                        format!("val(2)*{CENTRE_GAIN}")
-                    } else {
-                        format!("val({i})")
-                    }
-                })
-                .collect();
-            Some(format!("lavfi=[aeval={}:c=same]", each.join("|")))
-        }
-        _ => None,
+/// a layout with a centre third by raising that channel, whatever the
+/// count the decoder gives (one expression for every channel: a list of
+/// one per channel failed when the count differed from the track's).
+/// `None` for mono, where the voice is all there is, and for layouts
+/// without a centre third (an AC-3 2/2.1 has the LFE there).
+pub fn voice_filter(layout: &str) -> Option<String> {
+    let speakers: Vec<&str> = layout.split('-').collect();
+    if layout == "stereo" || speakers == ["fl", "fr"] {
+        return Some("lavfi=[dialoguenhance]".to_owned());
     }
+    let centre = CENTRE_THIRD.contains(&layout) || speakers.get(2) == Some(&"fc");
+    centre.then(|| format!("lavfi=[aeval=val(ch)*if(eq(ch\\,2)\\,{CENTRE_GAIN}\\,1):c=same]"))
 }
 
-/// mpv's `af`: the voice's filter when `voice` gives the channels of the
-/// track playing ([`voice_filter`]), the equalizer's bands that are not
+/// The layout a track's voice filter is made for: mpv's, else one its
+/// channel count names.
+pub fn voice_layout(layout: Option<&str>, channels: Option<i64>) -> Option<String> {
+    layout.map(str::to_owned).or_else(|| match channels {
+        Some(1) => Some("mono".to_owned()),
+        Some(2) => Some("stereo".to_owned()),
+        _ => None,
+    })
+}
+
+/// mpv's `af`: the voice's filter when `voice` gives the channel layout of
+/// the track playing ([`voice_filter`]), the equalizer's bands that are not
 /// flat (one graph), then the normalization (which evens out what the others raised).
-pub fn filters(normalize: bool, eq: &Equalizer, voice: Option<i64>) -> String {
+pub fn filters(normalize: bool, eq: &Equalizer, voice: Option<&str>) -> String {
     let mut af: Vec<String> = Vec::new();
     if let Some(filter) = voice.and_then(voice_filter) {
         af.push(filter);
@@ -451,16 +478,28 @@ mod tests {
 
     #[test]
     fn voice_filters() {
-        assert_eq!(voice_filter(1), None);
-        assert_eq!(voice_filter(3), None);
-        assert_eq!(voice_filter(2).as_deref(), Some("lavfi=[dialoguenhance]"));
-        assert_eq!(
-            voice_filter(6).as_deref(),
-            Some("lavfi=[aeval=val(0)|val(1)|val(2)*1.6|val(3)|val(4)|val(5):c=same]")
-        );
+        let centre = "lavfi=[aeval=val(ch)*if(eq(ch\\,2)\\,1.6\\,1):c=same]";
+        assert_eq!(voice_filter("mono"), None);
+        assert_eq!(voice_filter("2.1"), None);
+        assert_eq!(voice_filter("quad"), None);
+        assert_eq!(voice_filter("5.1(alsa)"), None);
+        // AC-3 2/2.1: the LFE third.
+        assert_eq!(voice_filter("fl-fr-lfe-sl-sr"), None);
+        for layout in ["stereo", "fl-fr"] {
+            assert_eq!(
+                voice_filter(layout).as_deref(),
+                Some("lavfi=[dialoguenhance]")
+            );
+        }
+        for layout in ["5.1", "5.1(side)", "7.1", "fl-fr-fc-lfe-sl-sr", "3.0"] {
+            assert_eq!(voice_filter(layout).as_deref(), Some(centre), "{layout}");
+        }
+        assert_eq!(voice_layout(None, Some(2)).as_deref(), Some("stereo"));
+        assert_eq!(voice_layout(Some("5.1"), Some(6)).as_deref(), Some("5.1"));
+        assert_eq!(voice_layout(None, Some(6)), None);
         let eq = Equalizer::default();
         assert_eq!(
-            filters(true, &eq, Some(2)),
+            filters(true, &eq, Some("stereo")),
             format!("lavfi=[dialoguenhance],{NORMALIZE_FILTER}")
         );
     }
