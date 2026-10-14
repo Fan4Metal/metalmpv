@@ -124,6 +124,9 @@ pub struct Now<'a> {
     pub audio: Option<&'a crate::tracks::Track>,
     pub audio_out: Option<&'a crate::player::AudioOut>,
     pub audio_bitrate: Option<f64>,
+    /// Clearer speech is on: in stereo its filter adds a centre, and the
+    /// device gets three channels.
+    pub voice_boost: bool,
 }
 
 impl VideoPanel {
@@ -640,10 +643,17 @@ fn now_playing(ui: &mut Ui, now: &Now<'_>) {
             let layout = out.and_then(|o| o.channels.as_deref());
             arrow(ui, 50.0 * scale);
             let name = layout.map_or_else(|| n.to_string(), str::to_owned);
-            speakers(ui, n, layout, scale).on_hover_text(tr!(
-                format!("Mixed to {name} for the device (the Channels setting)"),
-                format!("Сводится в {name} для устройства (настройка «Каналы»)")
-            ));
+            speakers(ui, n, layout, scale).on_hover_text(if now.voice_boost && channels == 2 {
+                tr!(
+                    format!("{name} for the device: Clearer speech adds a centre"),
+                    format!("{name} для устройства: «Усилить речь» добавляет центр")
+                )
+            } else {
+                tr!(
+                    format!("Mixed to {name} for the device (the Channels setting)"),
+                    format!("Сводится в {name} для устройства (настройка «Каналы»)")
+                )
+            });
         }
         ui.add_space(8.0);
         ui.vertical(|ui| {
@@ -1349,7 +1359,10 @@ fn rail(ui: &mut Ui, value: &mut f64, spec: &Spec, width: f32) -> egui::Response
         && let Some(p) = response.interact_pointer_pos()
     {
         let t = f64::from(((p.x - left) / (right - left)).clamp(0.0, 1.0));
+        // To the spec's decimals as well: 33 × 0.05 is 1.6500000000000001,
+        // which no longer matched a ready look's 1.65.
         let v = ((lo + t * (hi - lo)) / spec.step).round() * spec.step;
+        let v = egui::emath::round_to_decimals(v, spec.decimals);
         if (v - *value).abs() > 1e-9 {
             *value = v;
             response.mark_changed();

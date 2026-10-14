@@ -3197,6 +3197,9 @@ impl eframe::App for App {
             self.fullscreen_controls(&ctx, &state, &title, &mut cmds);
         }
 
+        // Before the settings too: their Reset sets these, and no flag of
+        // `Changed` tells.
+        let layout_before = (self.settings.sub_ass_override, self.settings.sub_margins);
         let changed = self.settings_dialog.show(
             &ctx,
             &mut self.settings,
@@ -3312,8 +3315,8 @@ impl eframe::App for App {
         cmds.extend(info_cmds);
         let before = self.adjust.clone();
         let subs_before = self.settings.sub.clone();
-        let layout_before = (self.settings.sub_ass_override, self.settings.sub_margins);
         let output_before = (self.settings.audio_channels, self.settings.volume_max);
+        let voice_boost = self.settings.voice_boost;
         let kept = ui::picture::Kept {
             audio_device: &mut self.settings.audio_device,
             devices: &state.audio_devices,
@@ -3341,6 +3344,7 @@ impl eframe::App for App {
                 audio: tracks::selected(&state.tracks, Kind::Audio),
                 audio_out: state.live.audio_out.as_ref(),
                 audio_bitrate: state.live.audio_bitrate,
+                voice_boost,
             },
         );
         cmds.extend(panel_cmds);
