@@ -1011,6 +1011,17 @@ impl Player {
         self.data_end_at = None;
     }
 
+    /// Where the file's data ran out, while playback stays there (mpv's
+    /// position then may be the duration).
+    pub fn data_end_at(&self) -> Option<f64> {
+        self.data_end_at.filter(|_| self.state.eof)
+    }
+
+    /// The end of the data taken as the file's end: Play starts it again.
+    pub fn forget_data_end(&mut self) {
+        self.data_end_at = None;
+    }
+
     /// Pause or go on; at the end of the file, play it again from the
     /// start, or where its data ran out if it stopped there.
     pub fn toggle_pause(&mut self) {

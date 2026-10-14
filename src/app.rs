@@ -462,15 +462,18 @@ impl App {
         if !resume && !tracks {
             return;
         }
-        let Some(state) = self.player.as_ref().map(|p| &p.state) else {
+        let Some(player) = self.player.as_ref() else {
             return;
         };
+        let state = &player.state;
         // Not while a file is still loading: its tracks are not known yet.
         if state.idle || state.seeking || state.tracks.is_empty() {
             return;
         }
-        let (Some(path), Some(time), Some(duration)) = (&state.path, state.time, state.duration)
-        else {
+        // Stopped where the data ran out: there, not mpv's position (an MP4
+        // gives the duration after a seek past the data).
+        let time = player.data_end_at().or(state.time);
+        let (Some(path), Some(time), Some(duration)) = (&state.path, time, state.duration) else {
             return;
         };
         let choice = tracks::of_kind(&state.tracks, Kind::Audio).len() > 1
@@ -1867,6 +1870,10 @@ impl App {
                     });
                 }
                 Happened::Eof | Happened::NoData(_) => {
+                    // Taken as the end: Play starts the file again.
+                    if let Some(player) = &mut self.player {
+                        player.forget_data_end();
+                    }
                     if let Some(i) = self.playlist.next_in(self.settings.repeat) {
                         self.play(i);
                     }
