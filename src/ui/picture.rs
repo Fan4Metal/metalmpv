@@ -20,7 +20,7 @@ use crate::sub_style::{self, SubStyle};
 /// The width of the window's content (egui's `min_width`/`max_width` are
 /// the window's, with its frame: content wider than that pushed the frame
 /// out past the title bar).
-const WIDTH: f32 = 360.0;
+const WIDTH: f32 = 400.0;
 /// The width of the labels' column.
 const LABEL: f32 = 110.0;
 /// The width of a slider's value.
@@ -32,7 +32,7 @@ const GAP: f32 = 6.0;
 const CORNER: f32 = 12.0;
 
 /// The panel's tab.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Tab {
     #[default]
     Video,
@@ -69,8 +69,8 @@ impl VideoPanel {
     /// Draw the panel while it is open, editing `adjust` and `kept` in
     /// place; the commands of its buttons. It stands over `button` (the
     /// control bar's, where it was drawn this frame), its right edge on the
-    /// button's, else at the window's bottom right corner; it scrolls when
-    /// the room above is short. A press outside it and its button closes
+    /// button's, else at the window's bottom right corner; shown whole,
+    /// kept on the window when the room above is short. A press outside it and its button closes
     /// it, unless a popup of its own is open (a list, the colour picker):
     /// the press is that one's. `has_video`: a frame can be saved.
     pub fn show(
@@ -109,8 +109,6 @@ impl VideoPanel {
         let frame = egui::Frame::popup(&ctx.style_of(egui::Theme::Dark))
             .fill(style::PANEL_BG)
             .inner_margin(12);
-        // The tabs, the separator and the frame take this much of it.
-        let room = (at.y - screen.top() - 72.0).max(160.0);
         let shown = egui::Area::new(egui::Id::new("video_panel"))
             .order(egui::Order::Foreground)
             .pivot(egui::Align2::RIGHT_BOTTOM)
@@ -129,15 +127,11 @@ impl VideoPanel {
                         );
                     });
                     ui.separator();
-                    egui::ScrollArea::vertical()
-                        .id_salt(("video_panel", self.tab))
-                        .max_height(room)
-                        .auto_shrink([false, true])
-                        .show(ui, |ui| match self.tab {
-                            Tab::Video => video_tab(ui, adjust, has_video, &mut out),
-                            Tab::Sound => sound_tab(ui, kept.equalizer, kept.normalize),
-                            Tab::Subtitles => subtitles_tab(ui, kept.subs),
-                        });
+                    match self.tab {
+                        Tab::Video => video_tab(ui, adjust, has_video, &mut out),
+                        Tab::Sound => sound_tab(ui, kept.equalizer, kept.normalize),
+                        Tab::Subtitles => subtitles_tab(ui, kept.subs),
+                    }
                 });
             });
         self.rect = Some(shown.response.rect);
@@ -217,9 +211,14 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, has_video: bool, out: &mut Vec<Cm
     );
     let [left, right] = pair(
         ui,
-        egui::Button::new(tr!("Turn left", "Повернуть влево")),
-        egui::Button::new(tr!("Turn right", "Повернуть вправо")),
-        true,
+        |ui, size| {
+            let turn = |p: &_, o, s, c| icons::turn(p, o, s, c, false);
+            icon_button(ui, turn, tr!("Turn left", "Повернуть влево"), size, |b| b)
+        },
+        |ui, size| {
+            let turn = |p: &_, o, s, c| icons::turn(p, o, s, c, true);
+            icon_button(ui, turn, tr!("Turn right", "Повернуть вправо"), size, |b| b)
+        },
     );
     if left.clicked() {
         adjust.turn(-1);
@@ -227,11 +226,19 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, has_video: bool, out: &mut Vec<Cm
     if right.clicked() {
         adjust.turn(1);
     }
+    let (flipped, mirrored) = (adjust.flip, adjust.mirror);
     let [flip, mirror] = pair(
         ui,
-        egui::Button::new(tr!("Upside down", "Перевернуть вертикально")).selected(adjust.flip),
-        egui::Button::new(tr!("Mirror", "Отразить зеркально")).selected(adjust.mirror),
-        true,
+        |ui, size| {
+            let flip = |p: &_, o, s, c| icons::flip(p, o, s, c, false);
+            let text = tr!("Upside down", "Перевернуть вертикально");
+            icon_button(ui, flip, text, size, |b| b.selected(flipped))
+        },
+        |ui, size| {
+            let mirror = |p: &_, o, s, c| icons::flip(p, o, s, c, true);
+            let text = tr!("Mirror", "Отразить зеркально");
+            icon_button(ui, mirror, text, size, |b| b.selected(mirrored))
+        },
     );
     if flip.clicked() {
         adjust.flip = !adjust.flip;
@@ -243,10 +250,19 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, has_video: bool, out: &mut Vec<Cm
     heading(ui, tr!("Frame", "Кадр"));
     let [save, folder] = pair(
         ui,
-        egui::Button::new(tr!("Save the frame", "Сохранить кадр"))
-            .shortcut_text(crate::keymap::shortcut(Cmd::SaveFrame)),
-        egui::Button::new(tr!("Open the folder", "Открыть папку")),
-        has_video,
+        |ui, size| {
+            ui.add_enabled_ui(has_video, |ui| {
+                let text = tr!("Save the frame", "Сохранить кадр");
+                icon_button(ui, icons::camera, text, size, |b| {
+                    b.shortcut_text(crate::keymap::shortcut(Cmd::SaveFrame))
+                })
+            })
+            .inner
+        },
+        |ui, size| {
+            let text = tr!("Open the folder", "Открыть папку");
+            icon_button(ui, icons::folder, text, size, |b| b)
+        },
     );
     if save
         .on_hover_text(tr!(
@@ -262,13 +278,7 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, has_video: bool, out: &mut Vec<Cm
     }
 
     ui.add_space(10.0);
-    if ui
-        .add_enabled(
-            !adjust.is_default(),
-            egui::Button::new(tr!("Reset all", "Сбросить всё")),
-        )
-        .clicked()
-    {
+    if reset_all(ui, !adjust.is_default()) {
         *adjust = Adjust::default();
     }
     ui.add_space(2.0);
@@ -342,13 +352,12 @@ fn sound_tab(ui: &mut Ui, eq: &mut Equalizer, normalize: &mut bool) {
     });
     ui.add_space(6.0);
     ui.horizontal(|ui| {
-        if ui
-            .add_enabled(
-                eq.gains != [0; 10],
-                egui::Button::new(tr!("Flat", "Выровнять")),
-            )
-            .clicked()
-        {
+        let flat = ui
+            .add_enabled_ui(eq.gains != [0; 10], |ui| {
+                icon_button(ui, icons::flat, tr!("Flat", "Выровнять"), None, |b| b)
+            })
+            .inner;
+        if flat.clicked() {
             eq.gains = [0; 10];
         }
         ui.label(
@@ -467,13 +476,7 @@ fn subtitles_tab(ui: &mut Ui, style: &mut SubStyle) {
     );
 
     ui.add_space(10.0);
-    if ui
-        .add_enabled(
-            *style != d,
-            egui::Button::new(tr!("Reset all", "Сбросить всё")),
-        )
-        .clicked()
-    {
+    if reset_all(ui, *style != d) {
         *style = d;
     }
     ui.add_space(2.0);
@@ -556,23 +559,69 @@ fn heading_with(ui: &mut Ui, text: &str, note: &str) {
     ui.add_space(2.0);
 }
 
-/// Two buttons side by side, each half the panel's width; the first only
-/// clickable while `first_enabled`.
+/// Two buttons side by side, each half the panel's width: `a` and `b` add
+/// them at the size given.
 fn pair(
     ui: &mut Ui,
-    a: egui::Button<'_>,
-    b: egui::Button<'_>,
-    first_enabled: bool,
+    a: impl FnOnce(&mut Ui, Option<egui::Vec2>) -> egui::Response,
+    b: impl FnOnce(&mut Ui, Option<egui::Vec2>) -> egui::Response,
 ) -> [egui::Response; 2] {
     ui.horizontal(|ui| {
         let gap = ui.spacing().item_spacing.x;
-        let size = vec2((WIDTH - gap) / 2.0, 26.0);
-        let a = ui
-            .add_enabled_ui(first_enabled, |ui| ui.add_sized(size, a))
-            .inner;
-        [a, ui.add_sized(size, b)]
+        let size = Some(vec2((WIDTH - gap) / 2.0, 26.0));
+        let a = a(ui, size);
+        [a, b(ui, size)]
     })
     .inner
+}
+
+/// A button's icon (`icons.rs`): the painter, the centre, the half width,
+/// the colour.
+type Icon = fn(&egui::Painter, egui::Pos2, f32, egui::Color32);
+
+/// The side of a button's icon.
+const ICON: f32 = 16.0;
+
+/// A button with `icon` before its text, its content centred in `size`
+/// when given; `setup` adds to the button (selected, a shortcut). The icon
+/// takes the text's colour, faded with it when the button is disabled.
+fn icon_button(
+    ui: &mut Ui,
+    icon: Icon,
+    text: &str,
+    size: Option<egui::Vec2>,
+    setup: impl FnOnce(egui::Button<'_>) -> egui::Button<'_>,
+) -> egui::Response {
+    let id = ui.id().with(("icon", text));
+    let button = setup(egui::Button::new((
+        egui::Atom::custom(id, vec2(ICON, ICON)),
+        text,
+    )));
+    // The content is aligned by the layout it is put in.
+    let shown = match size {
+        Some(size) => {
+            let centred = egui::Layout::left_to_right(egui::Align::Center)
+                .with_main_align(egui::Align::Center);
+            ui.allocate_ui_with_layout(size, centred, |ui| button.min_size(size).atom_ui(ui))
+                .inner
+        }
+        None => button.atom_ui(ui),
+    };
+    if let Some(rect) = shown.rect(id) {
+        let color = ui.style().interact(&shown.response).text_color();
+        icon(ui.painter(), rect.center(), ICON * 0.4, color);
+    }
+    shown.response
+}
+
+/// Reset all, with the round arrow; whether it was clicked.
+fn reset_all(ui: &mut Ui, enabled: bool) -> bool {
+    ui.add_enabled_ui(enabled, |ui| {
+        let text = tr!("Reset all", "Сбросить всё");
+        icon_button(ui, icons::reset, text, None, |b| b)
+    })
+    .inner
+    .clicked()
 }
 
 /// A row: the label in a fixed-width column, then what `add` adds.

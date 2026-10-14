@@ -401,6 +401,97 @@ pub fn reset(p: &Painter, o: Pos2, s: f32, c: Color32) {
     ));
 }
 
+/// A round arrow round a small picture: turn it, to the right
+/// (clockwise) or to the left.
+pub fn turn(p: &Painter, o: Pos2, s: f32, c: Color32, clockwise: bool) {
+    let stroke = Stroke::new(1.4, c);
+    let side = if clockwise { -1.0 } else { 1.0 };
+    let r = 0.9 * s;
+    // As `reset`, three quarters of a turn ending on the right with the
+    // arrow up; mirrored for the other way.
+    let points: Vec<Pos2> = (0..=18)
+        .map(|i| {
+            let a = (270.0 - 15.0 * i as f32).to_radians();
+            o + vec2(a.cos() * side, a.sin()) * r
+        })
+        .collect();
+    let tip = o + vec2(r * side, -0.1 * s);
+    p.add(Shape::line(points, stroke));
+    p.add(Shape::line(
+        vec![
+            tip + vec2(-0.4 * side, 0.4) * s,
+            tip,
+            tip + vec2(0.4 * side, 0.4) * s,
+        ],
+        stroke,
+    ));
+    let picture = egui::Rect::from_center_size(o, vec2(0.75, 0.5) * s);
+    p.rect_filled(picture, 1.0, c);
+}
+
+/// A triangle and its mirror image across a dashed line: turned upside
+/// down (the line across), or `sideways` mirrored (the line down).
+pub fn flip(p: &Painter, o: Pos2, s: f32, c: Color32, sideways: bool) {
+    // Drawn upside down: the line across, the triangles above and below.
+    let at = |x: f32, y: f32| {
+        if sideways {
+            o + vec2(y, x) * s
+        } else {
+            o + vec2(x, y) * s
+        }
+    };
+    for x in [-1.0, -0.45, 0.1, 0.65] {
+        p.line_segment([at(x, 0.0), at(x + 0.3, 0.0)], Stroke::new(1.2, c));
+    }
+    let above = [at(-0.7, -0.25), at(0.7, -0.25), at(0.0, -1.0)];
+    p.add(Shape::closed_line(above.to_vec(), Stroke::new(1.3, c)));
+    tri(p, [at(-0.7, 0.25), at(0.7, 0.25), at(0.0, 1.0)], c);
+}
+
+/// A camera: save the frame.
+pub fn camera(p: &Painter, o: Pos2, s: f32, c: Color32) {
+    let stroke = Stroke::new(1.4, c);
+    let at = |x: f32, y: f32| o + vec2(x, y) * s;
+    let body = egui::Rect::from_min_max(at(-1.0, -0.5), at(1.0, 0.85));
+    p.rect_stroke(body, 2.0, stroke, egui::StrokeKind::Middle);
+    p.add(Shape::line(
+        vec![
+            at(-0.45, -0.5),
+            at(-0.25, -0.85),
+            at(0.25, -0.85),
+            at(0.45, -0.5),
+        ],
+        stroke,
+    ));
+    p.circle_stroke(at(0.0, 0.18), 0.38 * s, stroke);
+}
+
+/// A folder: open the folder.
+pub fn folder(p: &Painter, o: Pos2, s: f32, c: Color32) {
+    let at = |x: f32, y: f32| o + vec2(x, y) * s;
+    p.add(Shape::closed_line(
+        vec![
+            at(-1.0, -0.75),
+            at(-0.3, -0.75),
+            at(-0.1, -0.5),
+            at(1.0, -0.5),
+            at(1.0, 0.8),
+            at(-1.0, 0.8),
+        ],
+        Stroke::new(1.4, c),
+    ));
+}
+
+/// Three upright sliders with their knobs on one line: the equalizer flat.
+pub fn flat(p: &Painter, o: Pos2, s: f32, c: Color32) {
+    let stroke = Stroke::new(1.4, c);
+    let at = |x: f32, y: f32| o + vec2(x, y) * s;
+    for x in [-0.65, 0.0, 0.65] {
+        p.line_segment([at(x, -1.0), at(x, 1.0)], stroke);
+        p.circle(at(x, 0.0), 0.28 * s, c, Stroke::NONE);
+    }
+}
+
 /// A tick: done.
 pub fn check(p: &Painter, o: Pos2, s: f32, c: Color32) {
     p.add(Shape::line(
