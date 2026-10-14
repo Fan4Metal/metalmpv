@@ -250,7 +250,7 @@ impl Repeat {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Playlist {
     items: Vec<PathBuf>,
     /// The entry loaded in the player.
@@ -313,11 +313,18 @@ impl Playlist {
 
     /// Make entry `index` the current one; its path, to be loaded.
     pub fn set_current(&mut self, index: usize) -> Option<&Path> {
-        let path = self.items.get(index)?;
+        if index >= self.items.len() {
+            return None;
+        }
         self.current = Some(index);
-        self.gone = None;
+        // What the list said of the playing entry taken out is let go now.
+        if let Some(gone) = self.gone.take()
+            && !self.items.contains(&gone)
+        {
+            self.channels.remove(&gone);
+        }
         self.after_gone = None;
-        Some(path)
+        self.items.get(index).map(PathBuf::as_path)
     }
 
     /// Replace the list with `paths` (folders give their media files);
@@ -396,12 +403,16 @@ impl Playlist {
         }
         let removed = self.items.remove(index);
         if self.current == Some(index) {
+            // Its title is still the window's while it plays.
             self.gone = Some(removed);
             self.after_gone = Some(index);
-        } else if let Some(after) = self.after_gone
-            && after > index
-        {
-            self.after_gone = Some(after - 1);
+        } else {
+            if let Some(after) = self.after_gone
+                && after > index
+            {
+                self.after_gone = Some(after - 1);
+            }
+            self.channels.remove(&removed);
         }
         let shift = |i: Option<usize>| match i {
             Some(i) if i == index => None,
@@ -426,10 +437,13 @@ impl Playlist {
     pub fn sort(&mut self) {
         let current = self.current_path().map(Path::to_path_buf);
         let selected = self.selected.and_then(|i| self.items.get(i)).cloned();
-        let mut items = std::mem::take(&mut self.items);
-        let name = |p: &Path| self.title(p).to_lowercase();
-        items.sort_by(|a, b| natural_cmp(&name(a), &name(b)).then_with(|| a.cmp(b)));
-        self.items = items;
+        // The names made once, not at each comparison (lists of thousands).
+        let mut keyed: Vec<(String, PathBuf)> = std::mem::take(&mut self.items)
+            .into_iter()
+            .map(|p| (self.title(&p).to_lowercase(), p))
+            .collect();
+        keyed.sort_by(|(ka, a), (kb, b)| natural_cmp(ka, kb).then_with(|| a.cmp(b)));
+        self.items = keyed.into_iter().map(|(_, p)| p).collect();
         let find = |p: Option<PathBuf>| p.and_then(|p| self.items.iter().position(|i| *i == p));
         self.current = find(current);
         // The place of a playing entry taken out means nothing now.
@@ -522,7 +536,8 @@ pub fn folder_of(file: &Path) -> Vec<PathBuf> {
 fn expand(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for path in paths {
-        if path.is_dir() {
+        // An address asks nothing of the disk (an IPTV list has thousands).
+        if !is_url(&path) && path.is_dir() {
             out.extend(media_in(&path));
         } else {
             out.push(path);
@@ -664,6 +679,17 @@ mod tests {
                 .collect(),
         );
         assert_eq!(list.title(&list.items()[0].clone()), "Один, канал");
+        // A channel taken out of the list is forgotten; the one playing
+        // only once another plays.
+        let mut cut = list.clone();
+        let (first, second) = (cut.items()[0].clone(), cut.items()[1].clone());
+        cut.remove(1);
+        assert_eq!(cut.channel(&second), None);
+        cut.remove(0);
+        assert_eq!(cut.title(&first), "Один, канал");
+        cut.add(vec![second.clone()]);
+        cut.set_current(0);
+        assert_eq!(cut.channel(&first), None);
         // Written back and read again, the same.
         let again = m3u_entries(&m3u_text(&list), Path::new(""));
         assert_eq!(again[0].1.as_ref(), Some(&one));
