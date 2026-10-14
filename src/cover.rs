@@ -229,19 +229,29 @@ fn mp4_cover(path: &Path) -> Option<Vec<u8>> {
     r.seek(SeekFrom::Start(children)).ok()?;
     let ilst_end = mp4_child(&mut r, meta_end, b"ilst")?;
     let covr_end = mp4_child(&mut r, ilst_end, b"covr")?;
-    // Its data boxes: a type (13 JPEG, 14 PNG), a locale, the picture.
+    // Its data boxes: a type (13 JPEG, 14 PNG), a locale, the picture; the
+    // first that can be shown (a BMP or GIF, or one too large, is passed).
     loop {
         let data_end = mp4_child(&mut r, covr_end, b"data")?;
         let size = data_end - r.stream_position().ok()?;
         if size > 8 {
             r.seek_relative(8).ok()?;
-            let bytes = ebml::read_bytes(&mut r, size - 8, MAX_BYTES)?;
-            if image::guess_format(&bytes).is_ok() {
+            if let Some(bytes) = ebml::read_bytes(&mut r, size - 8, MAX_BYTES)
+                && shown(&bytes)
+            {
                 return Some(bytes);
             }
         }
         r.seek(SeekFrom::Start(data_end)).ok()?;
     }
+}
+
+/// Whether `bytes` are a picture `decode` takes: JPEG or PNG.
+fn shown(bytes: &[u8]) -> bool {
+    matches!(
+        image::guess_format(bytes),
+        Ok(image::ImageFormat::Jpeg | image::ImageFormat::Png)
+    )
 }
 
 // --- Matroska -----------------------------------------------------------
@@ -295,11 +305,14 @@ fn attachment(r: &mut (impl Read + Seek), size: u64) -> Option<Vec<u8>> {
                 FILE_MIME_TYPE => {
                     mime = String::from_utf8_lossy(&ebml::read_bytes(r, size, 256)?).into();
                 }
+                // The name usually comes first; when it does not, the data
+                // is read to be ranked after.
                 FILE_DATA
                     if (mime.starts_with("image/") || mime.is_empty())
-                        && best
-                            .as_ref()
-                            .is_none_or(|(b, _)| rank(&name.to_lowercase()) < *b) =>
+                        && (name.is_empty()
+                            || best
+                                .as_ref()
+                                .is_none_or(|(b, _)| rank(&name.to_lowercase()) < *b)) =>
                 {
                     data = ebml::read_bytes(r, size, MAX_BYTES);
                     if data.is_none() {
@@ -310,8 +323,10 @@ fn attachment(r: &mut (impl Read + Seek), size: u64) -> Option<Vec<u8>> {
             }
         }
         let rank = rank(&name.to_lowercase());
+        // Only a picture that can be shown: a WebP cover would have taken
+        // the place of a small JPEG one and shown nothing.
         if let Some(data) = data
-            && (mime.starts_with("image/") || image::guess_format(&data).is_ok())
+            && shown(&data)
             && best.as_ref().is_none_or(|(b, _)| rank < *b)
         {
             best = Some((rank, data));
@@ -385,6 +400,15 @@ mod tests {
         assert_eq!(cover.size, [3, 2]);
         assert_eq!(cover.source, Source::Embedded);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_cover_that_cannot_be_shown_is_passed() {
+        let picture = png();
+        let mut files = attached("cover.webp", "image/webp", b"RIFF\0\0\0\0WEBPVP8 ");
+        files.extend(attached("small_cover.png", "image/png", &picture));
+        let mut r = std::io::Cursor::new(&files);
+        assert_eq!(attachment(&mut r, files.len() as u64), Some(picture));
     }
 
     #[test]
