@@ -597,6 +597,23 @@ fn on_top_hint() -> String {
     }
 }
 
+/// The hint of the Resume row, with the key that goes to the start.
+fn resume_hint() -> String {
+    let text = tr!(
+        "A file of 5 minutes or more opened again starts where it was left.",
+        "Файл длиной от 5 минут при повторном открытии начинается с того места, где остановился."
+    );
+    let key = crate::keymap::shortcut(crate::input::Cmd::Start);
+    if key.is_empty() {
+        text.to_owned()
+    } else {
+        tr!(
+            format!("{text} {key} goes to the beginning."),
+            format!("{text} {key} переходит к началу.")
+        )
+    }
+}
+
 /// The hint of the layout row: what each one shows and the keys.
 fn interface_hint() -> String {
     let mut hint = tr!(
@@ -779,10 +796,7 @@ fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                     "Go on from where it stopped",
                     "Продолжать с места остановки"
                 ),
-                Some(tr!(
-                    "A file of 5 minutes or more opened again starts where it was left; Home goes to the beginning.",
-                    "Файл длиной от 5 минут при повторном открытии начинается с того места, где остановился; Home переходит к началу."
-                )),
+                Some(&resume_hint()),
                 50.0,
                 |ui| switch(ui, &mut settings.resume_playback),
             );

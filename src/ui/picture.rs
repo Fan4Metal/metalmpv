@@ -561,9 +561,13 @@ fn sound_tab(
         ui,
         tr!("Delay", "Задержка"),
         &mut delay,
-        &Spec::delay(tr!(
-            "Later when positive. Also Ctrl+= and Ctrl+-; not kept between runs",
-            "Положительная — звук позже. Также Ctrl+= и Ctrl+-; между запусками не запоминается"
+        &Spec::delay(&delay_tip(
+            tr!(
+                "Later when positive; not kept between runs.",
+                "Положительная — звук позже; между запусками не запоминается."
+            ),
+            Cmd::AudioDelay(1.0),
+            Cmd::AudioDelay(-1.0),
         )),
     ) {
         out.push(Cmd::SetAudioDelay(delay));
@@ -1087,9 +1091,13 @@ fn subtitles_tab(
         ui,
         tr!("Delay", "Задержка"),
         &mut delay,
-        &Spec::delay(tr!(
-            "Later when positive. Also Shift+. and Shift+,; not kept between runs",
-            "Положительная — субтитры позже. Также Shift+. и Shift+,; между запусками не запоминается"
+        &Spec::delay(&delay_tip(
+            tr!(
+                "Later when positive; not kept between runs.",
+                "Положительная — субтитры позже; между запусками не запоминается."
+            ),
+            Cmd::SubDelay(1.0),
+            Cmd::SubDelay(-1.0),
         )),
     ) {
         out.push(Cmd::SetSubDelay(delay));
@@ -1343,6 +1351,27 @@ fn int_row(ui: &mut Ui, label: &str, value: &mut i64, spec: &Spec) -> bool {
     let changed = value_row(ui, label, &mut v, spec);
     *value = v.round() as i64;
     changed
+}
+
+/// A delay's tooltip: `text`, then the keys of `later` and `earlier` as
+/// they are set.
+fn delay_tip(text: &str, later: Cmd, earlier: Cmd) -> String {
+    let keys: Vec<String> = [later, earlier]
+        .map(crate::keymap::shortcut)
+        .into_iter()
+        .filter(|k| !k.is_empty())
+        .collect();
+    match keys.as_slice() {
+        [] => text.to_owned(),
+        [one] => tr!(
+            format!("{text} Also {one}."),
+            format!("{text} Также {one}.")
+        ),
+        [a, b, ..] => tr!(
+            format!("{text} Also {a} and {b}."),
+            format!("{text} Также {a} и {b}.")
+        ),
+    }
 }
 
 /// A slider `width` wide: a rail lit in the accent colour from the spec's

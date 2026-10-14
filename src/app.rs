@@ -456,10 +456,15 @@ impl App {
         }
         if let Some(t) = start {
             let at = crate::format::time(Some(t), false);
-            self.osd.show(Osd::Text(tr!(
-                format!("Resumed from {at} (Home: from the beginning)"),
-                format!("Продолжение с {at} (Home — с начала)")
-            )));
+            let key = crate::keymap::shortcut(Cmd::Start);
+            self.osd.show(Osd::Text(if key.is_empty() {
+                tr!(format!("Resumed from {at}"), format!("Продолжение с {at}"))
+            } else {
+                tr!(
+                    format!("Resumed from {at} ({key}: from the beginning)"),
+                    format!("Продолжение с {at} ({key} — с начала)")
+                )
+            }));
         }
     }
 
