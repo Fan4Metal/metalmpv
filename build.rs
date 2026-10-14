@@ -18,21 +18,29 @@ fn main() {
 
     let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
     copy_libmpv(&out_dir);
+    // The script is rerun at every commit (the version): the icons are
+    // drawn again only when what draws them changed (a stamp of their
+    // sources' hash) or a file is missing.
+    let stamp = out_dir.join(format!("icons_{:016x}.stamp", icon_sources_hash()));
+    let windows = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
+    let drawn = stamp.exists();
     // The icon as raw RGBA for the window icon and the start screen (see
     // `main::embedded_icon`), so that nothing big is rasterised at start-up.
     for size in [64u32, 80, 96, 112, 128, 140, 168, 196, 224] {
-        std::fs::write(
-            out_dir.join(format!("app_icon_{size}.rgba")),
-            icon::rgba(size),
-        )
-        .expect("write an icon");
+        let path = out_dir.join(format!("app_icon_{size}.rgba"));
+        if !(drawn && path.exists()) {
+            std::fs::write(&path, icon::rgba(size)).expect("write an icon");
+        }
     }
 
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+    if !windows {
+        let _ = std::fs::write(&stamp, "");
         return;
     }
     let ico_path = out_dir.join("app.ico");
-    std::fs::write(&ico_path, icon::ico(&icon::ICO_SIZES)).expect("write app.ico");
+    if !(drawn && ico_path.exists()) {
+        std::fs::write(&ico_path, icon::ico(&icon::ICO_SIZES)).expect("write app.ico");
+    }
     #[cfg(windows)]
     {
         let mut res = winresource::WindowsResource::new();
@@ -40,20 +48,22 @@ fn main() {
         // registry as `"metalmpv.exe",-<id>` (assoc.rs). The app icon keeps
         // ID 1, the lowest, which Explorer shows for the executable.
         for (i, t) in filetypes::FILE_TYPES.iter().enumerate() {
-            let layers: Vec<(u32, Vec<u8>)> = icon::ICO_SIZES
-                .iter()
-                .map(|&s| {
-                    let px = type_icon::rgba(t, s);
-                    let image = if s >= 256 {
-                        png(&px, s)
-                    } else {
-                        icon::bmp(&px, s)
-                    };
-                    (s, image)
-                })
-                .collect();
             let path = out_dir.join(format!("type_{}.ico", t.id));
-            std::fs::write(&path, icon::ico_of(&layers)).expect("write a file type icon");
+            if !(drawn && path.exists()) {
+                let layers: Vec<(u32, Vec<u8>)> = icon::ICO_SIZES
+                    .iter()
+                    .map(|&s| {
+                        let px = type_icon::rgba(t, s);
+                        let image = if s >= 256 {
+                            png(&px, s)
+                        } else {
+                            icon::bmp(&px, s)
+                        };
+                        (s, image)
+                    })
+                    .collect();
+                std::fs::write(&path, icon::ico_of(&layers)).expect("write a file type icon");
+            }
             res.set_icon_with_id(path.to_str().unwrap(), &filetypes::icon_id(i).to_string());
         }
         res.set_icon(ico_path.to_str().unwrap())
@@ -65,6 +75,35 @@ fn main() {
             println!("cargo:warning=icon not embedded: {e}");
         }
     }
+    if !drawn {
+        // Older stamps go: one per state of the sources.
+        if let Ok(entries) = std::fs::read_dir(&out_dir) {
+            for e in entries.flatten() {
+                let name = e.file_name().to_string_lossy().into_owned();
+                if name.starts_with("icons_") && name.ends_with(".stamp") {
+                    let _ = std::fs::remove_file(e.path());
+                }
+            }
+        }
+        let _ = std::fs::write(&stamp, "");
+    }
+}
+
+/// FNV-1a of what draws the icons: their code, the types and this script.
+fn icon_sources_hash() -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for file in [
+        "src/icon.rs",
+        "src/type_icon.rs",
+        "src/filetypes.rs",
+        "build.rs",
+    ] {
+        for byte in std::fs::read(file).unwrap_or_default() {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    hash
 }
 
 /// Straight RGBA pixels `px` of `size` x `size` as a PNG file.
