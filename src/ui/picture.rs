@@ -195,10 +195,45 @@ impl VideoPanel {
                     ui.set_width(WIDTH);
                     self.head(ui, now.has_video, &mut out);
                     ui.add_space(4.0);
-                    match self.tab {
-                        Tab::Video => video_tab(ui, adjust, kept.keep_adjust),
-                        Tab::Sound => sound_tab(ui, kept, now, &mut self.naming, &mut out),
-                        Tab::Subtitles => subtitles_tab(ui, kept, now, &mut self.naming, &mut out),
+                    // The other tabs laid out unseen (an invisible Ui paints
+                    // nothing and takes no input) for the tallest: the
+                    // panel keeps that height whichever is shown, as one
+                    // held by its bottom edge jumped when they changed.
+                    let mut kept = kept;
+                    let mut tallest = 0.0_f32;
+                    for tab in Tab::ALL.into_iter().filter(|t| *t != self.tab) {
+                        let room = ui.available_rect_before_wrap();
+                        let mut unseen =
+                            ui.new_child(egui::UiBuilder::new().max_rect(room).invisible());
+                        let (mut no_name, mut no_cmds) = (None, Vec::new());
+                        tab_contents(
+                            &mut unseen,
+                            tab,
+                            adjust,
+                            &mut kept,
+                            now,
+                            &mut no_name,
+                            &mut no_cmds,
+                        );
+                        tallest = tallest.max(unseen.min_rect().height());
+                    }
+                    let shown = ui
+                        .scope(|ui| {
+                            tab_contents(
+                                ui,
+                                self.tab,
+                                adjust,
+                                &mut kept,
+                                now,
+                                &mut self.naming,
+                                &mut out,
+                            )
+                        })
+                        .response
+                        .rect
+                        .height();
+                    if shown < tallest {
+                        ui.add_space(tallest - shown);
                     }
                 });
             });
@@ -288,6 +323,23 @@ fn tabs(ui: &mut Ui, current: &mut Tab, width: f32) {
                 Stroke::new(2.0, style::accent()),
             );
         }
+    }
+}
+
+/// A tab's contents.
+fn tab_contents(
+    ui: &mut Ui,
+    tab: Tab,
+    adjust: &mut Adjust,
+    kept: &mut Kept<'_>,
+    now: Now,
+    naming: &mut Option<String>,
+    out: &mut Vec<Cmd>,
+) {
+    match tab {
+        Tab::Video => video_tab(ui, adjust, kept.keep_adjust),
+        Tab::Sound => sound_tab(ui, kept, now, naming, out),
+        Tab::Subtitles => subtitles_tab(ui, kept, now, naming, out),
     }
 }
 
@@ -475,7 +527,7 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, keep: &mut bool) {
 
 fn sound_tab(
     ui: &mut Ui,
-    kept: Kept<'_>,
+    kept: &mut Kept<'_>,
     now: Now,
     naming: &mut Option<String>,
     out: &mut Vec<Cmd>,
@@ -768,12 +820,12 @@ fn smooth(points: &[egui::Pos2]) -> Vec<egui::Pos2> {
 
 fn subtitles_tab(
     ui: &mut Ui,
-    kept: Kept<'_>,
+    kept: &mut Kept<'_>,
     now: Now,
     naming: &mut Option<String>,
     out: &mut Vec<Cmd>,
 ) {
-    let style = kept.subs;
+    let style = &mut *kept.subs;
     let d = SubStyle::default();
     heading(ui, tr!("Style", "Стиль"));
     looks(ui, style, kept.sub_presets, naming);
