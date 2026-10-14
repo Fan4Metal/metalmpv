@@ -186,12 +186,11 @@ fn key_label(key: Key) -> &'static str {
         Key::PageUp => "PgUp",
         Key::PageDown => "PgDn",
         Key::Minus => "-",
-        // The key left of 1 (`Ё` in the Russian layout), named by its
-        // symbol in both languages.
+        // The key left of 1 and the brackets by their symbols in both
+        // languages, whatever the layout puts on them.
         Key::Backtick => "`",
-        // The brackets: `Х` and `Ъ` in the Russian layout.
-        Key::OpenBracket => tr!("[", "Х"),
-        Key::CloseBracket => tr!("]", "Ъ"),
+        Key::OpenBracket => "[",
+        Key::CloseBracket => "]",
         _ => key.symbol_or_name(),
     }
 }

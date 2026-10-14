@@ -131,7 +131,7 @@ pub enum Cmd {
     /// bars (`5`).
     FitScreen,
     /// Size the window to the picture shown, without the black bars
-    /// (`` ` ``, `Ё` in the Russian layout).
+    /// (`` ` ``, the key left of 1).
     FitWindow,
     /// Fullscreen with the picture filling the screen, cropped, or the
     /// whole picture again, still in fullscreen (`6`).
