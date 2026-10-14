@@ -2506,11 +2506,6 @@ fn context_menu(
         tr!("Video, sound and subtitles…", "Видео, звук и субтитры…").into(),
         Cmd::ToggleVideoPanel,
     );
-    item(
-        ui,
-        tr!("Equalizer…", "Эквалайзер…").into(),
-        Cmd::ShowEqualizer,
-    );
     if video_size(state).is_some() {
         item(
             ui,
