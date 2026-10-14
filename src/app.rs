@@ -144,6 +144,10 @@ pub struct App {
     /// The title row is shown over the picture's top this frame (an
     /// interface without its own, the pointer there).
     title_strip: bool,
+    /// The panels over the picture shown in the last frame (the top, the
+    /// bottom): a menu or a popup opened over them keeps them
+    /// ([`Self::held`]).
+    shown_over: (bool, bool),
     /// Windows is ending the session: the settings and positions are saved
     /// in `logic` (winit does not close the window for it).
     ending_session: bool,
@@ -321,6 +325,7 @@ impl App {
             sized_for: Interface::Full,
             playlist_inset: 0.0,
             title_strip: false,
+            shown_over: (false, false),
             ending_session: false,
             menu_press: false,
             middle_press: false,
@@ -2184,13 +2189,28 @@ impl App {
     fn fullscreen_panels(&self, ctx: &egui::Context) -> Panels {
         let screen = ctx.content_rect();
         let pointer = ctx.pointer_hover_pos();
+        let (top, bottom) = Self::held(ctx, self.shown_over);
         Panels {
             top: self.settings.fullscreen_title
-                && pointer.is_some_and(|p| p.y < screen.top() + FULLSCREEN_TITLE_HEIGHT + 16.0),
-            bottom: pointer.is_some_and(|p| p.y > screen.bottom() - FULLSCREEN_BAR_ZONE)
+                && (top
+                    || pointer
+                        .is_some_and(|p| p.y < screen.top() + FULLSCREEN_TITLE_HEIGHT + 16.0)),
+            bottom: bottom
+                || pointer.is_some_and(|p| p.y > screen.bottom() - FULLSCREEN_BAR_ZONE)
                 || self.seek_drag.is_some()
                 || self.video_panel.open
                 || self.tracks_window.open,
+        }
+    }
+
+    /// The panels over the picture (the top, the bottom) of `shown`, the
+    /// last frame's, that stay while a menu or a popup is open: the
+    /// pointer went from them onto it.
+    fn held(ctx: &egui::Context, shown: (bool, bool)) -> (bool, bool) {
+        if egui::Popup::is_any_open(ctx) {
+            shown
+        } else {
+            (false, false)
         }
     }
 
@@ -2205,6 +2225,7 @@ impl App {
         cmds: &mut Vec<Cmd>,
     ) {
         let panels = self.fullscreen_panels(ctx);
+        self.shown_over = (panels.top, panels.bottom);
         let rest = Self::pointer_rest(ctx);
         if rest < HIDE_AFTER {
             ctx.request_repaint_after(HIDE_AFTER - rest);
@@ -2213,6 +2234,7 @@ impl App {
             && !self.info.open
             && !self.video_panel.open
             && !self.tracks_window.open
+            && !egui::Popup::is_any_open(ctx)
         {
             ctx.set_cursor_icon(CursorIcon::None);
         }
@@ -2816,8 +2838,15 @@ impl eframe::App for App {
         }
         let title = self.title(&state);
         let interface = self.interface();
-        self.title_strip = !fullscreen && interface.title_over() && self.wants_title_strip(&ctx);
-        let bar_over = !fullscreen && interface == Interface::Bare && self.wants_bar_over(&ctx);
+        let (top_held, bottom_held) = Self::held(&ctx, self.shown_over);
+        self.title_strip =
+            !fullscreen && interface.title_over() && (top_held || self.wants_title_strip(&ctx));
+        let bar_over = !fullscreen
+            && interface == Interface::Bare
+            && (bottom_held || self.wants_bar_over(&ctx));
+        if !fullscreen {
+            self.shown_over = (self.title_strip, bar_over);
+        }
         let icon = (!fullscreen && (interface.title_row() || self.title_strip))
             .then(|| ui::app_icon(&ctx, 16.0, &mut self.icon));
         let newer = self.updates.newer().map(str::to_owned);
