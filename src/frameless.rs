@@ -119,6 +119,9 @@ pub fn resize_edges(ui: &mut Ui) {
 /// area: `win::set_fullscreen` makes its client area the whole monitor.
 pub fn set_fullscreen(ctx: &egui::Context, frame: &eframe::Frame, on: bool) {
     crate::win::set_fullscreen(on);
+    // Before the change, not a frame after it: a glued playlist stays
+    // put as the window fills the screen and follows it back.
+    crate::win::set_playlist_follow(!on);
     if let Some(window) = frame.winit_window() {
         use winit::platform::windows::WindowExtWindows;
         window.set_undecorated_shadow(!on);
