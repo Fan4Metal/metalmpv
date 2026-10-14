@@ -21,6 +21,7 @@ mod fonts;
 mod format;
 mod frameless;
 mod icon;
+mod incomplete;
 mod info;
 mod input;
 mod instance;

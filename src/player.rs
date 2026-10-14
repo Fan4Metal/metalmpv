@@ -12,6 +12,7 @@ use std::path::Path;
 use crate::adjust::{Adjust, Color};
 use crate::audio::{self, Channels, Device, Passthrough};
 use crate::chapters::{self, Chapter};
+use crate::incomplete;
 use crate::mpv::{EndReason, Event, Mpv, Value, sys};
 use crate::resume::Tracks;
 use crate::sub_style::SubStyle;
@@ -681,11 +682,15 @@ const END_SLACK: f64 = 15.0;
 /// After a forward seek: the end came within [`SEEK_EOF_WINDOW`] of it,
 /// and its target was further before the duration than playback at
 /// `speed` could have gone since (mpv's position then is no guide: an MP4
-/// says the duration). Otherwise the position `time` is
-/// [`END_SLACK`] before the duration, in a file whose duration comes
-/// from its index (`indexed`): elsewhere it may be estimated from the
-/// bitrate (an MP3 without a VBR header, raw AAC), and a real end could
-/// be taken for missing data.
+/// says the duration). Otherwise the position `time` is [`END_SLACK`]
+/// before the duration.
+///
+/// The duration of a file with an index (`indexed`: Matroska, MP4) is
+/// right. Elsewhere it may be estimated from the bitrate (an MP3 without
+/// a VBR header, raw AAC) and be longer than the file, so the data ran
+/// out only where the file lacks data (`missing`, `incomplete.rs`): at
+/// the seek's target, or halfway from where playback stopped to the
+/// duration.
 fn data_end(
     seek: Option<&SeekMark>,
     now: std::time::Instant,
@@ -693,23 +698,36 @@ fn data_end(
     duration: Option<f64>,
     speed: f64,
     indexed: bool,
+    missing: &dyn Fn(f64) -> bool,
 ) -> Option<DataEnd> {
     let duration = duration?;
     // Where playback stopped, if well before the duration.
     let early = time.filter(|t| duration - t > END_SLACK);
-    if let Some(seek) = seek {
-        let elapsed = now.saturating_duration_since(seek.at);
-        if elapsed < SEEK_EOF_WINDOW && seek.target > seek.from {
+    let end = match seek {
+        Some(seek)
+            if now.saturating_duration_since(seek.at) < SEEK_EOF_WINDOW
+                && seek.target > seek.from =>
+        {
+            let elapsed = now.saturating_duration_since(seek.at);
             // Landed, and played on to the end of the data.
-            if let Some(t) = early.filter(|t| *t >= seek.target) {
-                return Some(DataEnd::Played(t));
+            match early.filter(|t| *t >= seek.target) {
+                Some(t) => Some(DataEnd::Played(t)),
+                None => {
+                    let covered = elapsed.as_secs_f64() * speed.max(1.0);
+                    (duration - seek.target > END_SLACK + covered)
+                        .then_some(DataEnd::Seek(seek.target))
+                }
             }
-            let covered = elapsed.as_secs_f64() * speed.max(1.0);
-            return (duration - seek.target > END_SLACK + covered)
-                .then_some(DataEnd::Seek(seek.target));
         }
-    }
-    early.filter(|_| indexed).map(DataEnd::Played)
+        _ => early.map(DataEnd::Played),
+    };
+    end.filter(|end| {
+        indexed
+            || missing(match end {
+                DataEnd::Seek(target) => *target,
+                DataEnd::Played(t) => (t + duration) / 2.0,
+            })
+    })
 }
 
 /// Whether mpv's `file-format` is of a format whose duration is in its
@@ -864,6 +882,8 @@ impl Player {
                             } else {
                                 let seek = self.last_seek.take();
                                 let s = &self.state;
+                                let path = s.path.clone().unwrap_or_default();
+                                let duration = s.duration.unwrap_or(0.0);
                                 let end = data_end(
                                     seek.as_ref(),
                                     std::time::Instant::now(),
@@ -871,6 +891,10 @@ impl Player {
                                     s.duration,
                                     s.speed,
                                     indexed(s.file_format.as_deref()),
+                                    &|at| {
+                                        incomplete::unfilled(&path, at, duration)
+                                            || incomplete::truncated(&path, duration)
+                                    },
                                 );
                                 match end {
                                     Some(end) => {
@@ -1421,7 +1445,15 @@ mod tests {
         let after_seek = |from, target, ms, speed, time| {
             let seek = SeekMark { at, from, target };
             let now = at + Duration::from_millis(ms);
-            data_end(Some(&seek), now, Some(time), Some(120.0), speed, true)
+            data_end(
+                Some(&seek),
+                now,
+                Some(time),
+                Some(120.0),
+                speed,
+                true,
+                &|_| false,
+            )
         };
         // Half the file there, a seek to 90 s: mpv stops at once (an MP4
         // says the duration as the position).
@@ -1453,13 +1485,35 @@ mod tests {
         );
         assert_eq!(after_seek(10.0, 30.0, 4000, 1.0, 119.9), None);
         // Played to there without a seek.
-        let played = |time, indexed| data_end(None, at, Some(time), Some(120.0), 1.0, indexed);
+        let played =
+            |time, indexed| data_end(None, at, Some(time), Some(120.0), 1.0, indexed, &|_| false);
         assert_eq!(played(60.0, true), Some(DataEnd::Played(60.0)));
         assert_eq!(played(119.9, true), None);
-        // A duration from the bitrate (an MP3) may be wrong: an end.
+        // A duration from the bitrate (an MP3) may be wrong: an end, unless
+        // the file has no data there yet (zeros from 70 s on).
         assert_eq!(played(60.0, false), None);
+        let zeros = |t: f64| t >= 70.0;
+        let mp3 = |seek: Option<&SeekMark>, time| {
+            data_end(seek, at, Some(time), Some(120.0), 1.0, false, &zeros)
+        };
+        assert_eq!(mp3(None, 60.0), Some(DataEnd::Played(60.0)));
+        let seek = |target| SeekMark {
+            at,
+            from: 10.0,
+            target,
+        };
+        assert_eq!(mp3(Some(&seek(90.0)), 120.0), Some(DataEnd::Seek(90.0)));
+        // A whole file whose duration was over-estimated: data everywhere.
+        let whole = |seek: Option<&SeekMark>, time| {
+            data_end(seek, at, Some(time), Some(120.0), 1.0, false, &|_| false)
+        };
+        assert_eq!(whole(Some(&seek(90.0)), 120.0), None);
+        assert_eq!(whole(None, 60.0), None);
         // No duration: nothing to compare.
-        assert_eq!(data_end(None, at, Some(60.0), None, 1.0, true), None);
+        assert_eq!(
+            data_end(None, at, Some(60.0), None, 1.0, true, &|_| false),
+            None
+        );
         assert!(indexed(Some("mkv")));
         assert!(indexed(Some("matroska,webm")));
         assert!(indexed(Some("mov,mp4,m4a,3gp,3g2,mj2")));
@@ -1719,6 +1773,93 @@ mod tests {
         // Play: no more data there, stopped again.
         player.toggle_pause();
         assert!(matches!(no_data(&mut player, 5.0), DataEnd::Played(t) if (t - at).abs() < 1.0));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// An MP3 being downloaded, kept at its full size with zeros or cut
+    /// short, stops where its data ends after a seek past it, and a whole
+    /// one does not: `cargo test an_mp3_download -- --ignored --nocapture`
+    /// with an MP3 of a minute or more in METALMPV_MP3.
+    #[test]
+    #[ignore = "needs vendor/libmpv and an MP3"]
+    fn an_mp3_download_stops_where_its_data_ends() {
+        let sample = std::env::var("METALMPV_MP3").unwrap_or_else(|_| {
+            "D:/Downloads/Amorphis - Borderland (2025)/01 The Circle.mp3".into()
+        });
+        let bytes = std::fs::read(&sample).unwrap();
+        let dir = std::env::temp_dir().join("metalmpv_mp3_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let had = bytes.len() * 2 / 5;
+        let mut kept = bytes[..had].to_vec();
+        kept.resize(bytes.len(), 0);
+        let cases = [
+            ("kept.mp3", kept, true),
+            ("cut.mp3", bytes[..had].to_vec(), true),
+            ("whole.mp3", bytes.clone(), false),
+        ];
+        for (name, content, stops) in cases {
+            let file = dir.join(name);
+            std::fs::write(&file, content).unwrap();
+            let api = sys::api().unwrap();
+            let mpv = Mpv::new(
+                api,
+                &[
+                    ("vo", "null"),
+                    ("ao", "null"),
+                    ("idle", "yes"),
+                    ("terminal", "no"),
+                    ("keep-open", "yes"),
+                ],
+            )
+            .unwrap();
+            let mut player = Player {
+                mpv,
+                state: State::default(),
+                scan_asked: None,
+                live_asked: None,
+                loading: false,
+                starts_due: 0,
+                stopped: false,
+                hwdec: true,
+                hwdec_copy: false,
+                filters_on: false,
+                last_seek: None,
+                data_end_at: None,
+                af: String::new(),
+                af_before: String::new(),
+            };
+            observe_all(&player.mpv);
+            player.load(&file, None, None);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while player.state.time.is_none_or(|t| t < 1.0) && std::time::Instant::now() < deadline
+            {
+                player.poll();
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            let duration = player.state.duration.expect("no duration");
+            assert!(duration >= 60.0, "the sample is too short: {duration}");
+            player.seek_to(duration * 0.7, Seek::Keyframe);
+            let mut ended = None;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+            while ended.is_none() && std::time::Instant::now() < deadline {
+                ended = player.poll().into_iter().find_map(|h| match h {
+                    Happened::NoData(e) => Some(Some(e)),
+                    Happened::Eof => Some(None),
+                    _ => None,
+                });
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            eprintln!("{name}: {duration:.1} s, {ended:?}");
+            if stops {
+                assert!(
+                    matches!(ended, Some(Some(DataEnd::Seek(_)))),
+                    "{name}: {ended:?}"
+                );
+            } else {
+                // Plays on there.
+                assert_eq!(ended, None, "{name}");
+            }
+        }
         let _ = std::fs::remove_dir_all(dir);
     }
 
