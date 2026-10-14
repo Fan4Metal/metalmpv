@@ -44,6 +44,7 @@ mod ui;
 mod update;
 mod video;
 mod win;
+mod worker;
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -303,12 +304,20 @@ pub fn embedded_icon(size: u32) -> Option<&'static [u8]> {
 fn install_panic_hook() {
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
+        // A background thread's job is lost, not the player (worker.rs).
+        if worker::current() {
+            log::error!("a background thread panicked: {info}");
+            return;
+        }
         default(info);
         let text = tr!(
             format!("{APP_NAME} stopped because of an internal error.\n\n{info}"),
             format!("{APP_NAME} остановлен из-за внутренней ошибки.\n\n{info}")
         );
         win::error_box(APP_NAME, &text);
+        // Not unwound through the window's loop and the engine: ended
+        // here, as the release build did with panic = "abort".
+        std::process::abort();
     }));
 }
 

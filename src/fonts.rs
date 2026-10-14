@@ -29,9 +29,11 @@ pub fn families(ctx: &egui::Context) -> Option<&'static [Family]> {
     }
     if !STARTED.swap(true, Ordering::Relaxed) {
         let ctx = ctx.clone();
-        std::thread::spawn(move || {
+        let _ = crate::worker::spawn("fonts", move || {
             let started = std::time::Instant::now();
-            let list = system_families();
+            // A font file a library cannot read leaves the list empty, not
+            // waiting for good.
+            let list = crate::worker::guarded(system_families).unwrap_or_default();
             log::debug!(
                 "{} font families listed in {:.0} ms",
                 list.len(),

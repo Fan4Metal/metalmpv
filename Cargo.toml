@@ -70,8 +70,10 @@ png = "0.18"
 opt-level = 3
 lto = "fat"
 codegen-units = 1
-# A panic ends the process; main::install_panic_hook shows it first.
-panic = "abort"
+# Unwind, so that a panic of a background thread (a library reading a
+# file or a picture from the network) ends that thread alone (worker.rs);
+# elsewhere main::install_panic_hook shows it and aborts, as before.
+panic = "unwind"
 strip = true
 
 [profile.dev]

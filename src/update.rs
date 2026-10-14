@@ -58,12 +58,10 @@ impl Updates {
         }
         let (tx, rx) = sync_channel(1);
         let ctx = ctx.clone();
-        let spawned = std::thread::Builder::new()
-            .name("update check".into())
-            .spawn(move || {
-                let _ = tx.send(latest_tag());
-                ctx.request_repaint();
-            });
+        let spawned = crate::worker::spawn("update check", move || {
+            let _ = tx.send(latest_tag());
+            ctx.request_repaint();
+        });
         match spawned {
             Ok(_) => {
                 self.rx = Some(rx);

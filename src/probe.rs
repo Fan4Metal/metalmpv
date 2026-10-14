@@ -78,9 +78,9 @@ impl Facts {
 pub fn load(path: PathBuf, ctx: &egui::Context) -> Receiver<Facts> {
     let (tx, rx) = mpsc::channel();
     let ctx = ctx.clone();
-    std::thread::spawn(move || {
+    let _ = crate::worker::spawn("facts", move || {
         let started = std::time::Instant::now();
-        let facts = read(&path);
+        let facts = crate::worker::guarded(|| read(&path)).unwrap_or_default();
         log::debug!(
             "container facts of {}: {} tracks in {:.0} ms",
             path.display(),

@@ -214,31 +214,35 @@ impl Pool {
     fn start(ctx: &egui::Context) -> Self {
         let wanted = Arc::new((Mutex::new(Wanted::default()), Condvar::new()));
         let (done, results) = channel();
-        let _ = std::thread::Builder::new()
-            .name("logos cleanup".into())
-            .spawn(prune);
+        let _ = crate::worker::spawn("logos cleanup", prune);
         for n in 0..WORKERS {
             let (wanted, done, ctx) = (wanted.clone(), done.clone(), ctx.clone());
-            let _ = std::thread::Builder::new()
-                .name(format!("logos {n}"))
-                .spawn(move || {
-                    loop {
-                        let Some(url) = take(&wanted, &done) else {
-                            return;
-                        };
-                        let outcome = match load(&url) {
-                            Ok(image) => Outcome::Fetched(image),
-                            Err(e) => {
-                                log::info!("logo {url}: {e}");
-                                Outcome::Failed
-                            }
-                        };
-                        if done.send((url, outcome)).is_err() {
-                            return;
+            let _ = crate::worker::spawn(&format!("logos {n}"), move || {
+                loop {
+                    let Some(url) = take(&wanted, &done) else {
+                        return;
+                    };
+                    // A picture a decoder panics on is this logo's loss
+                    // alone: the thread goes on, its kept copy is dropped.
+                    let outcome = match crate::worker::guarded(|| load(&url)) {
+                        Some(Ok(image)) => Outcome::Fetched(image),
+                        Some(Err(e)) => {
+                            log::info!("logo {url}: {e}");
+                            Outcome::Failed
                         }
-                        ctx.request_repaint();
+                        None => {
+                            if let Some(file) = cache_file(&url) {
+                                let _ = std::fs::remove_file(file);
+                            }
+                            Outcome::Failed
+                        }
+                    };
+                    if done.send((url, outcome)).is_err() {
+                        return;
                     }
-                });
+                    ctx.request_repaint();
+                }
+            });
         }
         Self { wanted, results }
     }

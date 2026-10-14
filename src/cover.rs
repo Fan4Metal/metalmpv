@@ -67,9 +67,9 @@ pub struct Cover {
 pub fn load(path: PathBuf, ctx: &egui::Context) -> Receiver<Option<Cover>> {
     let (tx, rx) = mpsc::channel();
     let ctx = ctx.clone();
-    std::thread::spawn(move || {
+    let _ = crate::worker::spawn("cover", move || {
         let started = std::time::Instant::now();
-        let cover = find(&path);
+        let cover = crate::worker::guarded(|| find(&path)).flatten();
         log::debug!(
             "cover of {}: {} in {:.0} ms",
             path.display(),
