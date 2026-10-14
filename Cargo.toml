@@ -39,6 +39,8 @@ skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
 lofty = "0.25.4"
 # Decoding a cover (already used by eframe's clipboard): JPEG and PNG only.
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+# eframe's own, to check that the settings file reads before a copy of it is kept.
+ron = "0.12.2"
 
 [target.'cfg(windows)'.dependencies]
 # Keep the feature list minimal; add a feature only for an API that is used.

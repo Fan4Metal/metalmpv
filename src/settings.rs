@@ -302,8 +302,8 @@ fn portable_file_in(dir: &Path) -> Option<PathBuf> {
     let file = dir.join(PORTABLE_FILE);
     // Opening for appending checks the permission without changing the file.
     std::fs::OpenOptions::new().append(true).open(&file).ok()?;
-    // eframe writes a new file beside it and renames it: the folder must
-    // take a file too.
+    // The copy kept beside it (`keep_backup`): the folder must take a file
+    // too.
     let probe = dir.join(format!(".metalmpv-{}.tmp", std::process::id()));
     std::fs::OpenOptions::new()
         .write(true)
@@ -312,6 +312,53 @@ fn portable_file_in(dir: &Path) -> Option<PathBuf> {
         .ok()?;
     let _ = std::fs::remove_file(&probe);
     Some(file)
+}
+
+/// Keeps a copy of the settings file beside it (`app.ron.bak`), or puts
+/// the copy back when the file does not read. eframe writes the file over
+/// the old one (`File::create`, then the text), so a write cut short — a
+/// power cut, the process ended with the session — leaves it empty or
+/// broken, and every setting, key, position and recent file would go.
+/// Called before eframe reads it; the copy is the last run's end.
+pub fn keep_backup(file: &Path) {
+    let backup = file.with_extension("ron.bak");
+    let text = std::fs::read(file)
+        .ok()
+        .map(|b| String::from_utf8_lossy(&b).into_owned());
+    match text {
+        // Nothing yet (a first run, or a portable copy's empty file).
+        None => return,
+        Some(text) if text.trim().is_empty() && !backup.exists() => return,
+        Some(text) if reads(&text) => {
+            if let Err(e) = write_replacing(&backup, text.as_bytes()) {
+                log::warn!("cannot keep a copy of the settings: {e}");
+            }
+            return;
+        }
+        Some(_) => {}
+    }
+    match std::fs::read(&backup) {
+        Ok(copy) if reads(&String::from_utf8_lossy(&copy)) => {
+            log::warn!("the settings file does not read; its copy is put back");
+            if let Err(e) = write_replacing(file, &copy) {
+                log::warn!("cannot put the settings' copy back: {e}");
+            }
+        }
+        _ => log::warn!("the settings file does not read, and there is no copy of it"),
+    }
+}
+
+/// Whether `text` is a settings file as eframe writes it.
+fn reads(text: &str) -> bool {
+    ron::from_str::<std::collections::HashMap<String, String>>(text).is_ok()
+}
+
+/// Writes `bytes` beside `file` and renames that over it: a write cut
+/// short leaves `file` as it was.
+fn write_replacing(file: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let part = file.with_extension("part");
+    std::fs::write(&part, bytes)?;
+    std::fs::rename(&part, file)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -948,6 +995,35 @@ mod tests {
         for key in DROPPED {
             assert_eq!(storage.get_string(key), None);
         }
+    }
+
+    #[test]
+    fn a_broken_settings_file_gets_its_copy_back() {
+        let dir = std::env::temp_dir().join(format!("backup_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("app.ron");
+        let backup = dir.join("app.ron.bak");
+        let good = "{\n    \"volume\": \"70\",\n}";
+        // Nothing yet: nothing to keep.
+        keep_backup(&file);
+        assert!(!backup.exists());
+        // A file that reads is copied.
+        std::fs::write(&file, good).unwrap();
+        keep_backup(&file);
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), good);
+        // Cut short, or emptied: the copy comes back.
+        for broken in ["{\n    \"volume\": \"7", "", "\0\0\0\0"] {
+            std::fs::write(&file, broken).unwrap();
+            keep_backup(&file);
+            assert_eq!(std::fs::read_to_string(&file).unwrap(), good);
+        }
+        // An empty file without a copy (a new portable copy) stays so.
+        std::fs::remove_file(&backup).unwrap();
+        std::fs::write(&file, "").unwrap();
+        keep_backup(&file);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
+        assert!(!backup.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

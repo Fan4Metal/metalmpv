@@ -172,6 +172,9 @@ fn main() -> eframe::Result {
         .expect("spawn the mpv thread");
 
     let stored = settings::location();
+    if let Some(file) = &stored.file {
+        settings::keep_backup(file);
+    }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(APP_NAME)
