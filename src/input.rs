@@ -174,6 +174,8 @@ pub enum Cmd {
     ToggleEqualizer,
     ToggleNormalize,
     ToggleVoiceBoost,
+    /// Stereo spread over 5.1, or not.
+    ToggleUpmix,
     Minimize,
     ToggleMaximize,
     Close,

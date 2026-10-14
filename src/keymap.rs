@@ -327,6 +327,7 @@ actions! {
     EqualizerOnOff "equalizer_on_off" Sound Cmd::ToggleEqualizer, [Chord::key(Key::E)];
     Normalize "normalize" Sound Cmd::ToggleNormalize, [Chord::key(Key::N)];
     VoiceBoost "voice_boost" Sound Cmd::ToggleVoiceBoost, [Chord::key(Key::B)];
+    Upmix "upmix" Sound Cmd::ToggleUpmix, [Chord::shift(Key::B)];
 
     Fullscreen "fullscreen" Window Cmd::ToggleFullscreen,
         [Chord::key(Key::Enter), Chord::of(Press::Key(Key::Enter), false, true, false),
@@ -478,6 +479,7 @@ impl Action {
             Action::EqualizerOnOff => tr!("Equalizer on / off", "Эквалайзер вкл. / выкл."),
             Action::Normalize => tr!("Normalization on / off", "Нормализация вкл. / выкл."),
             Action::VoiceBoost => tr!("Clearer speech on / off", "Усилить речь вкл. / выкл."),
+            Action::Upmix => tr!("Stereo to 5.1 on / off", "Стерео в 5.1 вкл. / выкл."),
             Action::Fullscreen => tr!("Fullscreen", "Полный экран"),
             Action::Escape => tr!(
                 "Close what is open, leave fullscreen, bring the interface back; else close the program",

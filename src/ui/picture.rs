@@ -103,6 +103,7 @@ pub struct Kept<'a> {
     pub volume_max: &'a mut f64,
     pub normalize: &'a mut bool,
     pub voice_boost: &'a mut bool,
+    pub upmix: &'a mut bool,
     pub equalizer: &'a mut Equalizer,
     /// The equalizer's gains the user saved.
     pub eq_presets: &'a mut Vec<OwnEq>,
@@ -631,6 +632,21 @@ fn sound_tab(
             "Поднимает голос над музыкой: в стерео — фильтром FFmpeg для диалогов, в 5.1 и больше — центральным каналом; моно остаётся как есть. Не действует на звук, передаваемый на ресивер без декодирования"
         )),
     );
+    let takes = kept.channels.takes_upmix();
+    ui.add_enabled_ui(takes, |ui| {
+        let tip = if takes {
+            tr!(
+                "Spreads a stereo track over 5.1: what both sides share, mostly the voice, to the centre, what differs to the surrounds, the low end to the subwoofer. For speakers that take 5.1 or more (as set up in Windows, or Channels above); other tracks stay as they are, and sound sent to a receiver undecoded too",
+                "Раскладывает стереодорожку на 5.1: общее для обеих сторон, в основном голос, — в центр, различия — в тыловые, низкие частоты — на сабвуфер. Для акустики, которая принимает 5.1 и больше (по настройке Windows или «Каналам» выше); другие дорожки остаются как есть, как и звук, передаваемый на ресивер без декодирования"
+            )
+        } else {
+            tr!(
+                "Not while Channels above makes the sound mono or stereo",
+                "Недоступно, пока «Каналы» выше сводят звук в моно или стерео"
+            )
+        };
+        switch_line(ui, kept.upmix, tr!("Stereo to 5.1", "Стерео в 5.1"), Some(tip));
+    });
 
     heading(ui, tr!("Equalizer", "Эквалайзер"));
     eq_head(ui, kept.equalizer, kept.eq_presets, naming);

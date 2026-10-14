@@ -330,6 +330,7 @@ pub enum Osd {
     Equalizer(bool),
     Normalize(bool),
     VoiceBoost(bool),
+    Upmix(bool),
     /// Fullscreen with the picture filling the screen, cropped, or the
     /// picture whole again.
     Fill(bool),
@@ -549,6 +550,12 @@ impl Osd {
                 (false, false) => "[ Clearer speech off ]".into(),
                 (true, true) => "[ Усиление речи включено ]".into(),
                 (false, true) => "[ Усиление речи выключено ]".into(),
+            },
+            Osd::Upmix(on) => match (on, ru) {
+                (true, false) => "[ Stereo to 5.1 on ]".into(),
+                (false, false) => "[ Stereo to 5.1 off ]".into(),
+                (true, true) => "[ Стерео в 5.1 включено ]".into(),
+                (false, true) => "[ Стерео в 5.1 выключено ]".into(),
             },
             Osd::Fill(on) => match (on, ru) {
                 (true, false) => "[ Fullscreen without black bars ]".into(),

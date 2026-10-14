@@ -86,10 +86,10 @@ pub struct App {
     tracks_button: Option<egui::Rect>,
     /// The audio filters mpv has (`App::sync_audio_filters`).
     af_applied: String,
-    /// The channel layout the voice's filter was made for: kept while a
-    /// file loads (no tracks yet), else it went and came back with each
-    /// file.
-    af_voice: Option<String>,
+    /// The channel layout of the audio track the filters were made for
+    /// (the voice's filter and the upmix depend on it): kept while a file
+    /// loads (no tracks yet), else they went and came back with each file.
+    af_layout: Option<String>,
     /// The pictures of IPTV channels (`logos.rs`).
     logos: crate::logos::Logos,
     adjust: Adjust,
@@ -311,7 +311,8 @@ impl App {
 
         let mut updates = Updates::new(settings.check_updates, settings.last_update_check);
         updates.start_if_due(ctx);
-        let af_applied = crate::audio::filters(settings.normalize, &settings.equalizer, None);
+        let af_applied =
+            crate::audio::filters(settings.normalize, &settings.equalizer, None, false);
         let adjust = if settings.keep_adjust {
             settings.adjust.clone()
         } else {
@@ -334,7 +335,7 @@ impl App {
             tracks_window: ui::tracks::TracksWindow::default(),
             tracks_button: None,
             af_applied,
-            af_voice: None,
+            af_layout: None,
             logos: crate::logos::Logos::default(),
             adjust,
             cover: None,
@@ -566,8 +567,8 @@ impl App {
     }
 
     /// Give mpv the audio filters the settings make, when they change:
-    /// the voice's depends on the channels of the track playing, so it
-    /// follows a change of track (`audio::filters`).
+    /// the voice's and the upmix depend on the channels of the track
+    /// playing, so they follow a change of track (`audio::filters`).
     fn sync_audio_filters(&mut self, ctx: &egui::Context, state: &State) {
         let Some(player) = &mut self.player else {
             return;
@@ -578,20 +579,22 @@ impl App {
         if ctx.input(|i| i.pointer.any_down()) {
             return;
         }
-        let voice = if !self.settings.voice_boost {
-            None
-        } else if state.tracks.is_empty() {
-            self.af_voice.clone()
+        let layout = if state.tracks.is_empty() {
+            self.af_layout.clone()
         } else {
             tracks::selected(&state.tracks, Kind::Audio)
                 .and_then(|t| crate::audio::voice_layout(t.layout.as_deref(), t.channels))
         };
+        let upmix = self.settings.upmix
+            && self.settings.audio_channels.takes_upmix()
+            && layout.as_deref().is_some_and(crate::audio::is_stereo);
         let af = crate::audio::filters(
             self.settings.normalize,
             &self.settings.equalizer,
-            voice.as_deref(),
+            layout.as_deref().filter(|_| self.settings.voice_boost),
+            upmix,
         );
-        self.af_voice = voice;
+        self.af_layout = layout;
         if af != self.af_applied {
             player.set_audio_filters(&af);
             self.af_applied = af;
@@ -1474,6 +1477,11 @@ impl App {
             Cmd::ToggleVoiceBoost => {
                 self.settings.voice_boost = !self.settings.voice_boost;
                 self.osd.show(Osd::VoiceBoost(self.settings.voice_boost));
+                ctx.request_repaint();
+            }
+            Cmd::ToggleUpmix => {
+                self.settings.upmix = !self.settings.upmix;
+                self.osd.show(Osd::Upmix(self.settings.upmix));
                 ctx.request_repaint();
             }
             Cmd::ToggleInterface => {
@@ -3603,6 +3611,7 @@ impl eframe::App for App {
             volume_max: &mut self.settings.volume_max,
             normalize: &mut self.settings.normalize,
             voice_boost: &mut self.settings.voice_boost,
+            upmix: &mut self.settings.upmix,
             equalizer: &mut self.settings.equalizer,
             eq_presets: &mut self.settings.eq_presets,
             subs: &mut self.settings.sub,

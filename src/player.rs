@@ -829,7 +829,12 @@ impl Player {
             af_before: String::new(),
         };
         player.set_channels(setup.channels);
-        player.set_audio_filters(&audio::filters(setup.normalize, &setup.equalizer, None));
+        player.set_audio_filters(&audio::filters(
+            setup.normalize,
+            &setup.equalizer,
+            None,
+            false,
+        ));
         player.set_passthrough(setup.passthrough);
         player.set_volume_max(setup.volume_max);
         let volume = setup.volume.clamp(0.0, player.state.volume_max);
@@ -2268,7 +2273,7 @@ mod tests {
             on: true,
             gains: audio::Preset::Rock.gains(),
         };
-        mpv.set("af", &Value::Str(audio::filters(true, &eq, None)));
+        mpv.set("af", &Value::Str(audio::filters(true, &eq, None, false)));
         mpv.set(
             "audio-channels",
             &Value::Str(Channels::Stereo.option().into()),
@@ -2553,7 +2558,12 @@ mod tests {
                         if let Some(n) = tracks::selected(&tracks, Kind::Audio)
                             .and_then(|t| audio::voice_layout(t.layout.as_deref(), t.channels))
                         {
-                            let af = audio::filters(false, &audio::Equalizer::default(), Some(&n));
+                            let af = audio::filters(
+                                false,
+                                &audio::Equalizer::default(),
+                                Some(&n),
+                                false,
+                            );
                             eprintln!("{n}, af: {af}");
                             mpv.set("af", &Value::Str(af));
                             af_set = true;
@@ -2578,6 +2588,84 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         assert!(problems.is_empty(), "{problems:#?}");
+    }
+
+    /// Stereo spread over 5.1 comes out as six channels, the voice raised
+    /// in the centre after it: a stereo WAV made here, played headless.
+    /// `cargo test upmix -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "needs vendor/libmpv"]
+    fn upmix_gives_six_channels() {
+        let dir = std::env::temp_dir().join("metalmpv_upmix");
+        std::fs::create_dir_all(&dir).unwrap();
+        let wav = dir.join("stereo.wav");
+        std::fs::write(&wav, stereo_wav(48_000, 2)).unwrap();
+        let api = sys::api().unwrap();
+        let mut mpv = Mpv::new(
+            api,
+            &[
+                ("vo", "null"),
+                ("ao", "null"),
+                ("idle", "yes"),
+                ("terminal", "no"),
+                ("audio-channels", Channels::Auto.option()),
+            ],
+        )
+        .unwrap();
+        mpv.request_log_messages("warn");
+        let af = audio::filters(false, &audio::Equalizer::default(), Some("stereo"), true);
+        mpv.set("af", &Value::Str(af));
+        mpv.observe(1, "audio-out-params", sys::MPV_FORMAT_NODE);
+        mpv.command(0, &["loadfile", &wav.to_string_lossy()]);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let (mut count, mut errors) = (None, Vec::new());
+        while count.is_none() && std::time::Instant::now() < deadline {
+            while let Some(event) = mpv.next_event() {
+                match event {
+                    Event::Property { id: 1, value } => {
+                        count = value.get("channel-count").and_then(Value::int);
+                        eprintln!("out: {value:?}");
+                    }
+                    Event::Log { level, text, .. } if level == "error" || level == "fatal" => {
+                        errors.push(text);
+                    }
+                    _ => {}
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(errors.is_empty(), "{errors:#?}");
+        assert_eq!(count, Some(6));
+    }
+
+    /// `seconds` of a WAV, 16-bit stereo at `rate`: a different tone on
+    /// each side and one common to both.
+    fn stereo_wav(rate: u32, seconds: u32) -> Vec<u8> {
+        let frames = rate * seconds;
+        let data = frames * 4;
+        let mut out = Vec::with_capacity(44 + data as usize);
+        out.extend_from_slice(b"RIFF");
+        out.extend_from_slice(&(36 + data).to_le_bytes());
+        out.extend_from_slice(b"WAVEfmt ");
+        out.extend_from_slice(&16u32.to_le_bytes());
+        out.extend_from_slice(&1u16.to_le_bytes());
+        out.extend_from_slice(&2u16.to_le_bytes());
+        out.extend_from_slice(&rate.to_le_bytes());
+        out.extend_from_slice(&(rate * 4).to_le_bytes());
+        out.extend_from_slice(&4u16.to_le_bytes());
+        out.extend_from_slice(&16u16.to_le_bytes());
+        out.extend_from_slice(b"data");
+        out.extend_from_slice(&data.to_le_bytes());
+        for i in 0..frames {
+            let t = f64::from(i) / f64::from(rate);
+            let tone = |hz: f64| (t * hz * std::f64::consts::TAU).sin();
+            let common = tone(300.0);
+            for side in [tone(440.0), tone(660.0)] {
+                let sample = ((common + side) * 0.4 * f64::from(i16::MAX)) as i16;
+                out.extend_from_slice(&sample.to_le_bytes());
+            }
+        }
+        out
     }
 
     #[test]
