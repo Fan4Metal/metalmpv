@@ -2613,6 +2613,7 @@ mod tests {
         let upmix = audio::Upmix {
             lfe_cut: 120,
             bass_only: true,
+            lfe_level: -6,
         };
         let af = audio::filters(
             false,

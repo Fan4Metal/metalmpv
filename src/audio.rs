@@ -216,6 +216,12 @@ pub fn voice_layout(layout: Option<&str>, channels: Option<i64>) -> Option<Strin
 /// Where the subwoofer's sound ends, in Hz: FFmpeg's `lfe_low` (its own
 /// default, 128, is high for a subwoofer; cinemas cross over at 80).
 pub const LFE_CUT_RANGE: std::ops::RangeInclusive<i64> = 40..=200;
+/// The subwoofer's level against the standard one, in dB.
+pub const LFE_LEVEL_RANGE: std::ops::RangeInclusive<i64> = -20..=10;
+/// The standard level of a 5.1's LFE channel: 10 dB under the others,
+/// since receivers play it 10 dB louder. `surround` puts the low end there
+/// at full level, and the bass boomed.
+const LFE_STANDARD_DB: i64 = -10;
 
 /// Stereo spread over 5.1, as the user set it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -226,6 +232,9 @@ pub struct Upmix {
     /// The low end taken out of the other channels (`lfe_mode=sub`), not
     /// only copied to the subwoofer: for small speakers.
     pub bass_only: bool,
+    /// The subwoofer's level in dB against the standard
+    /// ([`LFE_LEVEL_RANGE`], 0: [`LFE_STANDARD_DB`] in the filter).
+    pub lfe_level: i64,
 }
 
 impl Default for Upmix {
@@ -233,6 +242,7 @@ impl Default for Upmix {
         Self {
             lfe_cut: 80,
             bass_only: false,
+            lfe_level: 0,
         }
     }
 }
@@ -246,8 +256,12 @@ impl Upmix {
             .lfe_cut
             .clamp(*LFE_CUT_RANGE.start(), *LFE_CUT_RANGE.end());
         let mode = if self.bass_only { "sub" } else { "add" };
+        let level = self
+            .lfe_level
+            .clamp(*LFE_LEVEL_RANGE.start(), *LFE_LEVEL_RANGE.end());
+        let gain = 10f64.powf((level + LFE_STANDARD_DB) as f64 / 20.0);
         format!(
-            "lavfi=[surround=chl_out=5.1:lfe_low={cut}:lfe_high={}:lfe_mode={mode}]",
+            "lavfi=[surround=chl_out=5.1:lfe_low={cut}:lfe_high={}:lfe_mode={mode}:lfe_out={gain:.3}]",
             cut * 2
         )
     }
@@ -568,7 +582,7 @@ mod tests {
         let upmix = Upmix::default();
         assert_eq!(
             upmix.filter(),
-            "lavfi=[surround=chl_out=5.1:lfe_low=80:lfe_high=160:lfe_mode=add]"
+            "lavfi=[surround=chl_out=5.1:lfe_low=80:lfe_high=160:lfe_mode=add:lfe_out=0.316]"
         );
         assert_eq!(
             filters(false, &eq, Some("stereo"), Some(upmix)),
@@ -577,10 +591,11 @@ mod tests {
         let small = Upmix {
             lfe_cut: 500,
             bass_only: true,
+            lfe_level: 10,
         };
         assert_eq!(
             small.filter(),
-            "lavfi=[surround=chl_out=5.1:lfe_low=200:lfe_high=400:lfe_mode=sub]"
+            "lavfi=[surround=chl_out=5.1:lfe_low=200:lfe_high=400:lfe_mode=sub:lfe_out=1.000]"
         );
         assert!(is_stereo("stereo") && is_stereo("fl-fr") && !is_stereo("5.1"));
         assert!(Channels::Auto.takes_upmix() && !Channels::Stereo.takes_upmix());

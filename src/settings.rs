@@ -299,6 +299,7 @@ const VOICE_BOOST: &str = "voice_boost";
 const UPMIX: &str = "upmix";
 const LFE_CUT: &str = "lfe_cut";
 const BASS_ONLY: &str = "bass_only";
+const LFE_LEVEL: &str = "lfe_level";
 const EQ_PRESETS: &str = "eq_presets";
 const KEEP_ADJUST: &str = "keep_adjust";
 const ADJUST: &str = "adjust";
@@ -783,6 +784,15 @@ impl Settings {
                 )
                 .round() as i64,
                 bass_only: flag(BASS_ONLY, d.upmix_lfe.bass_only),
+                lfe_level: number(
+                    LFE_LEVEL,
+                    {
+                        let r = audio::LFE_LEVEL_RANGE;
+                        *r.start() as f64..=*r.end() as f64
+                    },
+                    d.upmix_lfe.lfe_level as f64,
+                )
+                .round() as i64,
             },
             eq_presets: get(EQ_PRESETS)
                 .map(|v| audio::OwnEq::from_text(&v))
@@ -963,6 +973,7 @@ impl Settings {
         storage.set_string(UPMIX, self.upmix.to_string());
         storage.set_string(LFE_CUT, self.upmix_lfe.lfe_cut.to_string());
         storage.set_string(BASS_ONLY, self.upmix_lfe.bass_only.to_string());
+        storage.set_string(LFE_LEVEL, self.upmix_lfe.lfe_level.to_string());
         storage.set_string(EQ_PRESETS, audio::OwnEq::to_text(&self.eq_presets));
         storage.set_string(SUB_ASS_OVERRIDE, self.sub_ass_override.to_string());
         storage.set_string(SUB_MARGINS, self.sub_margins.to_string());
@@ -1098,6 +1109,7 @@ mod tests {
             upmix_lfe: audio::Upmix {
                 lfe_cut: 120,
                 bass_only: true,
+                lfe_level: -4,
             },
             eq_presets: vec![audio::OwnEq {
                 name: "Ночь".into(),

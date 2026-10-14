@@ -666,6 +666,20 @@ fn sound_tab(
             &mut kept.upmix_lfe.lfe_cut,
             &cut,
         );
+        let level = Spec {
+            suffix: tr!(" dB", " дБ"),
+            tip: Some(tr!(
+                "0 is the standard level of a 5.1's subwoofer channel (10 dB under the others: receivers and sound systems play it that much louder). Lower if the bass booms",
+                "0 — стандартный уровень канала сабвуфера в 5.1 (на 10 дБ ниже остальных: ресиверы и звуковые системы воспроизводят его настолько громче). Если бас бухает, ниже"
+            )),
+            ..Spec::centred(range_of(audio::LFE_LEVEL_RANGE), d.lfe_level as f64)
+        };
+        int_row(
+            ui,
+            tr!("Subwoofer level", "Уровень сабвуфера"),
+            &mut kept.upmix_lfe.lfe_level,
+            &level,
+        );
         switch_line(
             ui,
             &mut kept.upmix_lfe.bass_only,
