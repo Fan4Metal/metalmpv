@@ -158,6 +158,12 @@ pub struct App {
     /// The middle button went down on the picture: the playlist shows or
     /// hides when it is let go.
     middle_press: bool,
+    /// The playlist over the picture's right side in fullscreen (`L`, the
+    /// middle button); closed when fullscreen ends.
+    fullscreen_playlist: bool,
+    /// How wide it was drawn in the last frame (0 while closed), in points:
+    /// the panels over the picture keep off it.
+    fullscreen_list_width: f32,
     /// The video area of the last frame, in points.
     picture_area: Rect,
     /// The title row, the control bar and the playlist around the video
@@ -338,6 +344,8 @@ impl App {
             save_now: None,
             menu_press: false,
             middle_press: false,
+            fullscreen_playlist: false,
+            fullscreen_list_width: 0.0,
             picture_area: Rect::NOTHING,
             chrome: egui::Vec2::ZERO,
             pending_picture: None,
@@ -1031,6 +1039,8 @@ impl App {
                     self.tracks_window.open = false;
                 } else if self.video_panel.open {
                     self.video_panel.open = false;
+                } else if frameless::is_fullscreen(ctx) && self.fullscreen_playlist {
+                    self.fullscreen_playlist = false;
                 } else if frameless::is_fullscreen(ctx) {
                     self.set_fullscreen(ctx, frame, false);
                 } else if self.interface() == Interface::Bare {
@@ -1095,7 +1105,13 @@ impl App {
                     self.goto_dialog.open(state.time, state.duration);
                 }
             }
-            Cmd::TogglePlaylist => self.settings.playlist_visible = !self.settings.playlist_visible,
+            Cmd::TogglePlaylist => {
+                if frameless::is_fullscreen(ctx) {
+                    self.fullscreen_playlist = !self.fullscreen_playlist;
+                } else {
+                    self.settings.playlist_visible = !self.settings.playlist_visible;
+                }
+            }
             Cmd::TogglePlaylistWindow => {
                 self.settings.playlist_detached = !self.settings.playlist_detached;
                 self.settings.playlist_visible = true;
@@ -1103,9 +1119,12 @@ impl App {
             Cmd::About => self.about.toggle(),
             Cmd::Settings => self.settings_dialog.toggle(),
             Cmd::Delete => {
-                if self.settings.playlist_visible
-                    && let Some(i) = self.playlist.selected
-                {
+                let shown = if frameless::is_fullscreen(ctx) {
+                    self.fullscreen_playlist
+                } else {
+                    self.settings.playlist_visible
+                };
+                if shown && let Some(i) = self.playlist.selected {
                     self.playlist.remove(i);
                 }
             }
@@ -1739,7 +1758,11 @@ impl App {
     ) -> ui::controls::Bar<'a> {
         ui::controls::Bar {
             state,
-            playlist_visible: !fullscreen && self.settings.playlist_visible,
+            playlist_visible: if fullscreen {
+                self.fullscreen_playlist
+            } else {
+                self.settings.playlist_visible
+            },
             video_panel_open: self.video_panel.open,
             tracks_open: self.tracks_window.open,
             fullscreen,
@@ -1988,8 +2011,12 @@ impl App {
                 cmds.push(Cmd::Volume(notches as f64 * input::VOLUME_STEP));
             }
         }
-        let (playlist_visible, chapter_marks) =
-            (self.settings.playlist_visible, self.settings.chapter_marks);
+        let playlist_visible = if self.fullscreen {
+            self.fullscreen_playlist
+        } else {
+            self.settings.playlist_visible
+        };
+        let chapter_marks = self.settings.chapter_marks;
         let marks = Marks {
             fill: self.fill,
             interface: self.interface(),
@@ -2260,7 +2287,10 @@ impl App {
     /// it is on) while the pointer is near the top.
     fn fullscreen_panels(&self, ctx: &egui::Context) -> Panels {
         let screen = ctx.content_rect();
-        let pointer = ctx.pointer_hover_pos();
+        // Not over the playlist on the right.
+        let pointer = ctx
+            .pointer_hover_pos()
+            .filter(|p| p.x < screen.right() - self.fullscreen_list_width);
         let (top, bottom) = Self::held(ctx, self.shown_over);
         Panels {
             top: self.settings.fullscreen_title
@@ -2307,12 +2337,25 @@ impl App {
             && !self.video_panel.open
             && !self.tracks_window.open
             && !egui::Popup::is_any_open(ctx)
+            && !self.fullscreen_playlist
         {
             ctx.set_cursor_icon(CursorIcon::None);
         }
-        let screen = ctx.content_rect();
         let alpha = (255.0 * (1.0 - self.settings.fullscreen_transparency / 100.0)).round() as u8;
         let fill = style::BAR_BG.gamma_multiply_u8(alpha);
+        self.fullscreen_list_width = if self.fullscreen_playlist {
+            self.fullscreen_playlist_panel(
+                ctx,
+                state,
+                style::PANEL_BG.gamma_multiply_u8(alpha),
+                cmds,
+            )
+        } else {
+            0.0
+        };
+        // The panels leave the playlist's side.
+        let mut screen = ctx.content_rect();
+        screen.max.x -= self.fullscreen_list_width;
 
         if panels.top {
             fullscreen_title(ctx, screen, title, fill);
@@ -2339,6 +2382,59 @@ impl App {
                         cmds.extend(ui::controls::bar(ui, bar));
                     });
             });
+    }
+
+    /// The playlist over the picture's right side in fullscreen, as tall as
+    /// the screen, on `fill`; its left edge dragged sets its width (kept in
+    /// egui memory, apart from the window's playlist). Its width.
+    fn fullscreen_playlist_panel(
+        &mut self,
+        ctx: &egui::Context,
+        state: &State,
+        fill: Color32,
+        cmds: &mut Vec<Cmd>,
+    ) -> f32 {
+        const GRIP: f32 = 6.0;
+        let screen = ctx.content_rect();
+        let id = egui::Id::new("fullscreen_playlist_width");
+        let most = (screen.width() * 0.6).max(ui::playlist::MIN_WIDTH);
+        let width = ctx
+            .data_mut(|d| *d.get_persisted_mut_or(id, 320.0_f32))
+            .clamp(ui::playlist::MIN_WIDTH, most);
+        let rect = Rect::from_min_max(egui::pos2(screen.right() - width, screen.top()), screen.max);
+        let logos = self.settings.channel_logos.then_some(&mut self.logos);
+        let (playlist, repeat) = (&mut self.playlist, self.settings.repeat);
+        egui::Area::new(egui::Id::new("fullscreen_playlist"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(rect.min)
+            .show(ctx, |ui| {
+                egui::Frame::NONE.fill(fill).inner_margin(6).show(ui, |ui| {
+                    let inner = rect.size() - egui::vec2(12.0, 12.0);
+                    ui.set_min_size(inner);
+                    ui.set_max_size(inner);
+                    cmds.extend(ui::playlist::panel(
+                        ui,
+                        playlist,
+                        logos,
+                        repeat,
+                        &state.chapters,
+                        state.time,
+                        false,
+                    ));
+                });
+                // The left edge resizes it.
+                let grip = Rect::from_min_size(rect.min, egui::vec2(GRIP, rect.height()));
+                let response = ui.interact(grip, id.with("grip"), Sense::drag());
+                if response.hovered() || response.dragged() {
+                    ctx.set_cursor_icon(CursorIcon::ResizeHorizontal);
+                }
+                if response.dragged() {
+                    let wider =
+                        (width - response.drag_delta().x).clamp(ui::playlist::MIN_WIDTH, most);
+                    ctx.data_mut(|d| d.insert_persisted(id, wider));
+                }
+            });
+        width
     }
 
     fn update_window_title(&mut self, ctx: &egui::Context, title: &str) {
@@ -2893,6 +2989,10 @@ impl eframe::App for App {
             self.set_fill(false);
         }
         self.fullscreen = fullscreen;
+        if !fullscreen {
+            self.fullscreen_playlist = false;
+            self.fullscreen_list_width = 0.0;
+        }
         let maximized = frameless::is_maximized(&ctx);
         // The interface changed while maximized or in fullscreen: the
         // restored window is made for it now.
