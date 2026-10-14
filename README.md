@@ -39,7 +39,7 @@ MetalMPV is a video player for Windows with a classic layout: the picture fills 
 - **File types**: the player can be registered with Windows for its video and audio formats, each with an icon of its own, and chosen as the default player (see [File types](#file-types)).
 - **English or Russian interface**: it follows the language of Windows and can be changed in the settings (`F5`).
 - **Portable**: the [portable archive](#installation) keeps its settings next to the program.
-- **Privacy**: no network access beyond the optional update check (see [Update check and privacy](#update-check-and-privacy)).
+- **Privacy**: no network access beyond the addresses opened, the optional update check and the logos of IPTV channels, which can be turned off (see [Update check and privacy](#update-check-and-privacy)).
 
 ## Installation
 
