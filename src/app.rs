@@ -478,10 +478,25 @@ impl App {
         };
         let choice = tracks::of_kind(&state.tracks, Kind::Audio).len() > 1
             || !tracks::of_kind(&state.tracks, Kind::Sub).is_empty();
-        let chosen = (tracks && choice).then(|| Tracks {
-            audio: tracks::selected(&state.tracks, Kind::Audio).map(|t| t.id),
-            sub: tracks::selected(&state.tracks, Kind::Sub).map(|t| t.id),
-        });
+        let audio = match tracks::selected(&state.tracks, Kind::Audio) {
+            Some(t) => Some(Some(t.id)),
+            // None of the file's audio tracks plays: mpv dropped it (the
+            // device failed), as the sound cannot be turned off here; what
+            // was kept before stays.
+            None if !tracks::of_kind(&state.tracks, Kind::Audio).is_empty() => self
+                .positions
+                .get(Path::new(path))
+                .and_then(|left| left.tracks)
+                .map(|t| t.audio),
+            None => Some(None),
+        };
+        let chosen = (tracks && choice)
+            .then_some(audio)
+            .flatten()
+            .map(|audio| Tracks {
+                audio,
+                sub: tracks::selected(&state.tracks, Kind::Sub).map(|t| t.id),
+            });
         let time = resume.then_some((time, duration));
         self.positions.remember(Path::new(path), time, chosen);
     }
