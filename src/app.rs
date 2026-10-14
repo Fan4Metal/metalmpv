@@ -1302,6 +1302,11 @@ impl App {
                     self.save_now = Some("going to sleep");
                     continue;
                 }
+                win::Hooked::Close => {
+                    log::info!("the Restart Manager asks to close");
+                    self.pending.push(Cmd::Close);
+                    continue;
+                }
                 win::Hooked::Thumb(id) => {
                     self.pending.extend(match id {
                         crate::taskbar::PREVIOUS => Some(Cmd::Prev),
