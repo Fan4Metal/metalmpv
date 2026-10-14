@@ -154,6 +154,26 @@ pub enum Cmd {
     ResetSubStyle,
     /// The equalizer flat and off.
     ResetEqualizer,
+    /// The next chapter (`1`) or back (`-1`: the start of the one playing,
+    /// or the one before just after a start; `chapters::step`).
+    ChapterStep(i32),
+    /// Turn the picture a quarter clockwise.
+    Rotate,
+    /// The next of the picture's shapes (`adjust::Aspect::ALL`).
+    CycleAspect,
+    /// Deinterlacing: auto, on, off.
+    CycleDeinterlace,
+    /// A colour property by this many points (of -100..100).
+    Color(crate::adjust::Color, i64),
+    /// The zoom by this many percent.
+    Zoom(i64),
+    /// The pan by these percent of the picture, right and down positive.
+    Pan(i64, i64),
+    /// The zoom and the pan back to none.
+    ZoomReset,
+    ToggleEqualizer,
+    ToggleNormalize,
+    ToggleVoiceBoost,
     Minimize,
     ToggleMaximize,
     Close,
@@ -163,7 +183,7 @@ pub enum Cmd {
 pub const VOLUME_STEP: f64 = 5.0;
 
 /// The command of `chord` in `map`; `repeat` is a key held down, which
-/// repeats seeking, frame steps, the volume and the delays only.
+/// repeats only what [`crate::keymap::Action::repeats`] says.
 pub fn command(map: &Keymap, chord: Chord, repeat: bool) -> Option<Cmd> {
     let action = map.action(chord)?;
     (!repeat || action.repeats()).then(|| action.cmd())
@@ -325,8 +345,38 @@ mod tests {
         assert_eq!(scale(Key::Num7), Some(Cmd::ToggleInterface));
         assert_eq!(scale(Key::Num8), Some(Cmd::CycleInterface));
         assert_eq!(default_command(Key::Num4, none, true), None);
-        assert_eq!(default_command(Key::Num1, Modifiers::COMMAND, false), None);
         assert_eq!(default_command(Key::Num1, Modifiers::ALT, false), None);
+    }
+
+    #[test]
+    fn picture_keys() {
+        use crate::adjust::Color;
+        let ctrl = Modifiers::COMMAND;
+        let alt = Modifiers::ALT;
+        // mpv's colour keys, with Ctrl: the digits alone size the window.
+        assert_eq!(
+            default_command(Key::Num1, ctrl, false),
+            Some(Cmd::Color(Color::Contrast, -2))
+        );
+        assert_eq!(
+            default_command(Key::Num4, ctrl, true),
+            Some(Cmd::Color(Color::Brightness, 2))
+        );
+        assert_eq!(default_command(Key::Equals, alt, true), Some(Cmd::Zoom(10)));
+        assert_eq!(
+            default_command(Key::ArrowLeft, alt, true),
+            Some(Cmd::Pan(-2, 0))
+        );
+        assert_eq!(default_command(Key::R, ctrl, false), Some(Cmd::Rotate));
+        assert_eq!(default_command(Key::R, ctrl, true), None);
+        assert_eq!(
+            default_command(Key::PageDown, ctrl, false),
+            Some(Cmd::ChapterStep(1))
+        );
+        assert_eq!(
+            default_command(Key::E, Modifiers::NONE, false),
+            Some(Cmd::ToggleEqualizer)
+        );
     }
 
     #[test]
@@ -344,7 +394,6 @@ mod tests {
         );
         assert_eq!(default_command(Key::U, ctrl, false), Some(Cmd::OpenUrl));
         assert_eq!(default_command(Key::E, ctrl, false), Some(Cmd::SaveFrame));
-        assert_eq!(default_command(Key::E, none, false), None);
         assert_eq!(
             default_command(Key::Tab, none, false),
             Some(Cmd::ShowPosition)

@@ -712,6 +712,17 @@ impl App {
         }));
     }
 
+    /// Change the picture's adjustments and give mpv what changed.
+    fn change_picture(&mut self, change: impl FnOnce(&mut Adjust)) {
+        let before = self.adjust.clone();
+        change(&mut self.adjust);
+        if let Some(player) = &mut self.player
+            && self.adjust != before
+        {
+            player.adjust(&before, &self.adjust);
+        }
+    }
+
     /// The folder of the entry playing, for a dialog to start in.
     fn current_folder(&self) -> Option<PathBuf> {
         self.playlist
@@ -1391,6 +1402,78 @@ impl App {
                 // The filters follow in `sync_audio_filters`, next frame.
                 self.settings.equalizer = crate::audio::Equalizer::default();
                 self.osd.show(Osd::ResetEqualizer);
+                ctx.request_repaint();
+            }
+            Cmd::ChapterStep(step) => {
+                if !state.idle
+                    && let Some(i) =
+                        crate::chapters::step(&state.chapters, state.time.unwrap_or(0.0), step > 0)
+                {
+                    self.run(ctx, frame, Cmd::Chapter(i));
+                }
+            }
+            Cmd::Rotate => {
+                self.change_picture(|a| a.rotate = (a.rotate + 90) % 360);
+                self.osd.show(Osd::Rotation(self.adjust.rotate));
+            }
+            Cmd::CycleAspect => {
+                use crate::adjust::Aspect;
+                let i = Aspect::ALL.iter().position(|a| *a == self.adjust.aspect);
+                let next = Aspect::ALL[i.map_or(0, |i| (i + 1) % Aspect::ALL.len())];
+                self.run(ctx, frame, Cmd::SetAspect(next));
+            }
+            Cmd::CycleDeinterlace => {
+                use crate::adjust::Deinterlace;
+                self.change_picture(|a| {
+                    let i = Deinterlace::ALL.iter().position(|d| *d == a.deinterlace);
+                    a.deinterlace =
+                        Deinterlace::ALL[i.map_or(0, |i| (i + 1) % Deinterlace::ALL.len())];
+                });
+                self.osd.show(Osd::Deinterlace(self.adjust.deinterlace));
+            }
+            Cmd::Color(color, step) => {
+                self.change_picture(|a| a.set(color, (a.get(color) + step).clamp(-100, 100)));
+                self.osd.show(Osd::Color(color, self.adjust.get(color)));
+            }
+            Cmd::Zoom(step) => {
+                let range = crate::adjust::ZOOM_RANGE;
+                self.change_picture(|a| {
+                    a.zoom = (a.zoom + step).clamp(*range.start(), *range.end())
+                });
+                self.osd.show(Osd::Zoom(self.adjust.zoom));
+            }
+            Cmd::Pan(x, y) => {
+                let range = crate::adjust::PAN_RANGE;
+                let (lo, hi) = (*range.start(), *range.end());
+                self.change_picture(|a| {
+                    a.pan_x = (a.pan_x + x).clamp(lo, hi);
+                    a.pan_y = (a.pan_y + y).clamp(lo, hi);
+                });
+                self.osd
+                    .show(Osd::Pan(self.adjust.pan_x, self.adjust.pan_y));
+            }
+            Cmd::ZoomReset => {
+                self.change_picture(|a| {
+                    let d = Adjust::default();
+                    (a.zoom, a.pan_x, a.pan_y) = (d.zoom, d.pan_x, d.pan_y);
+                });
+                self.osd.show(Osd::Zoom(self.adjust.zoom));
+            }
+            // The filters follow in `sync_audio_filters`, next frame.
+            Cmd::ToggleEqualizer => {
+                let eq = &mut self.settings.equalizer;
+                eq.on = !eq.on;
+                self.osd.show(Osd::Equalizer(eq.on));
+                ctx.request_repaint();
+            }
+            Cmd::ToggleNormalize => {
+                self.settings.normalize = !self.settings.normalize;
+                self.osd.show(Osd::Normalize(self.settings.normalize));
+                ctx.request_repaint();
+            }
+            Cmd::ToggleVoiceBoost => {
+                self.settings.voice_boost = !self.settings.voice_boost;
+                self.osd.show(Osd::VoiceBoost(self.settings.voice_boost));
                 ctx.request_repaint();
             }
             Cmd::ToggleInterface => {

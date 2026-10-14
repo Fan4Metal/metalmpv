@@ -318,6 +318,18 @@ pub enum Osd {
     ResetSubStyle,
     /// The equalizer flat and off.
     ResetEqualizer,
+    /// The picture's turn, clockwise in degrees.
+    Rotation(i64),
+    /// A colour property's value, -100..100.
+    Color(crate::adjust::Color, i64),
+    /// The zoom in percent.
+    Zoom(i64),
+    /// The pan in percent of the picture, right and down positive.
+    Pan(i64, i64),
+    Deinterlace(crate::adjust::Deinterlace),
+    Equalizer(bool),
+    Normalize(bool),
+    VoiceBoost(bool),
     /// Fullscreen with the picture filling the screen, cropped, or the
     /// picture whole again.
     Fill(bool),
@@ -478,6 +490,66 @@ impl Osd {
                 false => "[ Equalizer reset ]".into(),
                 true => "[ Эквалайзер сброшен ]".into(),
             },
+            Osd::Rotation(degrees) => match ru {
+                false => format!("[ Rotation {degrees}° ]"),
+                true => format!("[ Поворот {degrees}° ]"),
+            },
+            Osd::Color(color, value) => {
+                use crate::adjust::Color;
+                let name = match (color, ru) {
+                    (Color::Brightness, false) => "Brightness",
+                    (Color::Contrast, false) => "Contrast",
+                    (Color::Saturation, false) => "Saturation",
+                    (Color::Hue, false) => "Hue",
+                    (Color::Gamma, false) => "Gamma",
+                    (Color::Brightness, true) => "Яркость",
+                    (Color::Contrast, true) => "Контраст",
+                    (Color::Saturation, true) => "Насыщенность",
+                    (Color::Hue, true) => "Оттенок",
+                    (Color::Gamma, true) => "Гамма",
+                };
+                format!("[ {name} {} ]", signed(*value))
+            }
+            Osd::Zoom(percent) => match ru {
+                false => format!("[ Zoom {percent}% ]"),
+                true => format!("[ Масштаб {percent}% ]"),
+            },
+            Osd::Pan(x, y) => {
+                let (x, y) = (signed(*x), signed(*y));
+                match ru {
+                    false => format!("[ Position {x}% {y}% ]"),
+                    true => format!("[ Сдвиг {x}% {y}% ]"),
+                }
+            }
+            Osd::Deinterlace(d) => {
+                use crate::adjust::Deinterlace;
+                match (d, ru) {
+                    (Deinterlace::Auto, false) => "[ Deinterlacing: auto ]".into(),
+                    (Deinterlace::On, false) => "[ Deinterlacing on ]".into(),
+                    (Deinterlace::Off, false) => "[ Deinterlacing off ]".into(),
+                    (Deinterlace::Auto, true) => "[ Деинтерлейсинг: авто ]".into(),
+                    (Deinterlace::On, true) => "[ Деинтерлейсинг включён ]".into(),
+                    (Deinterlace::Off, true) => "[ Деинтерлейсинг выключен ]".into(),
+                }
+            }
+            Osd::Equalizer(on) => match (on, ru) {
+                (true, false) => "[ Equalizer on ]".into(),
+                (false, false) => "[ Equalizer off ]".into(),
+                (true, true) => "[ Эквалайзер включён ]".into(),
+                (false, true) => "[ Эквалайзер выключен ]".into(),
+            },
+            Osd::Normalize(on) => match (on, ru) {
+                (true, false) => "[ Normalization on ]".into(),
+                (false, false) => "[ Normalization off ]".into(),
+                (true, true) => "[ Нормализация включена ]".into(),
+                (false, true) => "[ Нормализация выключена ]".into(),
+            },
+            Osd::VoiceBoost(on) => match (on, ru) {
+                (true, false) => "[ Clearer speech on ]".into(),
+                (false, false) => "[ Clearer speech off ]".into(),
+                (true, true) => "[ Усиление речи включено ]".into(),
+                (false, true) => "[ Усиление речи выключено ]".into(),
+            },
             Osd::Fill(on) => match (on, ru) {
                 (true, false) => "[ Fullscreen without black bars ]".into(),
                 (false, false) => "[ Whole picture ]".into(),
@@ -582,9 +654,38 @@ impl Osd {
     }
 }
 
+/// A whole number with its sign: "+4", "-6", "0".
+fn signed(n: i64) -> String {
+    if n > 0 {
+        format!("+{n}")
+    } else {
+        n.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn picture_lines() {
+        use crate::adjust::{Color, Deinterlace};
+        assert_eq!(
+            Osd::Color(Color::Brightness, 4).text_in(Lang::Ru),
+            "[ Яркость +4 ]"
+        );
+        assert_eq!(
+            Osd::Color(Color::Contrast, -6).text_in(Lang::En),
+            "[ Contrast -6 ]"
+        );
+        assert_eq!(Osd::Pan(0, -2).text_in(Lang::Ru), "[ Сдвиг 0% -2% ]");
+        assert_eq!(Osd::Zoom(120).text_in(Lang::En), "[ Zoom 120% ]");
+        assert_eq!(Osd::Rotation(90).text_in(Lang::Ru), "[ Поворот 90° ]");
+        assert_eq!(
+            Osd::Deinterlace(Deinterlace::Auto).text_in(Lang::En),
+            "[ Deinterlacing: auto ]"
+        );
+    }
 
     #[test]
     fn dates_and_counts() {

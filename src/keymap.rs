@@ -10,6 +10,7 @@ use std::sync::{LazyLock, RwLock};
 
 use egui::{Key, Modifiers, PointerButton};
 
+use crate::adjust::Color;
 use crate::input::{Cmd, VOLUME_STEP};
 
 /// What a chord presses: a key, or a side button of the mouse.
@@ -47,6 +48,10 @@ impl Chord {
 
     const fn shift(key: Key) -> Self {
         Self::of(Press::Key(key), false, false, true)
+    }
+
+    const fn alt(key: Key) -> Self {
+        Self::of(Press::Key(key), false, true, false)
     }
 
     const fn of(press: Press, ctrl: bool, alt: bool, shift: bool) -> Self {
@@ -257,6 +262,13 @@ macro_rules! actions {
     };
 }
 
+/// A colour key's step, of -100..100.
+const COLOR_STEP: i64 = 2;
+/// A zoom key's step, in percent.
+const ZOOM_STEP: i64 = 10;
+/// A pan key's step, in percent of the picture.
+const PAN_STEP: i64 = 2;
+
 const MOUSE_BACK: Chord = Chord::of(Press::MouseBack, false, false, false);
 const MOUSE_FORWARD: Chord = Chord::of(Press::MouseForward, false, false, false);
 
@@ -280,10 +292,14 @@ actions! {
         [Chord::key(Key::Period), Chord::key(Key::F)];
     Start "start" Playback Cmd::Start, [Chord::key(Key::Home)];
     End "end" Playback Cmd::End, [Chord::key(Key::End)];
+    PrevChapter "prev_chapter" Playback Cmd::ChapterStep(-1), [Chord::ctrl(Key::PageUp)];
+    NextChapter "next_chapter" Playback Cmd::ChapterStep(1), [Chord::ctrl(Key::PageDown)];
+    ChapterMarks "chapter_marks" Playback Cmd::ToggleChapterMarks, [];
     Faster "faster" Playback Cmd::Speed(1), [Chord::key(Key::C)];
     Slower "slower" Playback Cmd::Speed(-1), [Chord::key(Key::X)];
     NormalSpeed "normal_speed" Playback Cmd::Speed(0), [Chord::key(Key::Z)];
     Position "position" Playback Cmd::ShowPosition, [Chord::key(Key::Tab)];
+    TimeDisplay "time_display" Playback Cmd::CycleTime, [];
     GoToTime "go_to_time" Playback Cmd::GoToTime, [Chord::ctrl(Key::G)];
     Repeat "repeat" Playback Cmd::CycleRepeat, [Chord::key(Key::R)];
     LoopA "loop_a" Playback Cmd::LoopA, [Chord::key(Key::OpenBracket)];
@@ -308,6 +324,9 @@ actions! {
     SoundInSync "sound_in_sync" Sound Cmd::AudioDelay(0.0), [Chord::ctrl(Key::Num0)];
     ResetSubStyle "reset_sub_style" Sound Cmd::ResetSubStyle, [];
     ResetEqualizer "reset_equalizer" Sound Cmd::ResetEqualizer, [];
+    EqualizerOnOff "equalizer_on_off" Sound Cmd::ToggleEqualizer, [Chord::key(Key::E)];
+    Normalize "normalize" Sound Cmd::ToggleNormalize, [Chord::key(Key::N)];
+    VoiceBoost "voice_boost" Sound Cmd::ToggleVoiceBoost, [Chord::key(Key::B)];
 
     Fullscreen "fullscreen" Window Cmd::ToggleFullscreen,
         [Chord::key(Key::Enter), Chord::of(Press::Key(Key::Enter), false, true, false),
@@ -321,6 +340,30 @@ actions! {
     FitWindow "fit_window" Window Cmd::FitWindow, [Chord::key(Key::Backtick)];
     Fill "fill" Window Cmd::ToggleFill, [Chord::key(Key::Num6)];
     ResetPicture "reset_picture" Window Cmd::ResetPicture, [Chord::key(Key::Q)];
+    Rotate "rotate" Window Cmd::Rotate, [Chord::ctrl(Key::R)];
+    Aspect "aspect" Window Cmd::CycleAspect, [Chord::ctrl(Key::A)];
+    Deinterlace "deinterlace" Window Cmd::CycleDeinterlace, [Chord::ctrl(Key::D)];
+    ContrastDown "contrast_down" Window Cmd::Color(Color::Contrast, -COLOR_STEP),
+        [Chord::ctrl(Key::Num1)];
+    ContrastUp "contrast_up" Window Cmd::Color(Color::Contrast, COLOR_STEP),
+        [Chord::ctrl(Key::Num2)];
+    BrightnessDown "brightness_down" Window Cmd::Color(Color::Brightness, -COLOR_STEP),
+        [Chord::ctrl(Key::Num3)];
+    BrightnessUp "brightness_up" Window Cmd::Color(Color::Brightness, COLOR_STEP),
+        [Chord::ctrl(Key::Num4)];
+    GammaDown "gamma_down" Window Cmd::Color(Color::Gamma, -COLOR_STEP), [Chord::ctrl(Key::Num5)];
+    GammaUp "gamma_up" Window Cmd::Color(Color::Gamma, COLOR_STEP), [Chord::ctrl(Key::Num6)];
+    SaturationDown "saturation_down" Window Cmd::Color(Color::Saturation, -COLOR_STEP),
+        [Chord::ctrl(Key::Num7)];
+    SaturationUp "saturation_up" Window Cmd::Color(Color::Saturation, COLOR_STEP),
+        [Chord::ctrl(Key::Num8)];
+    ZoomIn "zoom_in" Window Cmd::Zoom(ZOOM_STEP), [Chord::alt(Key::Equals), Chord::alt(Key::Plus)];
+    ZoomOut "zoom_out" Window Cmd::Zoom(-ZOOM_STEP), [Chord::alt(Key::Minus)];
+    PanLeft "pan_left" Window Cmd::Pan(-PAN_STEP, 0), [Chord::alt(Key::ArrowLeft)];
+    PanRight "pan_right" Window Cmd::Pan(PAN_STEP, 0), [Chord::alt(Key::ArrowRight)];
+    PanUp "pan_up" Window Cmd::Pan(0, -PAN_STEP), [Chord::alt(Key::ArrowUp)];
+    PanDown "pan_down" Window Cmd::Pan(0, PAN_STEP), [Chord::alt(Key::ArrowDown)];
+    ZoomReset "zoom_reset" Window Cmd::ZoomReset, [Chord::alt(Key::Backspace)];
     Interface "interface" Window Cmd::ToggleInterface, [Chord::key(Key::Num7)];
     Interfaces "interfaces" Window Cmd::CycleInterface, [Chord::key(Key::Num8)];
     OnTop "on_top" Window Cmd::CycleOnTop, [Chord::ctrl(Key::T)];
@@ -334,12 +377,21 @@ actions! {
     Playlist "playlist" Files Cmd::TogglePlaylist, [Chord::key(Key::L)];
     PlaylistWindow "playlist_window" Files Cmd::TogglePlaylistWindow, [];
     Delete "delete" Files Cmd::Delete, [Chord::key(Key::Delete)];
+    PlaylistAdd "playlist_add" Files Cmd::PlaylistAdd, [Chord::key(Key::Insert)];
+    PlaylistSave "playlist_save" Files Cmd::PlaylistSave, [Chord::ctrl(Key::S)];
+    PlaylistShuffle "playlist_shuffle" Files Cmd::PlaylistShuffle, [];
+    PlaylistSort "playlist_sort" Files Cmd::PlaylistSort, [];
+    PlaylistClear "playlist_clear" Files Cmd::PlaylistClear, [];
+    ShowInFolder "show_in_folder" Files Cmd::ShowInFolder, [];
     Info "info" Files Cmd::ToggleInfo, [Chord::key(Key::I)];
     VideoPanel "video_panel" Files Cmd::ToggleVideoPanel, [Chord::key(Key::U), Chord::key(Key::F7)];
     Equalizer "equalizer" Files Cmd::ShowEqualizer, [];
     SaveFrame "save_frame" Files Cmd::SaveFrame, [Chord::ctrl(Key::E)];
+    ShowFrames "show_frames" Files Cmd::ShowFrames, [];
+    SaveCover "save_cover" Files Cmd::SaveCover, [];
     Settings "settings" Files Cmd::Settings, [Chord::key(Key::F5), Chord::ctrl(Key::Comma)];
     About "about" Files Cmd::About, [Chord::key(Key::F1)];
+    Close "close" Files Cmd::Close, [];
 }
 
 impl Action {
@@ -377,6 +429,19 @@ impl Action {
                 "Позиция и глава на экране"
             ),
             Action::GoToTime => tr!("Go to time…", "Перейти ко времени…"),
+            Action::PrevChapter => tr!(
+                "Previous chapter (the start of this one after 5 s)",
+                "Предыдущая глава (после 5 с — начало текущей)"
+            ),
+            Action::NextChapter => tr!("Next chapter", "Следующая глава"),
+            Action::ChapterMarks => tr!(
+                "Chapter marks on the seek bar",
+                "Метки глав на полосе перемотки"
+            ),
+            Action::TimeDisplay => tr!(
+                "Time: both, elapsed, remaining",
+                "Время: оба, прошло, осталось"
+            ),
             Action::Repeat => tr!(
                 "Repeat: off, the file, the list",
                 "Повтор: выключен, файл, плейлист"
@@ -410,6 +475,9 @@ impl Action {
                 "Reset the equalizer (flat, off)",
                 "Сбросить эквалайзер (ровный, выкл.)"
             ),
+            Action::EqualizerOnOff => tr!("Equalizer on / off", "Эквалайзер вкл. / выкл."),
+            Action::Normalize => tr!("Normalization on / off", "Нормализация вкл. / выкл."),
+            Action::VoiceBoost => tr!("Clearer speech on / off", "Усилить речь вкл. / выкл."),
             Action::Fullscreen => tr!("Fullscreen", "Полный экран"),
             Action::Escape => tr!(
                 "Close what is open, leave fullscreen, bring the interface back; else close the program",
@@ -437,6 +505,33 @@ impl Action {
             Action::ResetPicture => tr!(
                 "Reset the picture's settings (colour, zoom, filters, turns)",
                 "Сбросить настройки изображения (цвет, масштаб, фильтры, повороты)"
+            ),
+            Action::Rotate => tr!("Turn 90° clockwise", "Повернуть на 90° по часовой"),
+            Action::Aspect => tr!(
+                "Aspect ratio: as in the file, 4:3, 16:9…",
+                "Пропорции: как в файле, 4:3, 16:9…"
+            ),
+            Action::Deinterlace => tr!(
+                "Deinterlacing: auto, on, off",
+                "Деинтерлейсинг: авто, вкл., выкл."
+            ),
+            Action::ContrastDown => tr!("Contrast down", "Контраст меньше"),
+            Action::ContrastUp => tr!("Contrast up", "Контраст больше"),
+            Action::BrightnessDown => tr!("Brightness down", "Яркость меньше"),
+            Action::BrightnessUp => tr!("Brightness up", "Яркость больше"),
+            Action::GammaDown => tr!("Gamma down", "Гамма меньше"),
+            Action::GammaUp => tr!("Gamma up", "Гамма больше"),
+            Action::SaturationDown => tr!("Saturation down", "Насыщенность меньше"),
+            Action::SaturationUp => tr!("Saturation up", "Насыщенность больше"),
+            Action::ZoomIn => tr!("Zoom in", "Увеличить масштаб"),
+            Action::ZoomOut => tr!("Zoom out", "Уменьшить масштаб"),
+            Action::PanLeft => tr!("Move the picture left", "Сдвинуть изображение влево"),
+            Action::PanRight => tr!("Move the picture right", "Сдвинуть изображение вправо"),
+            Action::PanUp => tr!("Move the picture up", "Сдвинуть изображение вверх"),
+            Action::PanDown => tr!("Move the picture down", "Сдвинуть изображение вниз"),
+            Action::ZoomReset => tr!(
+                "Zoom and position as they were",
+                "Масштаб и положение как было"
             ),
             Action::Interface => tr!(
                 "Only the picture / the interface again",
@@ -468,6 +563,12 @@ impl Action {
                 "Remove the selected playlist entry",
                 "Убрать выбранную запись из плейлиста"
             ),
+            Action::PlaylistAdd => tr!("Add files to the playlist", "Добавить файлы в плейлист"),
+            Action::PlaylistSave => tr!("Save the playlist (M3U8)", "Сохранить плейлист (M3U8)"),
+            Action::PlaylistShuffle => tr!("Shuffle the playlist", "Перемешать плейлист"),
+            Action::PlaylistSort => tr!("Sort the playlist", "Сортировать плейлист"),
+            Action::PlaylistClear => tr!("Clear the playlist", "Очистить плейлист"),
+            Action::ShowInFolder => tr!("Show the file in its folder", "Показать файл в папке"),
             Action::Info => tr!("File information", "Сведения о файле"),
             Action::VideoPanel => tr!(
                 "Video, sound and subtitles panel",
@@ -475,13 +576,19 @@ impl Action {
             ),
             Action::Equalizer => tr!("Equalizer", "Эквалайзер"),
             Action::SaveFrame => tr!("Save the frame", "Сохранить кадр"),
+            Action::ShowFrames => tr!(
+                "Open the folder of saved frames",
+                "Открыть папку сохранённых кадров"
+            ),
+            Action::SaveCover => tr!("Save the cover…", "Сохранить обложку…"),
             Action::Settings => tr!("Settings", "Настройки"),
             Action::About => tr!("About", "О программе"),
+            Action::Close => tr!("Close the program", "Закрыть программу"),
         }
     }
 
-    /// Whether a held key repeats it: seeking, frame steps, the volume and
-    /// the delays.
+    /// Whether a held key repeats it: seeking, frame steps, the volume, the
+    /// delays, the colour, the zoom and the pan.
     pub fn repeats(self) -> bool {
         matches!(
             self.cmd(),
@@ -492,6 +599,9 @@ impl Action {
                 | Cmd::Volume(_)
                 | Cmd::AudioDelay(_)
                 | Cmd::SubDelay(_)
+                | Cmd::Color(..)
+                | Cmd::Zoom(_)
+                | Cmd::Pan(..)
         )
     }
 

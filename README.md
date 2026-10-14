@@ -155,7 +155,7 @@ The sound and the look of the subtitles are set on the Video, sound and subtitle
 
 ## Keyboard shortcuts
 
-The keys below are the defaults. In the settings, the **Keyboard shortcuts** category lists the actions in groups, each with its keys: a click on a key waits for the key combination (or the mouse's back or forward button, with `Ctrl`, `Alt` or `Shift` if wanted) that takes its place, **+** adds one more, the cross removes it, and `Esc` gives up. A combination another action had is taken from that action, and the page says so, with **Undo** beside. A search field above the groups leaves the actions whose name or keys contain the text typed. A few actions without a default key can be given one: Stop, A-B repeat: start, end, off (one key for the three in turn), Load subtitles, Equalizer, Reset the equalizer (flat, off), Reset the subtitles' look, Playlist in a window of its own / in the player, Minimize and Maximize. **Reset the keys** puts them all back. The menus and tooltips show the keys as they are set. The mouse wheel, the double and middle clicks and the media keys stay as described; `Ctrl+V` and `Shift+Insert` cannot be chosen, and `Ctrl+Insert` is taken as `Ctrl+C`.
+The keys below are the defaults. In the settings, the **Keyboard shortcuts** category lists the actions in groups, each with its keys: a click on a key waits for the key combination (or the mouse's back or forward button, with `Ctrl`, `Alt` or `Shift` if wanted) that takes its place, **+** adds one more, the cross removes it, and `Esc` gives up. A combination another action had is taken from that action, and the page says so, with **Undo** beside. A search field above the groups leaves the actions whose name or keys contain the text typed. A few actions without a default key can be given one: Stop, A-B repeat: start, end, off (one key for the three in turn), Load subtitles, Equalizer, Reset the equalizer (flat, off), Reset the subtitles' look, Chapter marks on the seek bar, Time: both, elapsed, remaining, Shuffle, Sort and Clear the playlist, Show the file in its folder, Open the folder of saved frames, Save the cover…, Playlist in a window of its own / in the player, Minimize, Maximize and Close the program. **Reset the keys** puts them all back. The menus and tooltips show the keys as they are set. The mouse wheel, the double and middle clicks and the media keys stay as described; `Ctrl+V` and `Shift+Insert` cannot be chosen, and `Ctrl+Insert` is taken as `Ctrl+C`.
 
 | Key | Action |
 |---|---|
@@ -165,6 +165,7 @@ The keys below are the defaults. In the settings, the **Keyboard shortcuts** cat
 | `Shift+←` / `Shift+→` | Back / forward by 1 s to the exact frame |
 | `,` / `.` (or `D` / `F`) | Previous / next frame |
 | `Home` / `End` | Start / end of the file |
+| `Ctrl+Page Up` / `Ctrl+Page Down` | Previous / next chapter (more than 5 s into a chapter, back to its start) |
 | `↑` / `↓`, mouse wheel | Volume up / down |
 | `M` | Mute |
 | `T` | The audio and subtitles window |
@@ -181,6 +182,7 @@ The keys below are the defaults. In the settings, the **Keyboard shortcuts** cat
 | `Ctrl+0` | Sound back in sync |
 | `Shift+.` / `Shift+,` | Subtitles later / earlier by 100 ms (`>` and `<`) |
 | `Shift+0` | Subtitles back in sync |
+| `E` / `N` / `B` | Equalizer / normalization / clearer speech on or off |
 | `Page Up` / `Page Down` | Previous / next file of the playlist |
 | Media keys | Play/Pause, Stop, Previous and Next of a keyboard, a headset or a remote, also while another window is active (through Windows' media controls, whose flyout over the volume's shows the title playing); see the **Media keys** setting |
 | `Enter`, `Alt+Enter`, `F11`, double click | Fullscreen |
@@ -189,6 +191,13 @@ The keys below are the defaults. In the settings, the **Keyboard shortcuts** cat
 | `` ` `` | Window fitted to the picture, without black bars |
 | `6` | Fullscreen without black bars (the picture cropped); again, with them |
 | `Q` | Reset the picture's settings: colour, zoom, filters, turns (as **Reset all** on the panel's Video tab) |
+| `Ctrl+R` | Turn the picture 90° clockwise |
+| `Ctrl+A` | Aspect ratio in turn: as in the file, 4:3, 16:9, 16:10, 1.85:1, 2.35:1, 2.39:1 |
+| `Ctrl+D` | Deinterlacing: auto, on, off |
+| `Ctrl+1` / `Ctrl+2` | Contrast down / up (as mpv's `1`/`2`); `Ctrl+3`/`Ctrl+4` brightness, `Ctrl+5`/`Ctrl+6` gamma, `Ctrl+7`/`Ctrl+8` saturation |
+| `Alt+=` / `Alt+-` | Zoom the picture in / out |
+| `Alt+arrows` | Move the picture |
+| `Alt+Backspace` | The picture's zoom and position as they were |
 | `7` | Only the picture, without the title row, the control bar and the playlist; again, the interface returns |
 | `8` | Interface: full, without the title row, compact, only the picture, in turn (also in the context menu) |
 | `Esc` | Closes the file information window, else the tracks window, else the Video, sound and subtitles panel, else the playlist shown in fullscreen, else leaves fullscreen, else brings the interface back after `7`, else closes the program |
@@ -200,6 +209,8 @@ The keys below are the defaults. In the settings, the **Keyboard shortcuts** cat
 | `\` | A-B repeat off |
 | `Ctrl+T` | Over the other windows: never, always, while playing (also in the settings and the context menu) |
 | `Delete` | Remove the selected playlist entry |
+| `Insert` | Add files to the playlist |
+| `Ctrl+S` | Save the playlist as M3U8 |
 | `F5`, `Ctrl+,` | Settings |
 | `F1` | About |
 
