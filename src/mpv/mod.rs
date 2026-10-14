@@ -399,11 +399,17 @@ impl RenderContext {
         self.update.push(data);
     }
 
-    /// Whether a new video frame should be rendered.
+    /// Whether a new video frame should be rendered. Bits of a newer
+    /// libmpv are logged once.
     pub fn update(&self) -> bool {
-        unsafe {
-            (self.api.mpv_render_context_update)(self.ctx) & sys::MPV_RENDER_UPDATE_FRAME != 0
+        static UNKNOWN_LOGGED: std::sync::atomic::AtomicBool =
+            std::sync::atomic::AtomicBool::new(false);
+        let flags = unsafe { (self.api.mpv_render_context_update)(self.ctx) };
+        let unknown = flags & !sys::MPV_RENDER_UPDATE_FRAME;
+        if unknown != 0 && !UNKNOWN_LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            log::debug!("mpv_render_context_update: unknown bits {unknown:#x}");
         }
+        flags & sys::MPV_RENDER_UPDATE_FRAME != 0
     }
 
     /// Render the current frame into framebuffer `fbo` of `w` x `h` pixels,

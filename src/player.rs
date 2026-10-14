@@ -149,11 +149,11 @@ impl EngineError {
     }
 }
 
-/// Observed properties, by their number in [`Event::Property`].
+/// Observed properties; their number in [`Event::Property`] is their
+/// place in [`PROPS`] from 1 ([`Prop::of`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u64)]
 enum Prop {
-    Pause = 1,
+    Pause,
     TimePos,
     Duration,
     Volume,
@@ -214,6 +214,21 @@ const PROPS: [(Prop, &str, sys::mpv_format); 23] = [
     (Prop::LoopA, "ab-loop-a", sys::MPV_FORMAT_NODE),
     (Prop::LoopB, "ab-loop-b", sys::MPV_FORMAT_NODE),
 ];
+
+impl Prop {
+    /// The property of an observed number.
+    fn of(id: u64) -> Option<Prop> {
+        let i = usize::try_from(id.checked_sub(1)?).ok()?;
+        PROPS.get(i).map(|(prop, _, _)| *prop)
+    }
+}
+
+/// Observe all of [`PROPS`], each by its number.
+fn observe_all(mpv: &Mpv) {
+    for (i, (_, name, format)) in PROPS.iter().enumerate() {
+        mpv.observe(i as u64 + 1, name, *format);
+    }
+}
 
 /// The reply to [`Player::ask_scan`]'s `video-frame-info`, past the
 /// observed properties' numbers.
@@ -761,9 +776,7 @@ impl Player {
         } else {
             mpv.request_log_messages("warn");
         }
-        for (prop, name, format) in PROPS {
-            mpv.observe(prop as u64, name, format);
-        }
+        observe_all(&mpv);
         let mut player = Self {
             mpv,
             state: State::default(),
@@ -824,10 +837,10 @@ impl Player {
                     }
                 }
                 Event::Property { id, value } => {
-                    if let Some((prop, _, _)) = PROPS.iter().find(|(p, _, _)| *p as u64 == id) {
+                    if let Some(prop) = Prop::of(id) {
                         let was_eof = self.state.eof;
-                        self.state.apply(*prop, &value);
-                        if *prop == Prop::EofReached && self.state.eof && !was_eof {
+                        self.state.apply(prop, &value);
+                        if prop == Prop::EofReached && self.state.eof && !was_eof {
                             if self.loading {
                                 log::debug!("end of the file before the one loading: ignored");
                                 self.state.eof = false;
@@ -901,8 +914,8 @@ impl Player {
                     log::warn!("mpv event queue overflowed; asking for the properties again");
                     self.state.scan = None;
                     self.scan_asked = None;
-                    for (prop, name, format) in PROPS {
-                        self.mpv.get(prop as u64, name, format);
+                    for (i, (_, name, format)) in PROPS.iter().enumerate() {
+                        self.mpv.get(i as u64 + 1, name, *format);
                     }
                 }
                 Event::CommandReply {
@@ -1330,6 +1343,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn properties_are_numbered_by_their_place() {
+        for (i, (prop, _, _)) in PROPS.iter().enumerate() {
+            assert_eq!(Prop::of(i as u64 + 1), Some(*prop));
+        }
+        assert_eq!(Prop::of(0), None);
+        assert_eq!(Prop::of(PROPS.len() as u64 + 1), None);
+        // Below the other replies' numbers.
+        assert!((PROPS.len() as u64) < FRAME_INFO.min(LOAD).min(LIVE_FIRST));
+    }
+
+    #[test]
     fn an_end_far_from_the_duration_is_missing_data() {
         use std::time::{Duration, Instant};
         let at = Instant::now();
@@ -1475,9 +1499,7 @@ mod tests {
             af: String::new(),
             af_before: String::new(),
         };
-        for (prop, name, format) in PROPS {
-            player.mpv.observe(prop as u64, name, format);
-        }
+        observe_all(&player.mpv);
         let wait = |player: &mut Player, seconds: f64, until: &mut dyn FnMut(&State) -> bool| {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs_f64(seconds);
             while std::time::Instant::now() < deadline {
@@ -1563,9 +1585,7 @@ mod tests {
             af: String::new(),
             af_before: String::new(),
         };
-        for (prop, name, format) in PROPS {
-            player.mpv.observe(prop as u64, name, format);
-        }
+        observe_all(&player.mpv);
         let wait = |player: &mut Player,
                     seconds: f64,
                     until: &mut dyn FnMut(&State, &[Happened]) -> bool| {
