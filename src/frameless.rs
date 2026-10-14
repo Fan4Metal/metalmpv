@@ -114,8 +114,11 @@ pub fn resize_edges(ui: &mut Ui) {
 /// Enter or leave fullscreen. winit moves the client area of an undecorated
 /// window with a shadow a pixel down (its `WM_NCCALCSIZE`), which in
 /// fullscreen would push the bottom row of pixels off the screen: the
-/// shadow is off while in fullscreen.
+/// shadow is off while in fullscreen. A maximized window stays maximized
+/// for Windows in fullscreen, and winit gives a maximized window the work
+/// area: `win::set_fullscreen` makes its client area the whole monitor.
 pub fn set_fullscreen(ctx: &egui::Context, frame: &eframe::Frame, on: bool) {
+    crate::win::set_fullscreen(on);
     if let Some(window) = frame.winit_window() {
         use winit::platform::windows::WindowExtWindows;
         window.set_undecorated_shadow(!on);

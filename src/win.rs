@@ -488,6 +488,42 @@ pub fn set_snap(on: bool) {
     SNAP.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// The window is in fullscreen ([`set_fullscreen`]).
+static FULLSCREEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The window enters or leaves fullscreen. A window maximized before keeps
+/// `WS_MAXIMIZE` there, and winit's `WM_NCCALCSIZE` limits a maximized
+/// window's client area to the work area: a strip as tall as the taskbar
+/// was left black at the bottom (now and then: winit's move to the monitor
+/// is asynchronous). Meanwhile the client area is the whole monitor
+/// ([`fullscreen_client`]).
+pub fn set_fullscreen(on: bool) {
+    FULLSCREEN.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// `WM_NCCALCSIZE` in fullscreen: the client area is the whole window
+/// (no frame), within the monitor it is on (a maximized window's
+/// rectangle goes past the monitor's edges by its frame).
+unsafe fn fullscreen_client(lparam: windows_sys::Win32::Foundation::LPARAM) {
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromRect,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::NCCALCSIZE_PARAMS;
+    let params = unsafe { &mut *(lparam as *mut NCCALCSIZE_PARAMS) };
+    let monitor = unsafe { MonitorFromRect(&params.rgrc[0], MONITOR_DEFAULTTONEAREST) };
+    let mut info = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    if unsafe { GetMonitorInfoW(monitor, &mut info) } != 0 {
+        let (r, m) = (&mut params.rgrc[0], info.rcMonitor);
+        r.left = r.left.max(m.left);
+        r.top = r.top.max(m.top);
+        r.right = r.right.min(m.right).max(r.left);
+        r.bottom = r.bottom.min(m.bottom).max(r.top);
+    }
+}
+
 /// What the window's messages asked for since the last call.
 pub fn take_hooked() -> Vec<Hooked> {
     HOOKED
@@ -540,8 +576,8 @@ unsafe extern "system" fn window_proc(
     use std::sync::atomic::Ordering;
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        WM_COMMAND, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_MOVING, WM_QUERYENDSESSION,
-        WM_WINDOWPOSCHANGED,
+        WM_COMMAND, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_MOVING, WM_NCCALCSIZE,
+        WM_QUERYENDSESSION, WM_WINDOWPOSCHANGED,
     };
     // THBN_CLICKED in WM_COMMAND's high word.
     const THBN_CLICKED: usize = 0x1800;
@@ -556,6 +592,11 @@ unsafe extern "system" fn window_proc(
         // Answered as DefWindowProc does (yes); the app saves before the
         // process is ended.
         WM_QUERYENDSESSION => hook(Hooked::EndSession),
+        // Not winit's: the whole rectangle, maximized or not.
+        WM_NCCALCSIZE if wparam != 0 && lparam != 0 && FULLSCREEN.load(Ordering::Relaxed) => {
+            unsafe { fullscreen_client(lparam) };
+            return 0;
+        }
         WM_ENTERSIZEMOVE => unsafe { move_started(hwnd as isize) },
         WM_WINDOWPOSCHANGED => follow_player(hwnd as isize),
         WM_EXITSIZEMOVE => {
