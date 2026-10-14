@@ -1,8 +1,9 @@
 //! The tracks window over the control bar's tracks button (`T`), as the
 //! Video, sound and subtitles panel is (`popover.rs`: the same frame and
 //! place, a press outside closes it, the keys go on): the audio tracks and
-//! the subtitles side by side, each in a column of its own that scrolls
-//! when long. A choice applies at once and the window stays open, so both
+//! the subtitles as tabs, or side by side in two columns (the button at the
+//! right of the tabs, `settings.tracks_wide`), each list scrolling when
+//! long. A choice applies at once and the window stays open, so both
 //! can be changed in one go; `T` or `Esc` closes it too. The same lists are
 //! submenus of the picture's context menu.
 
@@ -19,6 +20,8 @@ pub struct TracksWindow {
     pub open: bool,
     /// Where it was drawn last, for the presses outside it.
     rect: Option<Rect>,
+    /// The tab shown: 0 the sound, 1 the subtitles.
+    tab: usize,
 }
 
 impl TracksWindow {
@@ -27,9 +30,16 @@ impl TracksWindow {
     }
 
     /// Draw the window over `button` (the control bar's, where it was drawn
-    /// this frame; else the player's bottom right corner) while it is open;
-    /// the choices made.
-    pub fn show(&mut self, ctx: &egui::Context, button: Option<Rect>, all: &[Track]) -> Vec<Cmd> {
+    /// this frame; else the player's bottom right corner) while it is open,
+    /// as tabs or, with `wide`, two columns (its button turns it); the
+    /// choices made.
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        button: Option<Rect>,
+        all: &[Track],
+        wide: &mut bool,
+    ) -> Vec<Cmd> {
         let mut out = Vec::new();
         if !self.open {
             self.rect = None;
@@ -41,16 +51,24 @@ impl TracksWindow {
             return out;
         }
         let corner = popover::corner(ctx, button);
-        let shown = popover::show(ctx, "tracks_window", corner, WIDTH, |ui| {
-            out = panel(ui, all);
+        let width = if *wide { WIDTH } else { COLUMN };
+        let tab = &mut self.tab;
+        let shown = popover::show(ctx, "tracks_window", corner, width, |ui| {
+            out = if *wide {
+                columns(ui, all, wide)
+            } else {
+                tabbed(ui, all, tab, wide)
+            };
         });
         self.rect = Some(shown);
         out
     }
 }
 
-/// The width of a column.
+/// The width of a column, and of the window as tabs.
 const COLUMN: f32 = 270.0;
+/// The width of a button of the head (`ui::tool`).
+const TOOL: f32 = 26.0;
 /// The width of the window's content: the columns and the line between.
 const WIDTH: f32 = 2.0 * COLUMN + 13.0;
 /// The height of a row with a name only ("Off").
@@ -60,10 +78,46 @@ const ROW_TWO: f32 = 44.0;
 /// A column scrolls past this height (Blu-ray rips may carry 30 subtitles).
 const MAX_LIST: f32 = 300.0;
 
-/// The contents of the window.
-pub fn panel(ui: &mut Ui, all: &[Track]) -> Vec<Cmd> {
+/// The lists as tabs, the button for two columns at their right.
+fn tabbed(ui: &mut Ui, all: &[Track], tab: &mut usize, wide: &mut bool) -> Vec<Cmd> {
+    let mut out = Vec::new();
+    ui.set_width(COLUMN);
+    ui.horizontal(|ui| {
+        let labels = [tr!("Audio", "Звук"), tr!("Subtitles", "Субтитры")];
+        popover::tabs(ui, &labels, tab, COLUMN - TOOL - 8.0, "tracks_tab");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let tip = tr!(
+                "Two columns: the sound and the subtitles side by side",
+                "Две колонки: звук и субтитры рядом"
+            );
+            if super::tool(ui, tip, true, |p, o, c| icons::columns(p, o, 6.5, c, true)).clicked() {
+                *wide = true;
+            }
+        });
+    });
+    ui.add_space(6.0);
+    let kind = if *tab == 0 { Kind::Audio } else { Kind::Sub };
+    column(ui, all, kind, &mut out);
+    out
+}
+
+/// The lists side by side, under titles drawn as tabs shown, the button
+/// back to tabs at the right of the second.
+fn columns(ui: &mut Ui, all: &[Track], wide: &mut bool) -> Vec<Cmd> {
     let mut out = Vec::new();
     ui.set_width(WIDTH);
+    ui.horizontal(|ui| {
+        title_as_tab(ui, tr!("Audio", "Звук"), COLUMN);
+        ui.add_space(13.0 - ui.spacing().item_spacing.x);
+        title_as_tab(ui, tr!("Subtitles", "Субтитры"), COLUMN - TOOL - 8.0);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let tip = tr!("Back to tabs", "Обратно во вкладки");
+            if super::tool(ui, tip, true, |p, o, c| icons::columns(p, o, 6.5, c, false)).clicked() {
+                *wide = false;
+            }
+        });
+    });
+    ui.add_space(6.0);
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
             ui.set_width(COLUMN);
@@ -86,13 +140,6 @@ pub fn panel(ui: &mut Ui, all: &[Track]) -> Vec<Cmd> {
 
 fn column(ui: &mut Ui, all: &[Track], kind: Kind, out: &mut Vec<Cmd>) {
     let audio = kind == Kind::Audio;
-    let title = if audio {
-        tr!("Audio", "Звук")
-    } else {
-        tr!("Subtitles", "Субтитры")
-    };
-    title_as_tab(ui, title);
-    ui.add_space(6.0);
     let list = tracks::of_kind(all, kind);
     egui::ScrollArea::vertical()
         .id_salt(("tracks", audio))
@@ -145,10 +192,10 @@ fn column(ui: &mut Ui, all: &[Track], kind: Kind, out: &mut Vec<Cmd>) {
     }
 }
 
-/// A column's title drawn as the panel's tab shown: centred over a line,
-/// underlined in the accent colour.
-fn title_as_tab(ui: &mut Ui, title: &str) {
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
+/// A column's title drawn as a tab shown, `width` wide: centred over a
+/// line, underlined in the accent colour.
+fn title_as_tab(ui: &mut Ui, title: &str, width: f32) {
+    let (rect, _) = ui.allocate_exact_size(vec2(width, 30.0), Sense::hover());
     let painter = ui.painter();
     painter.hline(
         rect.x_range(),
@@ -162,15 +209,9 @@ fn title_as_tab(ui: &mut Ui, title: &str) {
         FontId::proportional(14.0),
         style::TEXT_BRIGHT,
     );
-    let half = rect.width() * 0.15;
-    let y = rect.bottom() - 1.0;
-    painter.line_segment(
-        [
-            pos2(rect.center().x - half, y),
-            pos2(rect.center().x + half, y),
-        ],
-        Stroke::new(2.0, style::accent()),
-    );
+    // As a tab's: the same width of underline whatever the title's.
+    let tab = Rect::from_center_size(rect.center(), vec2(rect.width() / 2.0, rect.height()));
+    popover::underline(painter, tab);
 }
 
 /// A row: a radio mark, the name (the language first) and under it the

@@ -287,54 +287,12 @@ impl VideoPanel {
     }
 }
 
-/// The tabs as one control across `width`: equal parts over a line, the
-/// one shown bright and underlined in the accent colour.
+/// The tabs ([`popover::tabs`]).
 fn tabs(ui: &mut Ui, current: &mut Tab, width: f32) {
-    let height = 30.0;
-    let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
-    let painter = ui.painter().clone();
-    painter.hline(
-        rect.x_range(),
-        rect.bottom() - 0.5,
-        Stroke::new(1.0, style::LINE),
-    );
-    let part = width / Tab::ALL.len() as f32;
-    for (i, tab) in Tab::ALL.into_iter().enumerate() {
-        let r = Rect::from_min_size(
-            pos2(rect.left() + part * i as f32, rect.top()),
-            vec2(part, height),
-        );
-        let response = ui.interact(r, ui.id().with(("panel_tab", i)), Sense::click());
-        if response.clicked() {
-            *current = tab;
-        }
-        let on = *current == tab;
-        if response.hovered() && !on {
-            painter.rect_filled(r.shrink2(vec2(2.0, 3.0)), 4.0, style::HOVER);
-        }
-        let color = if on {
-            style::TEXT_BRIGHT
-        } else if response.hovered() {
-            style::TEXT
-        } else {
-            style::TEXT_WEAK
-        };
-        painter.text(
-            r.center() - vec2(0.0, 1.0),
-            Align2::CENTER_CENTER,
-            tab.label(),
-            FontId::proportional(14.0),
-            color,
-        );
-        if on {
-            let half = part * 0.3;
-            let y = r.bottom() - 1.0;
-            painter.line_segment(
-                [pos2(r.center().x - half, y), pos2(r.center().x + half, y)],
-                Stroke::new(2.0, style::accent()),
-            );
-        }
-    }
+    let labels = Tab::ALL.map(Tab::label);
+    let mut i = Tab::ALL.iter().position(|t| t == current).unwrap_or(0);
+    popover::tabs(ui, &labels, &mut i, width, "panel_tab");
+    *current = Tab::ALL[i];
 }
 
 /// A tab's contents.

@@ -30,6 +30,7 @@ const HWDEC: &str = "hwdec";
 const FILL_PLAYLIST: &str = "fill_playlist_from_folder";
 const CHANNEL_LOGOS: &str = "channel_logos";
 const PLAYLIST_VISIBLE: &str = "playlist_visible";
+const TRACKS_WIDE: &str = "tracks_wide";
 const CHAPTER_MARKS: &str = "chapter_marks";
 const TIME_DISPLAY: &str = "time_display";
 const FULLSCREEN_TRANSPARENCY: &str = "fullscreen_transparency";
@@ -226,6 +227,9 @@ pub struct Settings {
     /// The pictures of an M3U list's channels are fetched (`logos.rs`).
     pub channel_logos: bool,
     pub playlist_visible: bool,
+    /// The tracks window shows the sound and the subtitles side by side,
+    /// else as tabs.
+    pub tracks_wide: bool,
     /// The playlist is in a window of its own (`dock.rs`).
     pub playlist_detached: bool,
     /// That window's visible rectangle in pixels (left, top, right,
@@ -326,6 +330,7 @@ impl Default for Settings {
             fill_playlist: false,
             channel_logos: true,
             playlist_visible: false,
+            tracks_wide: false,
             playlist_detached: false,
             playlist_rect: None,
             chapter_marks: true,
@@ -431,6 +436,7 @@ impl Settings {
             fill_playlist: flag(FILL_PLAYLIST, d.fill_playlist),
             channel_logos: flag(CHANNEL_LOGOS, d.channel_logos),
             playlist_visible: flag(PLAYLIST_VISIBLE, d.playlist_visible),
+            tracks_wide: flag(TRACKS_WIDE, d.tracks_wide),
             playlist_detached: flag(PLAYLIST_DETACHED, d.playlist_detached),
             playlist_rect: get(PLAYLIST_RECT).and_then(|v| rect(&v)),
             chapter_marks: flag(CHAPTER_MARKS, d.chapter_marks),
@@ -568,6 +574,7 @@ impl Settings {
         storage.set_string(FILL_PLAYLIST, self.fill_playlist.to_string());
         storage.set_string(CHANNEL_LOGOS, self.channel_logos.to_string());
         storage.set_string(PLAYLIST_VISIBLE, self.playlist_visible.to_string());
+        storage.set_string(TRACKS_WIDE, self.tracks_wide.to_string());
         storage.set_string(PLAYLIST_DETACHED, self.playlist_detached.to_string());
         match self.playlist_rect {
             Some(r) => storage.set_string(
@@ -698,6 +705,7 @@ mod tests {
             fill_playlist: true,
             channel_logos: false,
             playlist_visible: true,
+            tracks_wide: true,
             playlist_detached: true,
             playlist_rect: Some([-1200, 40, -900, 700]),
             chapter_marks: false,

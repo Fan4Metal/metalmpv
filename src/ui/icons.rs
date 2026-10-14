@@ -482,6 +482,21 @@ pub fn folder(p: &Painter, o: Pos2, s: f32, c: Color32) {
     ));
 }
 
+/// A pane: with `two`, split down the middle (two columns side by side);
+/// else whole (one).
+pub fn columns(p: &Painter, o: Pos2, s: f32, c: Color32, two: bool) {
+    let stroke = Stroke::new(1.4, c);
+    let pane = egui::Rect::from_center_size(o, vec2(2.0 * s, 1.6 * s));
+    p.rect_stroke(pane, 2.0, stroke, egui::StrokeKind::Middle);
+    if two {
+        p.line_segment([pos2(o.x, pane.top()), pos2(o.x, pane.bottom())], stroke);
+    } else {
+        // Its tab: a line across the top.
+        let y = pane.top() + 0.45 * s;
+        p.line_segment([pos2(pane.left(), y), pos2(pane.right(), y)], stroke);
+    }
+}
+
 /// A tick: done.
 pub fn check(p: &Painter, o: Pos2, s: f32, c: Color32) {
     p.add(Shape::line(

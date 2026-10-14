@@ -6,7 +6,7 @@
 //! unless a popup of its own is open (a list, the colour picker, a menu):
 //! the press is that one's.
 
-use egui::{Align2, Pos2, Rect, Ui, vec2};
+use egui::{Align2, FontId, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
 
 use super::style;
 
@@ -48,6 +48,62 @@ pub fn pressed_outside(ctx: &egui::Context, shown: Option<Rect>, button: Option<
             && !shown.is_some_and(|r| r.contains(p))
             && !button.is_some_and(|b| b.contains(p))
     })
+}
+
+/// Tabs as one control across `width`: equal parts over a line, the one
+/// `current` bright and underlined in the accent colour; `id` tells the
+/// windows' tabs apart.
+pub fn tabs(ui: &mut Ui, labels: &[&str], current: &mut usize, width: f32, id: &str) {
+    let height = 30.0;
+    let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+    let painter = ui.painter().clone();
+    painter.hline(
+        rect.x_range(),
+        rect.bottom() - 0.5,
+        Stroke::new(1.0, style::LINE),
+    );
+    let part = width / labels.len().max(1) as f32;
+    for (i, label) in labels.iter().enumerate() {
+        let r = Rect::from_min_size(
+            pos2(rect.left() + part * i as f32, rect.top()),
+            vec2(part, height),
+        );
+        let response = ui.interact(r, ui.id().with((id, i)), Sense::click());
+        if response.clicked() {
+            *current = i;
+        }
+        let on = *current == i;
+        if response.hovered() && !on {
+            painter.rect_filled(r.shrink2(vec2(2.0, 3.0)), 4.0, style::HOVER);
+        }
+        let color = if on {
+            style::TEXT_BRIGHT
+        } else if response.hovered() {
+            style::TEXT
+        } else {
+            style::TEXT_WEAK
+        };
+        painter.text(
+            r.center() - vec2(0.0, 1.0),
+            Align2::CENTER_CENTER,
+            *label,
+            FontId::proportional(14.0),
+            color,
+        );
+        if on {
+            underline(&painter, r);
+        }
+    }
+}
+
+/// The accent line under a tab shown (or a title drawn as one).
+pub fn underline(painter: &egui::Painter, r: Rect) {
+    let half = r.width() * 0.3;
+    let y = r.bottom() - 1.0;
+    painter.line_segment(
+        [pos2(r.center().x - half, y), pos2(r.center().x + half, y)],
+        Stroke::new(2.0, style::accent()),
+    );
 }
 
 /// Show `add` in window `id`, its content `width` wide, its bottom right at

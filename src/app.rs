@@ -2972,9 +2972,12 @@ impl eframe::App for App {
             },
         );
         cmds.extend(panel_cmds);
-        let track_cmds = self
-            .tracks_window
-            .show(&ctx, self.tracks_button.take(), &state.tracks);
+        let track_cmds = self.tracks_window.show(
+            &ctx,
+            self.tracks_button.take(),
+            &state.tracks,
+            &mut self.settings.tracks_wide,
+        );
         cmds.extend(track_cmds);
         if let Some(player) = &mut self.player {
             if self.adjust != before {
