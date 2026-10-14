@@ -19,7 +19,8 @@ pub struct Bar<'a> {
     pub video_panel_open: bool,
     /// The tracks window is open (its button underlined).
     pub tracks_open: bool,
-    /// Where the tracks button is drawn: the window stands over it.
+    /// Where the tracks button is drawn, up to the bar's top: the window
+    /// stands over it.
     pub tracks_button: &'a mut Option<Rect>,
     pub fullscreen: bool,
     /// One row instead of two (`Interface::Compact`).
@@ -433,6 +434,13 @@ fn speaker_button(ui: &mut Ui, rect: Rect, state: &State) -> bool {
     .clicked()
 }
 
+/// Where a window over a button of the bar stands: the button's column up
+/// to the bar's top, so that the window leaves the seek bar of the full
+/// bar (over the buttons' row) uncovered.
+fn anchor(ui: &Ui, button: Rect) -> Rect {
+    button.with_min_y(ui.max_rect().top().min(button.top()))
+}
+
 /// Audio and subtitles: one button, both lists in the window over it.
 fn tracks_button(ui: &mut Ui, rect: Rect, bar: &mut Bar<'_>) -> bool {
     let state = bar.state;
@@ -444,7 +452,7 @@ fn tracks_button(ui: &mut Ui, rect: Rect, bar: &mut Bar<'_>) -> bool {
     if bar.tracks_open {
         underline(ui, button.rect);
     }
-    *bar.tracks_button = Some(button.rect);
+    *bar.tracks_button = Some(anchor(ui, button.rect));
     button.clicked()
 }
 
@@ -463,7 +471,7 @@ fn panel_button(ui: &mut Ui, rect: Rect, bar: &mut Bar<'_>) -> bool {
     if bar.video_panel_open {
         underline(ui, panel.rect);
     }
-    *bar.panel_button = Some(panel.rect);
+    *bar.panel_button = Some(anchor(ui, panel.rect));
     panel.clicked()
 }
 
