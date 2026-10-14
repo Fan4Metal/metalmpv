@@ -201,9 +201,10 @@ pub struct App {
     smtc: Option<crate::smtc::Smtc>,
     /// Windows has no media controls for the window: not asked again.
     smtc_failed: bool,
-    /// The last media key taken and when: the same press may come both
-    /// as the window's key and from the media controls.
-    last_media: Option<(win::MediaKey, bool, Instant)>,
+    /// The last media key taken, the way it came and when: the same press
+    /// may come as the window's key, its `WM_APPCOMMAND` and from the
+    /// media controls.
+    last_media: Option<(win::MediaKey, win::Via, Instant)>,
     /// The window is over the other windows now (`settings.on_top`).
     on_top: bool,
 }
@@ -1412,8 +1413,8 @@ impl App {
         let nothing = self.state_idle() && self.playlist.is_empty();
         let play = |cmd: Cmd| (!(nothing && cmd == Cmd::TogglePause)).then_some(cmd);
         for hooked in win::take_hooked() {
-            let (key, controls) = match hooked {
-                win::Hooked::Media(key, controls) => (key, controls),
+            let (key, via) = match hooked {
+                win::Hooked::Media(key, via) => (key, via),
                 win::Hooked::TaskbarButton => {
                     if let Some(taskbar) = &mut self.taskbar {
                         taskbar.button_created();
@@ -1443,10 +1444,12 @@ impl App {
                     continue;
                 }
             };
-            if same_press(self.last_media, key, controls, Instant::now()) {
+            if same_press(self.last_media, key, via, Instant::now()) {
+                log::debug!("media key {key:?} by {via:?}: the same press");
                 continue;
             }
-            self.last_media = Some((key, controls, Instant::now()));
+            log::debug!("media key {key:?} by {via:?}");
+            self.last_media = Some((key, via, Instant::now()));
             let cmd = match key {
                 win::MediaKey::PlayPause => Some(Cmd::TogglePause),
                 win::MediaKey::Play => paused.then_some(Cmd::TogglePause),
@@ -2628,14 +2631,13 @@ impl App {
     }
 }
 
-/// Media key `key` at `at`, from the media controls (`controls`) or the
-/// window, is the press `last` was, come again by the other way: Play,
-/// Pause and Play/Pause are one button. Two quick presses the same way are
-/// two.
+/// Media key `key` at `at`, come by `via`, is the press `last` was, come
+/// again another way: Play, Pause and Play/Pause are one button. Two quick
+/// presses the same way are two.
 fn same_press(
-    last: Option<(win::MediaKey, bool, Instant)>,
+    last: Option<(win::MediaKey, win::Via, Instant)>,
     key: win::MediaKey,
-    controls: bool,
+    via: win::Via,
     at: Instant,
 ) -> bool {
     use win::MediaKey::{Pause, Play, PlayPause};
@@ -2644,7 +2646,7 @@ fn same_press(
         other => other,
     };
     last.is_some_and(|(k, way, t)| {
-        way != controls
+        way != via
             && button(k) == button(key)
             && at.saturating_duration_since(t) < Duration::from_millis(300)
     })
@@ -3567,21 +3569,40 @@ mod tests {
     #[test]
     fn a_media_key_counts_once() {
         use win::MediaKey::{Next, Pause, PlayPause};
+        use win::Via::{Command, Controls, Key};
         let t = Instant::now();
         let ms = |n| t + Duration::from_millis(n);
         // The window's Play/Pause, then the media controls' Pause.
-        assert!(same_press(Some((PlayPause, false, t)), Pause, true, ms(40)));
-        assert!(same_press(Some((Next, true, t)), Next, false, ms(40)));
-        assert!(!same_press(
-            Some((PlayPause, false, t)),
+        assert!(same_press(
+            Some((PlayPause, Key, t)),
             Pause,
-            true,
+            Controls,
+            ms(40)
+        ));
+        assert!(same_press(Some((Next, Controls, t)), Next, Key, ms(40)));
+        // The window in front: WM_APPCOMMAND, then the key.
+        assert!(same_press(
+            Some((PlayPause, Command, t)),
+            PlayPause,
+            Key,
+            ms(1)
+        ));
+        assert!(!same_press(
+            Some((PlayPause, Key, t)),
+            Pause,
+            Controls,
             ms(500)
         ));
-        assert!(!same_press(Some((PlayPause, false, t)), Next, true, ms(40)));
+        assert!(!same_press(
+            Some((PlayPause, Key, t)),
+            Next,
+            Controls,
+            ms(40)
+        ));
         // Twice quickly on the keyboard: two presses.
-        assert!(!same_press(Some((Next, false, t)), Next, false, ms(40)));
-        assert!(!same_press(None, Next, false, t));
+        assert!(!same_press(Some((Next, Key, t)), Next, Key, ms(40)));
+        assert!(!same_press(Some((Next, Command, t)), Next, Command, ms(40)));
+        assert!(!same_press(None, Next, Key, t));
     }
 
     #[test]

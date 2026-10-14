@@ -463,12 +463,23 @@ pub enum MediaKey {
     Previous,
 }
 
+/// The way a media key came. One press may come more than one way: with
+/// the window in front, Windows sends `WM_APPCOMMAND` and then the key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Via {
+    /// `WM_KEYDOWN` with a `VK_MEDIA_*` key.
+    Key,
+    /// `WM_APPCOMMAND`.
+    Command,
+    /// Windows' media controls (`smtc.rs`).
+    Controls,
+}
+
 /// What the window's messages asked for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hooked {
-    /// A media key, from Windows' media controls (`true`) or the
-    /// window's messages.
-    Media(MediaKey, bool),
+    /// A media key and the way it came.
+    Media(MediaKey, Via),
     /// The taskbar button exists (`TaskbarButtonCreated`): the thumbnail
     /// buttons can be added (`taskbar.rs`).
     TaskbarButton,
@@ -599,7 +610,7 @@ fn hook(what: Hooked) {
 /// A media key pressed elsewhere (Windows' media controls, `smtc.rs`),
 /// queued as one of the window's.
 pub fn hook_media(key: MediaKey) {
-    hook(Hooked::Media(key, true));
+    hook(Hooked::Media(key, Via::Controls));
 }
 
 /// The media key of a virtual key code.
@@ -706,7 +717,7 @@ fn media_message(
             let key = media_vk(wparam as u32)?;
             // Held keys repeat; one press is one command.
             if lparam & (1 << 30) == 0 {
-                hook(Hooked::Media(key, false));
+                hook(Hooked::Media(key, Via::Key));
             }
             Some(0)
         }
@@ -714,7 +725,7 @@ fn media_message(
             // GET_APPCOMMAND_LPARAM: the high word without the device bits.
             let command = ((lparam as u32) >> 16) & !0xF000;
             let key = media_command(command)?;
-            hook(Hooked::Media(key, false));
+            hook(Hooked::Media(key, Via::Command));
             Some(1)
         }
         _ => None,
