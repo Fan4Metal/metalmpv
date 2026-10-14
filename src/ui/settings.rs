@@ -1290,11 +1290,63 @@ fn osd_section(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                 230.0,
                 |ui| percent(ui, &mut settings.osd_scale, OSD_SCALE_RANGE),
             );
-            osd_look(ui, &mut settings.osd_style);
+            divider(ui);
+            let summary = if settings.osd_style == OsdStyle::default() {
+                tr!("Default", "По умолчанию")
+            } else {
+                tr!("Own", "Свой")
+            };
+            folding(ui, "osd_look", tr!("Look", "Вид"), summary, |ui| {
+                osd_look(ui, &mut settings.osd_style);
+            });
             divider(ui);
             osd_preview(ui, settings.osd_scale, &settings.osd_style);
         },
     );
+}
+
+/// A row of a card that folds the rows under it, `summary` at its right:
+/// the arrow and the title, a click anywhere on it folds or unfolds them
+/// (folded at first; egui's memory keeps it).
+fn folding(ui: &mut Ui, id: &str, title: &str, summary: &str, rows: impl FnOnce(&mut Ui)) {
+    use egui::collapsing_header::CollapsingState;
+    let id = ui.make_persistent_id(("folding", id));
+    let mut fold = CollapsingState::load_with_default_open(ui.ctx(), id, false);
+    let height = ui.spacing().interact_size.y + 16.0;
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
+    if response.clicked() {
+        fold.toggle(ui);
+    }
+    let openness = fold.openness(ui.ctx());
+    let color = if response.hovered() {
+        style::TEXT_BRIGHT
+    } else {
+        style::TEXT
+    };
+    let painter = ui.painter();
+    // The arrow: right when folded, down when open.
+    let centre = pos2(rect.left() + 6.0, rect.center().y);
+    let turn = egui::emath::Rot2::from_angle(openness * std::f32::consts::FRAC_PI_2);
+    let points = [vec2(-3.0, -5.0), vec2(3.0, 0.0), vec2(-3.0, 5.0)]
+        .map(|p| centre + turn * p)
+        .to_vec();
+    painter.add(egui::Shape::line(points, Stroke::new(1.5, color)));
+    painter.text(
+        pos2(rect.left() + 20.0, rect.center().y),
+        Align2::LEFT_CENTER,
+        title,
+        FontId::proportional(14.0),
+        color,
+    );
+    painter.text(
+        pos2(rect.right(), rect.center().y),
+        Align2::RIGHT_CENTER,
+        summary,
+        FontId::proportional(12.5),
+        style::TEXT_WEAK,
+    );
+    fold.show_body_unindented(ui, rows);
 }
 
 /// The OSD line's look, as the subtitles': the colours, the outline, the
