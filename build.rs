@@ -130,8 +130,9 @@ fn version() -> String {
     }
     // `--always` falls back to the abbreviated hash when no tag is reachable
     // (a shallow checkout fetches none). No `--dirty`: this script is not rerun
-    // when only sources change, so the mark would be stale.
-    match git(&["describe", "--tags", "--always"]) {
+    // when only sources change, so the mark would be stale. Only the
+    // releases' tags: the libmpv mirror's `libmpv-<date>` is one too.
+    match git(&["describe", "--tags", "--always", "--match", "v[0-9]*"]) {
         Some(describe) => {
             watch_git();
             format!("{version} ({describe})")
