@@ -50,6 +50,10 @@ pub struct VideoPanel {
 
 /// What the Sound and Subtitles tabs edit: settings, kept between runs.
 pub struct Kept<'a> {
+    /// The output device (`settings.audio_device`; empty: Windows'
+    /// default) and the devices there are.
+    pub audio_device: &'a mut String,
+    pub devices: &'a [crate::audio::Device],
     pub equalizer: &'a mut Equalizer,
     pub normalize: &'a mut bool,
     pub subs: &'a mut SubStyle,
@@ -129,7 +133,7 @@ impl VideoPanel {
                     ui.separator();
                     match self.tab {
                         Tab::Video => video_tab(ui, adjust, has_video, &mut out),
-                        Tab::Sound => sound_tab(ui, kept.equalizer, kept.normalize),
+                        Tab::Sound => sound_tab(ui, kept),
                         Tab::Subtitles => subtitles_tab(ui, kept.subs),
                     }
                 });
@@ -292,7 +296,29 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, has_video: bool, out: &mut Vec<Cm
     );
 }
 
-fn sound_tab(ui: &mut Ui, eq: &mut Equalizer, normalize: &mut bool) {
+fn sound_tab(ui: &mut Ui, kept: Kept<'_>) {
+    let (eq, normalize) = (kept.equalizer, kept.normalize);
+    heading(ui, tr!("Output", "Вывод"));
+    labelled(ui, tr!("Device", "Устройство"), |ui| {
+        super::settings::device_choice(
+            ui,
+            "panel_audio_device",
+            kept.audio_device,
+            kept.devices,
+            WIDTH - LABEL - 30.0,
+        );
+    });
+    if !super::settings::device_present(kept.audio_device, kept.devices) {
+        ui.label(
+            RichText::new(tr!(
+                "Not connected: the sound goes to Windows' default until it is back.",
+                "Не подключено: звук идёт через устройство Windows по умолчанию, пока оно не вернётся."
+            ))
+            .size(12.0)
+            .color(style::TEXT_WEAK),
+        );
+    }
+
     heading(ui, tr!("Equalizer", "Эквалайзер"));
     ui.horizontal(|ui| {
         ui.checkbox(&mut eq.on, tr!("On", "Включён"));

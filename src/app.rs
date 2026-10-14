@@ -2872,6 +2872,8 @@ impl eframe::App for App {
         let sound_before = (self.settings.equalizer.clone(), self.settings.normalize);
         let subs_before = self.settings.sub.clone();
         let kept = ui::picture::Kept {
+            audio_device: &mut self.settings.audio_device,
+            devices: &state.audio_devices,
             equalizer: &mut self.settings.equalizer,
             normalize: &mut self.settings.normalize,
             subs: &mut self.settings.sub,

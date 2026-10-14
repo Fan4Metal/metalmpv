@@ -979,22 +979,42 @@ fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>) -> b
     changed
 }
 
+/// Whether the chosen output device (empty: Windows' default) is there.
+pub fn device_present(chosen: &str, devices: &[Device]) -> bool {
+    chosen.is_empty() || devices.iter().any(|d| d.name == chosen)
+}
+
+/// The list of output devices, Windows' default first, `width` wide;
+/// `chosen` is mpv's name of the device (empty: Windows' default). The app
+/// gives mpv the device (`App::follow_audio_device`). Also on the Sound tab
+/// of the Video, sound and subtitles panel.
+pub fn device_choice(ui: &mut Ui, id: &str, chosen: &mut String, devices: &[Device], width: f32) {
+    let system = tr!("Windows' default", "Устройство Windows по умолчанию");
+    let name = if chosen.is_empty() {
+        system.to_owned()
+    } else {
+        devices
+            .iter()
+            .find(|d| &d.name == chosen)
+            .map_or_else(|| chosen.clone(), |d| d.description.clone())
+    };
+    // About 8 points a character.
+    let chars = ((width - 20.0) / 8.0) as usize;
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(shorten(&name, chars))
+        .width(width)
+        .show_ui(ui, |ui| {
+            ui.selectable_value(chosen, String::new(), system);
+            for d in devices {
+                ui.selectable_value(chosen, d.name.clone(), &d.description);
+            }
+        });
+}
+
 /// The output device and channels, the volume's boost and normalization.
 fn audio_page(ui: &mut Ui, settings: &mut Settings, devices: &[Device], changed: &mut Changed) {
     section(ui, tr!("Output", "Вывод"), |ui| {
-        let chosen = &settings.audio_device;
-        let present = chosen.is_empty() || devices.iter().any(|d| &d.name == chosen);
-        let system = tr!("Windows' default", "Устройство Windows по умолчанию");
-        let name_of = |name: &str| -> String {
-            if name.is_empty() {
-                return system.to_owned();
-            }
-            devices
-                .iter()
-                .find(|d| d.name == name)
-                .map_or_else(|| name.to_owned(), |d| d.description.clone())
-        };
-        let hint = if present {
+        let hint = if device_present(&settings.audio_device, devices) {
             tr!(
                 "The sound moves to it at once. A device that is unplugged gives way to Windows' default until it is back.",
                 "Звук переходит на него сразу. Пока выбранное устройство отключено, звук идёт через устройство Windows по умолчанию."
@@ -1011,18 +1031,13 @@ fn audio_page(ui: &mut Ui, settings: &mut Settings, devices: &[Device], changed:
             Some(hint),
             290.0,
             |ui| {
-                let mut choice = settings.audio_device.clone();
-                egui::ComboBox::from_id_salt("settings_audio_device")
-                    .selected_text(shorten(&name_of(&choice), 34))
-                    .width(280.0)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut choice, String::new(), system);
-                        for d in devices {
-                            ui.selectable_value(&mut choice, d.name.clone(), &d.description);
-                        }
-                    });
-                // The app gives mpv the device (`App::follow_audio_device`).
-                settings.audio_device = choice;
+                device_choice(
+                    ui,
+                    "settings_audio_device",
+                    &mut settings.audio_device,
+                    devices,
+                    280.0,
+                );
             },
         );
         divider(ui);
