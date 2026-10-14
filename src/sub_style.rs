@@ -241,8 +241,8 @@ impl Own {
     }
 }
 
-/// A name for a line of the setting: no tabs or line breaks, trimmed.
-fn clean(text: &str) -> String {
+/// A name for a line of a setting: no tabs or line breaks, trimmed.
+pub fn clean(text: &str) -> String {
     text.replace(['\t', '\n', '\r'], " ").trim().to_owned()
 }
 

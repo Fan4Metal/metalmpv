@@ -34,6 +34,8 @@ pub fn options<'a>(hwdec: bool) -> Vec<(&'a str, &'a str)> {
         // Audio files without a cover-art video stream: they open faster
         // and do not reconfigure the renderer.
         ("audio-display", "no"),
+        // As `adjust::Deinterlace`'s default: frames marked interlaced.
+        ("deinterlace", "auto"),
         ("input-default-bindings", "no"),
         ("input-vo-keyboard", "no"),
         ("osc", "no"),
@@ -768,7 +770,7 @@ impl Player {
             data_end_at: None,
         };
         player.set_channels(setup.channels);
-        player.set_audio_filters(setup.normalize, &setup.equalizer);
+        player.set_audio_filters(&audio::filters(setup.normalize, &setup.equalizer, None));
         player.set_passthrough(setup.passthrough);
         player.set_volume_max(setup.volume_max);
         let volume = setup.volume.clamp(0.0, player.state.volume_max);
@@ -1118,10 +1120,9 @@ impl Player {
             .set("audio-channels", &Value::Str(channels.option().into()));
     }
 
-    /// The audio filters: the equalizer's bands and the normalization.
-    pub fn set_audio_filters(&mut self, normalize: bool, eq: &audio::Equalizer) {
-        self.mpv
-            .set("af", &Value::Str(audio::filters(normalize, eq)));
+    /// The audio filters: `audio::filters`'s.
+    pub fn set_audio_filters(&mut self, af: &str) {
+        self.mpv.set("af", &Value::Str(af.to_owned()));
     }
 
     /// Give mpv what changed from `old` to `new` in the picture's
@@ -1153,6 +1154,26 @@ impl Player {
                 "video-aspect-override",
                 &Value::Str(new.aspect.option().into()),
             );
+        }
+        if old.zoom != new.zoom {
+            self.mpv
+                .set("video-zoom", &Value::Double(new.zoom_option()));
+        }
+        if old.pan_x != new.pan_x {
+            self.mpv
+                .set("video-pan-x", &Value::Double(new.pan_x as f64 / 100.0));
+        }
+        if old.pan_y != new.pan_y {
+            self.mpv
+                .set("video-pan-y", &Value::Double(new.pan_y as f64 / 100.0));
+        }
+        if old.deinterlace != new.deinterlace {
+            self.mpv
+                .set("deinterlace", &Value::Str(new.deinterlace.option().into()));
+        }
+        if old.tone_map != new.tone_map {
+            self.mpv
+                .set("tone-mapping", &Value::Str(new.tone_map.option().into()));
         }
     }
 
@@ -1235,6 +1256,17 @@ impl Player {
         for (name, value) in style.options() {
             self.mpv.set(name, &Value::Str(value));
         }
+    }
+
+    /// Whether the subtitles' style applies to ASS ones too (else mpv's
+    /// `scale`: only the size), and whether subtitles go in the black bars
+    /// (ASS ones too) or over the picture.
+    pub fn set_sub_layout(&mut self, ass_override: bool, margins: bool) {
+        let override_value = if ass_override { "force" } else { "scale" };
+        self.mpv
+            .set("sub-ass-override", &Value::Str(override_value.into()));
+        self.mpv.set("sub-use-margins", &Value::Flag(margins));
+        self.mpv.set("sub-ass-force-margins", &Value::Flag(margins));
     }
 
     /// Play audio track `id`, or show subtitle track `id` (`None`: none).
@@ -1776,7 +1808,7 @@ mod tests {
             on: true,
             gains: audio::Preset::Rock.gains(),
         };
-        mpv.set("af", &Value::Str(audio::filters(true, &eq)));
+        mpv.set("af", &Value::Str(audio::filters(true, &eq, None)));
         mpv.set(
             "audio-channels",
             &Value::Str(Channels::Stereo.option().into()),
@@ -1919,6 +1951,88 @@ mod tests {
     /// takes the colour, the rotation, the filters and the debanding, the
     /// filters run, and a frame is saved. `cargo test picture_adjustments
     /// -- --ignored --nocapture` with METALMPV_SAMPLE.
+    /// The panel's options mpv must take as given: each is set, read back
+    /// and compared; the errors mpv logs fail it. `cargo test
+    /// panel_options -- --ignored --nocapture` with METALMPV_SAMPLE.
+    #[test]
+    #[ignore = "needs vendor/libmpv and a sample video"]
+    fn panel_options_are_taken() {
+        let sample = std::env::var("METALMPV_SAMPLE")
+            .unwrap_or_else(|_| "D:/Projects/video_converter/samples/test.mp4".into());
+        let api = sys::api().unwrap();
+        let mut mpv = Mpv::new(
+            api,
+            &[
+                ("vo", "null"),
+                ("ao", "null"),
+                ("idle", "yes"),
+                ("terminal", "no"),
+            ],
+        )
+        .unwrap();
+        mpv.request_log_messages("warn");
+        let wanted: Vec<(&str, Value)> = vec![
+            ("deinterlace", Value::Str("auto".into())),
+            ("tone-mapping", Value::Str("bt.2390".into())),
+            ("video-zoom", Value::Double(0.5)),
+            ("video-pan-x", Value::Double(-0.1)),
+            ("sub-ass-override", Value::Str("force".into())),
+            ("sub-use-margins", Value::Flag(true)),
+            ("sub-ass-force-margins", Value::Flag(true)),
+        ];
+        for (name, value) in &wanted {
+            mpv.set(name, value);
+        }
+        // The voice's filter for the channels of the track playing, as the
+        // app gives it once the track list is known.
+        mpv.observe(100, "track-list", sys::MPV_FORMAT_NODE);
+        mpv.command(0, &["loadfile", &sample]);
+        for (i, (name, value)) in wanted.iter().enumerate() {
+            let format = match value {
+                Value::Double(_) => sys::MPV_FORMAT_DOUBLE,
+                Value::Flag(_) => sys::MPV_FORMAT_FLAG,
+                _ => sys::MPV_FORMAT_STRING,
+            };
+            mpv.get(i as u64 + 1, name, format);
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
+        let mut problems = Vec::new();
+        let mut af_set = false;
+        while std::time::Instant::now() < deadline {
+            while let Some(event) = mpv.next_event() {
+                match event {
+                    Event::Property { id: 100, value } if !af_set => {
+                        let tracks = tracks::from_value(&value);
+                        if let Some(n) =
+                            tracks::selected(&tracks, Kind::Audio).and_then(|t| t.channels)
+                        {
+                            let af = audio::filters(false, &audio::Equalizer::default(), Some(n));
+                            eprintln!("{n} channels, af: {af}");
+                            mpv.set("af", &Value::Str(af));
+                            af_set = true;
+                        }
+                    }
+                    Event::Property { id, value } if id >= 1 && id as usize <= wanted.len() => {
+                        let (name, want) = &wanted[id as usize - 1];
+                        eprintln!("{name}: {value:?}");
+                        let near = matches!((&value, want), (Value::Double(a), Value::Double(b)) if (a - b).abs() < 1e-6);
+                        if value != *want && !near {
+                            problems.push(format!("{name}: {value:?}, not {want:?}"));
+                        }
+                    }
+                    // A file's own warnings are not the options'.
+                    Event::Log { level, text, .. } if level == "error" || level == "fatal" => {
+                        eprintln!("mpv {level}: {text}");
+                        problems.push(text);
+                    }
+                    _ => {}
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(problems.is_empty(), "{problems:#?}");
+    }
+
     #[test]
     #[ignore = "needs vendor/libmpv and a sample video"]
     fn picture_adjustments_of_a_real_file() {

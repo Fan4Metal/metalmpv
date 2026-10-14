@@ -597,7 +597,7 @@ fn on_top_hint() -> String {
 }
 
 /// An on/off switch.
-fn switch(ui: &mut Ui, on: &mut bool) -> Response {
+pub fn switch(ui: &mut Ui, on: &mut bool) -> Response {
     let size = vec2(40.0, 20.0);
     let (rect, mut response) = ui.allocate_exact_size(size, Sense::click());
     if response.clicked() {
@@ -1711,6 +1711,10 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.audio_device = d.audio_device;
     settings.audio_channels = d.audio_channels;
     settings.volume_max = d.volume_max;
+    settings.voice_boost = d.voice_boost;
+    settings.sub_ass_override = d.sub_ass_override;
+    settings.sub_margins = d.sub_margins;
+    settings.keep_adjust = d.keep_adjust;
     settings.normalize = d.normalize;
     // The equalizer is in the panel, but a setting kept like these.
     settings.equalizer = d.equalizer;

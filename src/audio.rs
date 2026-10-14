@@ -86,6 +86,69 @@ impl Preset {
     }
 }
 
+/// Gains the user saved under a name.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OwnEq {
+    pub name: String,
+    pub gains: [i64; 10],
+}
+
+/// The most own gains kept; saving one more drops the oldest.
+pub const MAX_OWN_EQ: usize = 20;
+
+impl OwnEq {
+    /// Keep `gains` as `name` in `list`: in place of one of that name,
+    /// else at the end.
+    pub fn save(list: &mut Vec<OwnEq>, name: &str, gains: [i64; 10]) {
+        let name = crate::sub_style::clean(name);
+        if name.is_empty() {
+            return;
+        }
+        match list.iter_mut().find(|o| o.name == name) {
+            Some(own) => own.gains = gains,
+            None => {
+                if list.len() >= MAX_OWN_EQ {
+                    list.remove(0);
+                }
+                list.push(OwnEq { name, gains });
+            }
+        }
+    }
+
+    /// The setting: a line each, `name<TAB>g,g,…`.
+    pub fn to_text(list: &[OwnEq]) -> String {
+        list.iter()
+            .map(|o| {
+                let gains: Vec<String> = o.gains.iter().map(i64::to_string).collect();
+                format!("{}\t{}", o.name, gains.join(","))
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// The gains of the setting; lines not understood are left out.
+    pub fn from_text(text: &str) -> Vec<OwnEq> {
+        text.lines()
+            .filter_map(|line| {
+                let (name, gains) = line.split_once('\t')?;
+                let name = crate::sub_style::clean(name);
+                let gains: Vec<i64> = gains
+                    .split(',')
+                    .map(|g| {
+                        g.trim()
+                            .parse::<i64>()
+                            .ok()
+                            .map(|g| g.clamp(-EQ_RANGE, EQ_RANGE))
+                    })
+                    .collect::<Option<_>>()?;
+                let gains = <[i64; 10]>::try_from(gains).ok()?;
+                (!name.is_empty()).then_some(OwnEq { name, gains })
+            })
+            .take(MAX_OWN_EQ)
+            .collect()
+    }
+}
+
 /// The band's label: `31`, `1k`, `16k`.
 pub fn band_label(hz: u32) -> String {
     if hz >= 1000 {
@@ -95,10 +158,42 @@ pub fn band_label(hz: u32) -> String {
     }
 }
 
-/// mpv's `af`: the equalizer's bands that are not flat, then the
-/// normalization (which evens out what the equalizer raised).
-pub fn filters(normalize: bool, eq: &Equalizer) -> String {
+/// How much the centre channel is raised to make speech clearer (+4 dB).
+const CENTRE_GAIN: f64 = 1.6;
+
+/// The filter that makes speech clearer in a track of `channels`: stereo
+/// through FFmpeg's `dialoguenhance` (it finds the voice common to both
+/// sides and puts it in a centre, which the device's mix brings back),
+/// five channels and more by raising the centre (third in FFmpeg's order:
+/// FL, FR, FC, …). `None` for mono, where the voice is all there is, and
+/// for layouts whose third channel is not the centre (2.1).
+pub fn voice_filter(channels: i64) -> Option<String> {
+    match channels {
+        2 => Some("lavfi=[dialoguenhance]".to_owned()),
+        n if n >= 5 => {
+            let each: Vec<String> = (0..n)
+                .map(|i| {
+                    if i == 2 {
+                        format!("val(2)*{CENTRE_GAIN}")
+                    } else {
+                        format!("val({i})")
+                    }
+                })
+                .collect();
+            Some(format!("lavfi=[aeval={}:c=same]", each.join("|")))
+        }
+        _ => None,
+    }
+}
+
+/// mpv's `af`: the voice's filter when `voice` gives the channels of the
+/// track playing ([`voice_filter`]), the equalizer's bands that are not
+/// flat, then the normalization (which evens out what the others raised).
+pub fn filters(normalize: bool, eq: &Equalizer, voice: Option<i64>) -> String {
     let mut af: Vec<String> = Vec::new();
+    if let Some(filter) = voice.and_then(voice_filter) {
+        af.push(filter);
+    }
     if eq.on {
         for (hz, gain) in EQ_BANDS.iter().zip(eq.gains) {
             if gain != 0 {
@@ -311,13 +406,13 @@ mod tests {
     #[test]
     fn equalizer_filters() {
         let mut eq = Equalizer::default();
-        assert_eq!(filters(false, &eq), "");
+        assert_eq!(filters(false, &eq, None), "");
         eq.gains = Preset::Bass.gains();
-        assert_eq!(filters(false, &eq), "", "off: no bands");
+        assert_eq!(filters(false, &eq, None), "", "off: no bands");
         eq.on = true;
         eq.gains = [0, 0, 0, 0, 0, 0, 0, 0, 3, -20];
         assert_eq!(
-            filters(true, &eq),
+            filters(true, &eq, None),
             format!(
                 "lavfi=[equalizer=f=8000:t=o:w=1:g=3],lavfi=[equalizer=f=16000:t=o:w=1:g=-12],{NORMALIZE_FILTER}"
             )
@@ -325,6 +420,42 @@ mod tests {
         assert_eq!(Preset::of(&Preset::Rock.gains()), Some(Preset::Rock));
         assert_eq!(band_label(16000), "16k");
         assert_eq!(band_label(62), "62");
+    }
+
+    #[test]
+    fn own_gains() {
+        let mut list = Vec::new();
+        OwnEq::save(&mut list, " Night ", [1, 2, 3, 4, 5, 6, 7, 8, 9, -12]);
+        OwnEq::save(&mut list, "Night", [0; 10]);
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].gains, [0; 10]);
+        OwnEq::save(&mut list, "Loud", [12; 10]);
+        let text = OwnEq::to_text(&list);
+        assert_eq!(
+            text,
+            "Night\t0,0,0,0,0,0,0,0,0,0\nLoud\t12,12,12,12,12,12,12,12,12,12"
+        );
+        assert_eq!(OwnEq::from_text(&text), list);
+        assert_eq!(
+            OwnEq::from_text("Odd\t1,2,3\nBig\t99,0,0,0,0,0,0,0,0,0")[0].gains[0],
+            12
+        );
+    }
+
+    #[test]
+    fn voice_filters() {
+        assert_eq!(voice_filter(1), None);
+        assert_eq!(voice_filter(3), None);
+        assert_eq!(voice_filter(2).as_deref(), Some("lavfi=[dialoguenhance]"));
+        assert_eq!(
+            voice_filter(6).as_deref(),
+            Some("lavfi=[aeval=val(0)|val(1)|val(2)*1.6|val(3)|val(4)|val(5):c=same]")
+        );
+        let eq = Equalizer::default();
+        assert_eq!(
+            filters(true, &eq, Some(2)),
+            format!("lavfi=[dialoguenhance],{NORMALIZE_FILTER}")
+        );
     }
 
     #[test]

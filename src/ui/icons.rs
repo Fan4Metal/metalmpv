@@ -482,16 +482,6 @@ pub fn folder(p: &Painter, o: Pos2, s: f32, c: Color32) {
     ));
 }
 
-/// Three upright sliders with their knobs on one line: the equalizer flat.
-pub fn flat(p: &Painter, o: Pos2, s: f32, c: Color32) {
-    let stroke = Stroke::new(1.4, c);
-    let at = |x: f32, y: f32| o + vec2(x, y) * s;
-    for x in [-0.65, 0.0, 0.65] {
-        p.line_segment([at(x, -1.0), at(x, 1.0)], stroke);
-        p.circle(at(x, 0.0), 0.28 * s, c, Stroke::NONE);
-    }
-}
-
 /// A tick: done.
 pub fn check(p: &Painter, o: Pos2, s: f32, c: Color32) {
     p.add(Shape::line(

@@ -107,6 +107,12 @@ const SUB_BOLD: &str = "sub_bold";
 const SUB_SHADOW: &str = "sub_shadow";
 const SUB_BOX: &str = "sub_box";
 const SUB_PRESETS: &str = "sub_presets";
+const SUB_ASS_OVERRIDE: &str = "sub_ass_override";
+const SUB_MARGINS: &str = "sub_margins";
+const VOICE_BOOST: &str = "voice_boost";
+const EQ_PRESETS: &str = "eq_presets";
+const KEEP_ADJUST: &str = "keep_adjust";
+const ADJUST: &str = "adjust";
 const OSD_FONT: &str = "osd_font";
 const OSD_FONT_FILE: &str = "osd_font_file";
 const OSD_SCALE: &str = "osd_scale";
@@ -254,6 +260,11 @@ pub struct Settings {
     pub volume_max: f64,
     /// The volume evened out (`audio::NORMALIZE_FILTER`).
     pub normalize: bool,
+    /// Speech made clearer (`audio::voice_filter`).
+    pub voice_boost: bool,
+    /// The equalizer's gains the user saved; not a setting, Reset keeps
+    /// them.
+    pub eq_presets: Vec<audio::OwnEq>,
     /// The ten-band equalizer (the Video panel's Sound tab).
     pub equalizer: audio::Equalizer,
     /// Compressed sound sent to a receiver as it is.
@@ -263,6 +274,13 @@ pub struct Settings {
     /// The subtitles' looks the user saved; not a setting, Reset keeps
     /// them.
     pub sub_presets: Vec<sub_style::Own>,
+    /// The subtitles' style applies to ASS ones too (`sub-ass-override`).
+    pub sub_ass_override: bool,
+    /// Subtitles go in the black bars where there are any.
+    pub sub_margins: bool,
+    /// The picture's adjustments are kept between runs, as `adjust`.
+    pub keep_adjust: bool,
+    pub adjust: crate::adjust::Adjust,
     /// The font family of the OSD line, empty for the interface's.
     pub osd_font: String,
     /// The file and the face number of `osd_font`.
@@ -324,10 +342,16 @@ impl Default for Settings {
             audio_channels: Channels::Auto,
             volume_max: 100.0,
             normalize: false,
+            voice_boost: false,
+            eq_presets: Vec::new(),
             equalizer: audio::Equalizer::default(),
             passthrough: Passthrough::Off,
             sub: SubStyle::default(),
             sub_presets: Vec::new(),
+            sub_ass_override: false,
+            sub_margins: true,
+            keep_adjust: false,
+            adjust: crate::adjust::Adjust::default(),
             osd_font: String::new(),
             osd_font_file: None,
             osd_scale: 100.0,
@@ -445,6 +469,10 @@ impl Settings {
                 .filter(|v| audio::BOOSTS.contains(v))
                 .unwrap_or(d.volume_max),
             normalize: flag(NORMALIZE, d.normalize),
+            voice_boost: flag(VOICE_BOOST, d.voice_boost),
+            eq_presets: get(EQ_PRESETS)
+                .map(|v| audio::OwnEq::from_text(&v))
+                .unwrap_or_default(),
             equalizer: audio::Equalizer {
                 on: flag(EQ_ON, d.equalizer.on),
                 gains: get(EQ_GAINS)
@@ -481,6 +509,13 @@ impl Settings {
             },
             sub_presets: get(SUB_PRESETS)
                 .map(|v| sub_style::Own::from_text(&v))
+                .unwrap_or_default(),
+            sub_ass_override: flag(SUB_ASS_OVERRIDE, d.sub_ass_override),
+            sub_margins: flag(SUB_MARGINS, d.sub_margins),
+            keep_adjust: flag(KEEP_ADJUST, d.keep_adjust),
+            adjust: get(ADJUST)
+                .filter(|_| flag(KEEP_ADJUST, d.keep_adjust))
+                .map(|v| crate::adjust::Adjust::from_text(&v))
                 .unwrap_or_default(),
             osd_font: osd_font
                 .as_ref()
@@ -561,6 +596,17 @@ impl Settings {
         storage.set_string(AUDIO_CHANNELS, self.audio_channels.name().into());
         storage.set_string(VOLUME_MAX, format!("{:.0}", self.volume_max));
         storage.set_string(NORMALIZE, self.normalize.to_string());
+        storage.set_string(VOICE_BOOST, self.voice_boost.to_string());
+        storage.set_string(EQ_PRESETS, audio::OwnEq::to_text(&self.eq_presets));
+        storage.set_string(SUB_ASS_OVERRIDE, self.sub_ass_override.to_string());
+        storage.set_string(SUB_MARGINS, self.sub_margins.to_string());
+        storage.set_string(KEEP_ADJUST, self.keep_adjust.to_string());
+        let adjust = if self.keep_adjust {
+            self.adjust.to_text()
+        } else {
+            String::new()
+        };
+        storage.set_string(ADJUST, adjust);
         storage.set_string(EQ_ON, self.equalizer.on.to_string());
         let gains: Vec<String> = self.equalizer.gains.iter().map(i64::to_string).collect();
         storage.set_string(EQ_GAINS, gains.join(","));
@@ -668,6 +714,11 @@ mod tests {
             audio_channels: Channels::Surround51,
             volume_max: 150.0,
             normalize: true,
+            voice_boost: true,
+            eq_presets: vec![audio::OwnEq {
+                name: "Ночь".into(),
+                gains: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            }],
             equalizer: audio::Equalizer {
                 on: true,
                 gains: [5, 4, 3, 1, -1, -1, 1, 3, 4, -12],
@@ -683,6 +734,14 @@ mod tests {
                 bold: true,
                 shadow: 1.5,
                 boxed: true,
+            },
+            sub_ass_override: true,
+            sub_margins: false,
+            keep_adjust: true,
+            adjust: crate::adjust::Adjust {
+                zoom: 150,
+                denoise: 30,
+                ..crate::adjust::Adjust::default()
             },
             sub_presets: vec![sub_style::Own {
                 name: "Вечер".into(),

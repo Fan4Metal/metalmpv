@@ -77,6 +77,8 @@ pub struct App {
     video_panel: VideoPanel,
     /// Where the control bar drew the panel's button this frame.
     panel_button: Option<egui::Rect>,
+    /// The audio filters mpv has (`App::sync_audio_filters`).
+    af_applied: String,
     /// The pictures of IPTV channels (`logos.rs`).
     logos: crate::logos::Logos,
     adjust: Adjust,
@@ -228,6 +230,10 @@ impl App {
                 if settings.sub != crate::sub_style::SubStyle::default() {
                     player.set_sub_style(&settings.sub);
                 }
+                player.set_sub_layout(settings.sub_ass_override, settings.sub_margins);
+                if settings.keep_adjust {
+                    player.adjust(&Adjust::default(), &settings.adjust);
+                }
                 log::debug!("player made at {:.0} ms", crate::since_start());
                 let video = match cc.gl.as_ref() {
                     Some(gl) => {
@@ -258,6 +264,12 @@ impl App {
 
         let mut updates = Updates::new(settings.check_updates, settings.last_update_check);
         updates.start_if_due(ctx);
+        let af_applied = crate::audio::filters(settings.normalize, &settings.equalizer, None);
+        let adjust = if settings.keep_adjust {
+            settings.adjust.clone()
+        } else {
+            Adjust::default()
+        };
         let mut app = Self {
             settings,
             player,
@@ -271,8 +283,9 @@ impl App {
             goto_dialog: ui::goto::GoToDialog::default(),
             video_panel: VideoPanel::default(),
             panel_button: None,
+            af_applied,
             logos: crate::logos::Logos::default(),
-            adjust: Adjust::default(),
+            adjust,
             cover: None,
             facts: None,
             settings_dialog: SettingsDialog::default(),
@@ -463,6 +476,25 @@ impl App {
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => slot.loading = None,
             }
+        }
+    }
+
+    /// Give mpv the audio filters the settings make, when they change:
+    /// the voice's depends on the channels of the track playing, so it
+    /// follows a change of track (`audio::filters`).
+    fn sync_audio_filters(&mut self, state: &State) {
+        let Some(player) = &mut self.player else {
+            return;
+        };
+        let voice = self
+            .settings
+            .voice_boost
+            .then(|| tracks::selected(&state.tracks, Kind::Audio).and_then(|t| t.channels))
+            .flatten();
+        let af = crate::audio::filters(self.settings.normalize, &self.settings.equalizer, voice);
+        if af != self.af_applied {
+            player.set_audio_filters(&af);
+            self.af_applied = af;
         }
     }
 
@@ -2799,9 +2831,6 @@ impl eframe::App for App {
             if changed.volume_max {
                 player.set_volume_max(self.settings.volume_max);
             }
-            if changed.normalize {
-                player.set_audio_filters(self.settings.normalize, &self.settings.equalizer);
-            }
             if changed.passthrough {
                 player.set_passthrough(self.settings.passthrough);
             }
@@ -2882,15 +2911,23 @@ impl eframe::App for App {
         );
         cmds.extend(info_cmds);
         let before = self.adjust.clone();
-        let sound_before = (self.settings.equalizer.clone(), self.settings.normalize);
         let subs_before = self.settings.sub.clone();
+        let layout_before = (self.settings.sub_ass_override, self.settings.sub_margins);
+        let output_before = (self.settings.audio_channels, self.settings.volume_max);
         let kept = ui::picture::Kept {
             audio_device: &mut self.settings.audio_device,
             devices: &state.audio_devices,
-            equalizer: &mut self.settings.equalizer,
+            channels: &mut self.settings.audio_channels,
+            volume_max: &mut self.settings.volume_max,
             normalize: &mut self.settings.normalize,
+            voice_boost: &mut self.settings.voice_boost,
+            equalizer: &mut self.settings.equalizer,
+            eq_presets: &mut self.settings.eq_presets,
             subs: &mut self.settings.sub,
             sub_presets: &mut self.settings.sub_presets,
+            sub_ass_override: &mut self.settings.sub_ass_override,
+            sub_margins: &mut self.settings.sub_margins,
+            keep_adjust: &mut self.settings.keep_adjust,
         };
         let panel_cmds = self.video_panel.show(
             &ctx,
@@ -2908,13 +2945,21 @@ impl eframe::App for App {
             if self.adjust != before {
                 player.adjust(&before, &self.adjust);
             }
-            if (self.settings.equalizer.clone(), self.settings.normalize) != sound_before {
-                player.set_audio_filters(self.settings.normalize, &self.settings.equalizer);
-            }
             if self.settings.sub != subs_before {
                 player.set_sub_style(&self.settings.sub);
             }
+            let layout = (self.settings.sub_ass_override, self.settings.sub_margins);
+            if layout != layout_before {
+                player.set_sub_layout(layout.0, layout.1);
+            }
+            if self.settings.audio_channels != output_before.0 {
+                player.set_channels(self.settings.audio_channels);
+            }
+            if self.settings.volume_max != output_before.1 {
+                player.set_volume_max(self.settings.volume_max);
+            }
         }
+        self.sync_audio_filters(&state);
 
         for cmd in cmds {
             self.run(&ctx, frame, cmd);
@@ -2926,6 +2971,12 @@ impl eframe::App for App {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         self.settings.check_updates = self.updates.enabled;
         self.settings.last_update_check = self.updates.last_check;
+        // Kept only while the panel's switch says so.
+        self.settings.adjust = if self.settings.keep_adjust {
+            self.adjust.clone()
+        } else {
+            Adjust::default()
+        };
         if let Some(player) = &self.player {
             self.settings.volume = player.state.volume;
             self.settings.mute = player.state.mute;
