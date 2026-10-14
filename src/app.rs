@@ -1684,6 +1684,7 @@ impl App {
                 Some(crate::dock::first_place(
                     main,
                     (PLAYLIST_WIDTH * ppp).round() as i32,
+                    self.hwnd.and_then(win::work_area),
                 ))
             };
             if let Some(rect) = saved.or_else(first) {

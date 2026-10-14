@@ -105,9 +105,22 @@ pub fn snapped(main: Rect, child: Rect, reach: i32) -> Rect {
 }
 
 /// The playlist beside a player at `main` the first time: on its right,
-/// as tall as it, `width` wide.
-pub fn first_place(main: Rect, width: i32) -> Rect {
-    [main[2], main[1], main[2] + width, main[3]]
+/// as tall as it, `width` wide; on its left when the work area `work`
+/// ends first, and over its right side when neither side has room (a
+/// player maximized or in fullscreen).
+pub fn first_place(main: Rect, width: i32, work: Option<Rect>) -> Rect {
+    let Some(work) = work else {
+        return [main[2], main[1], main[2] + width, main[3]];
+    };
+    let (top, bottom) = (main[1].max(work[1]), main[3].min(work[3]));
+    let left = if main[2] + width <= work[2] {
+        main[2]
+    } else if main[0] - width >= work[0] {
+        main[0] - width
+    } else {
+        work[2] - width
+    };
+    [left, top, left + width, bottom.max(top + 1)]
 }
 
 #[cfg(test)]
@@ -115,6 +128,21 @@ mod tests {
     use super::*;
 
     const MAIN: Rect = [100, 100, 900, 600];
+
+    #[test]
+    fn first_place_stays_on_the_work_area() {
+        let work = Some([0, 0, 1920, 1040]);
+        assert_eq!(first_place(MAIN, 300, work), [900, 100, 1200, 600]);
+        assert_eq!(first_place(MAIN, 300, None), [900, 100, 1200, 600]);
+        // At the right edge: on the left.
+        let right = [1000, 100, 1900, 600];
+        assert_eq!(first_place(right, 300, work), [700, 100, 1000, 600]);
+        // Maximized: over its right side, within the work area.
+        assert_eq!(
+            first_place([-8, -8, 1928, 1048], 300, work),
+            [1620, 0, 1920, 1040]
+        );
+    }
 
     #[test]
     fn touching_edges_glue() {
@@ -188,7 +216,7 @@ mod tests {
 
     #[test]
     fn first_on_the_right() {
-        assert_eq!(first_place(MAIN, 300), [900, 100, 1200, 600]);
-        assert!(glue_of(MAIN, first_place(MAIN, 300)).is_some());
+        assert_eq!(first_place(MAIN, 300, None), [900, 100, 1200, 600]);
+        assert!(glue_of(MAIN, first_place(MAIN, 300, None)).is_some());
     }
 }
