@@ -209,9 +209,10 @@ pub fn band_label(hz: u32) -> String {
 pub const VOICE_RANGE: std::ops::RangeInclusive<i64> = 1..=20;
 /// What it was before it could be set: the centre raised 1.6 times.
 pub const VOICE_DEFAULT: i64 = 4;
-/// The most the centre itself is raised, in dB: more and a loud voice
-/// clipped; past it the other channels are lowered instead.
-const CENTRE_MAX_DB: i64 = 6;
+/// The most the centre itself is raised, in dB; past it the other
+/// channels are lowered instead, so that a loud voice does not clip
+/// (6 dB was not enough voice, far from clipping).
+const CENTRE_MAX_DB: i64 = 12;
 /// `dialoguenhance`'s strongest factor, reached at 12 dB.
 const ENHANCE_MAX: f64 = 3.0;
 
@@ -631,17 +632,17 @@ mod tests {
     #[test]
     fn voice_filters() {
         let centre = "lavfi=[aeval=val(ch)*if(eq(ch\\,2)\\,1.58\\,1.00):c=same]";
-        // Past 6 dB the others go down instead: 16 dB is the centre +6, the
-        // rest -10.
+        // Past 12 dB the others go down instead: 16 dB is the centre +12,
+        // the rest -4.
         assert_eq!(
             voice_filter("5.1", 16).as_deref(),
-            Some("lavfi=[aeval=val(ch)*if(eq(ch\\,2)\\,2.00\\,0.32):c=same]")
+            Some("lavfi=[aeval=val(ch)*if(eq(ch\\,2)\\,3.98\\,0.63):c=same]")
         );
         // Stereo past the enhancer's 3 (12 dB): the rest on its centre.
         assert_eq!(
             voice_filter("stereo", 20).as_deref(),
             Some(
-                "lavfi=[dialoguenhance=enhance=3.00],lavfi=[aeval=val(ch)*if(eq(ch\\,2)\\,2.00\\,0.79):c=same]"
+                "lavfi=[dialoguenhance=enhance=3.00],lavfi=[aeval=val(ch)*if(eq(ch\\,2)\\,2.51\\,1.00):c=same]"
             )
         );
         assert_eq!(
