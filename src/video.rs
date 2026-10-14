@@ -111,6 +111,9 @@ impl Video {
     ) {
         let px = pixel_size(rect, ui.ctx().pixels_per_point());
         if px[0] <= 0 || px[1] <= 0 {
+            // No room for the picture (the playlist as wide as the
+            // window): its frames are taken unseen, else mpv waits for each.
+            self.skip_unseen();
             return;
         }
         let id = *self.id.get_or_insert_with(|| {
