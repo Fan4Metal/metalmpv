@@ -46,20 +46,17 @@ impl OsdLine {
         if !state.eof || state.idle {
             self.at_end = None;
         }
-        if self
-            .line
-            .as_ref()
-            .is_some_and(|(_, since)| since.elapsed() >= SHOWN)
-        {
+        // The age read once: read again, it could be past SHOWN.
+        let age = self.line.as_ref().map(|(_, since)| since.elapsed());
+        if age.is_some_and(|age| age >= SHOWN) {
             self.line = None;
         }
-        let Some((osd, since)) = &mut self.line else {
+        let (Some((osd, _)), Some(age)) = (&mut self.line, age) else {
             if let Some(osd) = &self.at_end {
                 paint_line(ctx, video, &osd.text(), scale, 1.0);
             }
             return;
         };
-        let age = since.elapsed();
         if !state.seeking
             && let Some(t) = state.time
         {
@@ -72,7 +69,7 @@ impl OsdLine {
             }
         }
         let alpha = if age > SHOWN - FADE {
-            (SHOWN - age).as_secs_f32() / FADE.as_secs_f32()
+            SHOWN.saturating_sub(age).as_secs_f32() / FADE.as_secs_f32()
         } else {
             1.0
         };
