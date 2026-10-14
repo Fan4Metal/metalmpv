@@ -173,6 +173,12 @@ pub struct App {
     awake: win::Awake,
     /// The taskbar button's progress and thumbnail buttons.
     taskbar: Option<crate::taskbar::Taskbar>,
+    /// Windows' media controls: the media keys without the focus, the
+    /// flyout with the title (`smtc.rs`).
+    smtc: Option<crate::smtc::Smtc>,
+    /// The last media key taken and when: the same press may come both
+    /// as the window's key and from the media controls.
+    last_media: Option<(win::MediaKey, Instant)>,
     /// The window is over the other windows now (`settings.on_top`).
     on_top: bool,
 }
@@ -336,6 +342,8 @@ impl App {
             audio_device_used: String::new(),
             awake: win::Awake::No,
             taskbar: hwnd.and_then(crate::taskbar::Taskbar::new),
+            smtc: hwnd.and_then(crate::smtc::Smtc::new),
+            last_media: None,
             on_top: false,
         };
         app.sized_for = app.settings.interface;
@@ -1282,6 +1290,10 @@ impl App {
                     continue;
                 }
             };
+            if same_press(self.last_media, key, Instant::now()) {
+                continue;
+            }
+            self.last_media = Some((key, Instant::now()));
             let cmd = match key {
                 win::MediaKey::PlayPause => Some(Cmd::TogglePause),
                 win::MediaKey::Play => paused.then_some(Cmd::TogglePause),
@@ -1315,6 +1327,42 @@ impl App {
             has_previous: self.playlist.prev_in(repeat).is_some(),
             has_next: self.playlist.next_in(repeat).is_some(),
         });
+    }
+
+    /// What plays in Windows' media controls: the state, previous and
+    /// next, the title (and the artist of a song).
+    fn show_in_media_controls(&mut self) {
+        if self.smtc.is_none() {
+            return;
+        }
+        use crate::smtc::Status;
+        let state = self.state();
+        let status = match &self.player {
+            _ if self.engine_error.is_some() => Status::Closed,
+            None => Status::Closed,
+            Some(_) if state.idle && self.playlist.is_empty() => Status::Closed,
+            Some(_) if state.idle => Status::Stopped,
+            Some(_) if state.paused || state.eof => Status::Paused,
+            Some(_) => Status::Playing,
+        };
+        let music = state.video().is_none();
+        let shown = crate::smtc::Shown {
+            status,
+            has_previous: self.playlist.prev_in(self.settings.repeat).is_some(),
+            has_next: self.playlist.next_in(self.settings.repeat).is_some(),
+            title: if status == Status::Closed {
+                String::new()
+            } else {
+                self.title(&state)
+            },
+            artist: music
+                .then(|| crate::info::artist(&state.metadata).map(str::to_owned))
+                .flatten(),
+            music,
+        };
+        if let Some(smtc) = &mut self.smtc {
+            smtc.show(shown);
+        }
     }
 
     fn follow_on_top(&mut self, ctx: &egui::Context) {
@@ -2287,6 +2335,20 @@ impl App {
     }
 }
 
+/// Media key `key` at `at` is the press `last` was, come again by the other
+/// way (the window's key and Windows' media controls): Play, Pause and
+/// Play/Pause are one button.
+fn same_press(last: Option<(win::MediaKey, Instant)>, key: win::MediaKey, at: Instant) -> bool {
+    use win::MediaKey::{Pause, Play, PlayPause};
+    let button = |k: win::MediaKey| match k {
+        Play | Pause | PlayPause => PlayPause,
+        other => other,
+    };
+    last.is_some_and(|(k, t)| {
+        button(k) == button(key) && at.saturating_duration_since(t) < Duration::from_millis(300)
+    })
+}
+
 /// Files that came at `at` join those that came last (at `last`): Explorer
 /// starts one process per selected file, the first of them this one (its
 /// own files count as received at the start).
@@ -2803,6 +2865,7 @@ impl eframe::App for App {
         win::set_playlist_follow(!self.fullscreen);
         self.follow_on_top(ctx);
         self.show_on_taskbar();
+        self.show_in_media_controls();
     }
 
     fn ui(&mut self, root_ui: &mut egui::Ui, frame: &mut eframe::Frame) {
@@ -3189,6 +3252,18 @@ impl eframe::App for App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_media_key_counts_once() {
+        use win::MediaKey::{Next, Pause, PlayPause};
+        let t = Instant::now();
+        let ms = |n| t + Duration::from_millis(n);
+        // The window's Play/Pause, then the media controls' Pause.
+        assert!(same_press(Some((PlayPause, t)), Pause, ms(40)));
+        assert!(!same_press(Some((PlayPause, t)), Pause, ms(500)));
+        assert!(!same_press(Some((PlayPause, t)), Next, ms(40)));
+        assert!(!same_press(None, Next, t));
+    }
 
     #[test]
     fn files_of_other_starts_join_the_first() {

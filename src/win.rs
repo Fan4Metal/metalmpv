@@ -544,6 +544,12 @@ fn hook(what: Hooked) {
     }
 }
 
+/// A media key pressed elsewhere (Windows' media controls, `smtc.rs`),
+/// queued as one of the window's.
+pub fn hook_media(key: MediaKey) {
+    hook(Hooked::Media(key));
+}
+
 /// The media key of a virtual key code.
 fn media_vk(vk: u32) -> Option<MediaKey> {
     match vk {

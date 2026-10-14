@@ -179,7 +179,7 @@ The keys below are the defaults. In the settings, the **Keyboard shortcuts** cat
 | `Shift+.` / `Shift+,` | Subtitles later / earlier by 100 ms (`>` and `<`) |
 | `Shift+0` | Subtitles back in sync |
 | `Page Up` / `Page Down` | Previous / next file of the playlist |
-| Media keys | Play/Pause, Stop, Previous and Next of a keyboard, a headset or a remote, while the player's window is active |
+| Media keys | Play/Pause, Stop, Previous and Next of a keyboard, a headset or a remote, also while another window is active (through Windows' media controls, whose flyout over the volume's shows the title playing) |
 | `Enter`, `Alt+Enter`, `F11`, double click | Fullscreen |
 | `1` / `2` / `3` / `4` | Window for the picture at 50 % / 100 % / 150 % / 200 % of the video's size |
 | `5` | The largest window the screen holds, without black bars |
