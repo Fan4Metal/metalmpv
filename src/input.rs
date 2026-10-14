@@ -106,7 +106,8 @@ pub enum Cmd {
     /// Open or close the Video, sound and subtitles panel (`U`, next to the
     /// information's `I`; `F7` as in GOM Player).
     ToggleVideoPanel,
-    /// Open the panel on its Sound tab (the context menu).
+    /// Open the panel on its Sound tab (a key of one's own: the context
+    /// menu's item is gone).
     ShowEqualizer,
     /// Save the frame on screen into Pictures\MetalMPV (`Ctrl+E`).
     SaveFrame,
