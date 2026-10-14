@@ -444,17 +444,11 @@ impl Playlist {
             .collect();
         keyed.sort_by(|(ka, a), (kb, b)| natural_cmp(ka, kb).then_with(|| a.cmp(b)));
         self.items = keyed.into_iter().map(|(_, p)| p).collect();
-        let find = |items: &[PathBuf], p: Option<PathBuf>| {
-            p.and_then(|p| items.iter().position(|i| *i == p))
-        };
-        // Left where it fell, the entries before it would not play.
-        if let Some(i) = find(&self.items, current) {
-            self.items[..=i].rotate_right(1);
-            self.current = Some(0);
-        }
+        let find = |p: Option<PathBuf>| p.and_then(|p| self.items.iter().position(|i| *i == p));
+        self.current = find(current);
         // The place of a playing entry taken out means nothing now.
         self.after_gone = None;
-        self.selected = find(&self.items, selected);
+        self.selected = find(selected);
     }
 
     /// The entry after the current one (after the place of the playing
