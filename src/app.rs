@@ -85,6 +85,9 @@ pub struct App {
     tracks_button: Option<egui::Rect>,
     /// The audio filters mpv has (`App::sync_audio_filters`).
     af_applied: String,
+    /// The channels the voice's filter was made for: kept while a file
+    /// loads (no tracks yet), else it went and came back with each file.
+    af_voice: Option<i64>,
     /// The pictures of IPTV channels (`logos.rs`).
     logos: crate::logos::Logos,
     adjust: Adjust,
@@ -315,6 +318,7 @@ impl App {
             tracks_window: ui::tracks::TracksWindow::default(),
             tracks_button: None,
             af_applied,
+            af_voice: None,
             logos: crate::logos::Logos::default(),
             adjust,
             cover: None,
@@ -539,15 +543,24 @@ impl App {
     /// Give mpv the audio filters the settings make, when they change:
     /// the voice's depends on the channels of the track playing, so it
     /// follows a change of track (`audio::filters`).
-    fn sync_audio_filters(&mut self, state: &State) {
+    fn sync_audio_filters(&mut self, ctx: &egui::Context, state: &State) {
         let Some(player) = &mut self.player else {
             return;
         };
-        let voice = self
-            .settings
-            .voice_boost
-            .then(|| tracks::selected(&state.tracks, Kind::Audio).and_then(|t| t.channels))
-            .flatten();
+        // While a slider is dragged (a band of the equalizer), the chain is
+        // rebuilt once it is let go: each step rebuilt it, and seeked
+        // under the normalization.
+        if ctx.input(|i| i.pointer.any_down()) {
+            return;
+        }
+        let voice = if !self.settings.voice_boost {
+            None
+        } else if state.tracks.is_empty() {
+            self.af_voice
+        } else {
+            tracks::selected(&state.tracks, Kind::Audio).and_then(|t| t.channels)
+        };
+        self.af_voice = voice;
         let af = crate::audio::filters(self.settings.normalize, &self.settings.equalizer, voice);
         if af != self.af_applied {
             player.set_audio_filters(&af);
@@ -3350,7 +3363,7 @@ impl eframe::App for App {
                 player.set_volume_max(self.settings.volume_max);
             }
         }
-        self.sync_audio_filters(&state);
+        self.sync_audio_filters(&ctx, &state);
 
         for cmd in cmds {
             self.run(&ctx, frame, cmd);

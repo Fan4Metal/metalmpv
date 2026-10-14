@@ -761,6 +761,8 @@ pub struct Player {
     hwdec: bool,
     /// Filters on the processor: hardware decoding copies the frames.
     hwdec_copy: bool,
+    /// Filters on the processor are set (`vf` not empty).
+    filters_on: bool,
     last_seek: Option<SeekMark>,
     /// The audio filters mpv has, and those before the last change
     /// ([`Player::resync_audio`]).
@@ -799,6 +801,7 @@ impl Player {
             stopped: false,
             hwdec: true,
             hwdec_copy: false,
+            filters_on: false,
             last_seek: None,
             data_end_at: None,
             af: String::new(),
@@ -1027,6 +1030,10 @@ impl Player {
             None => options.extend(["aid=auto".to_owned(), "sid=auto".to_owned()]),
         }
         options.push("vid=auto".to_owned());
+        if self.hwdec_copy && !self.filters_on {
+            self.hwdec_copy = false;
+            self.apply_hwdec();
+        }
         // The index (-1) comes before the options since mpv 0.38.
         let options = options.join(",");
         self.mpv
@@ -1199,7 +1206,12 @@ impl Player {
     fn resync_audio(&mut self, filters_changed: bool) {
         let holds = |af: &str| af.contains("dynaudnorm");
         let needed = holds(&self.af) || (filters_changed && holds(&self.af_before));
-        if needed && !self.state.idle && !self.loading {
+        // Not at the end (keep-open): a seek there ends the file again.
+        let playing = !self.state.idle
+            && !self.loading
+            && !self.state.eof
+            && tracks::selected(&self.state.tracks, Kind::Audio).is_some();
+        if needed && playing {
             log::debug!("the sound's chain was rebuilt: seeking to the position");
             self.mpv.command(0, &["seek", "0", "relative+exact"]);
         }
@@ -1225,10 +1237,13 @@ impl Player {
         }
         let filters = new.filters();
         if old.filters() != filters {
-            // Copying first: the filters fail on frames in the graphics card.
-            let copy = !filters.is_empty();
-            if copy != self.hwdec_copy {
-                self.hwdec_copy = copy;
+            // Copying first: the filters fail on frames in the graphics
+            // card. Back to the card's frames only with the next file
+            // (`load`): each switch starts the decoder again with a seek,
+            // and a slider near zero, or Mirror, switched at each step.
+            self.filters_on = !filters.is_empty();
+            if self.filters_on && !self.hwdec_copy {
+                self.hwdec_copy = true;
                 self.apply_hwdec();
             }
             self.mpv.set("vf", &Value::Str(filters));
@@ -1540,6 +1555,7 @@ mod tests {
             stopped: false,
             hwdec: true,
             hwdec_copy: false,
+            filters_on: false,
             last_seek: None,
             data_end_at: None,
             af: String::new(),
@@ -1628,6 +1644,7 @@ mod tests {
             stopped: false,
             hwdec: true,
             hwdec_copy: false,
+            filters_on: false,
             last_seek: None,
             data_end_at: None,
             af: String::new(),
@@ -1744,6 +1761,7 @@ mod tests {
             stopped: false,
             hwdec: true,
             hwdec_copy: false,
+            filters_on: false,
             last_seek: None,
             data_end_at: None,
             af: String::new(),
@@ -1862,6 +1880,7 @@ mod tests {
             stopped: false,
             hwdec: true,
             hwdec_copy: false,
+            filters_on: false,
             last_seek: None,
             data_end_at: None,
             af: String::new(),
@@ -2083,6 +2102,7 @@ mod tests {
             stopped: false,
             hwdec: true,
             hwdec_copy: false,
+            filters_on: false,
             last_seek: None,
             data_end_at: None,
             af: String::new(),
@@ -2339,6 +2359,7 @@ mod tests {
             stopped: false,
             hwdec: true,
             hwdec_copy: false,
+            filters_on: false,
             last_seek: None,
             data_end_at: None,
             af: String::new(),
