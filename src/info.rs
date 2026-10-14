@@ -338,12 +338,9 @@ pub fn track_rows_in(lang: Lang, track: &Track, s: &Subject) -> Vec<(String, Str
                         decimal_in(lang, par, 3),
                     ));
                 }
-                let aspect = params
-                    .and_then(|p| p.aspect)
-                    .unwrap_or(w as f64 * par / h.max(1) as f64);
                 rows.push((
                     label("Aspect ratio", "Соотношение сторон"),
-                    aspect_in(lang, aspect),
+                    aspect_in(lang, display_aspect(params, w, h, par)),
                 ));
             }
             if let Some(fps) = track.fps.filter(|f| *f > 0.0 && !track.albumart) {
@@ -593,6 +590,14 @@ fn sampling(pixel_format: &str) -> Option<(&'static str, u32)> {
         _ => 8,
     };
     Some((chroma, bits))
+}
+
+/// The picture's shape on screen: the decoder's word for the track on
+/// screen (`params`), else the size `w`×`h` with pixels `par` wide.
+fn display_aspect(params: Option<&VideoParams>, w: i64, h: i64, par: f64) -> f64 {
+    params
+        .and_then(|p| p.aspect)
+        .unwrap_or(w as f64 * par / h.max(1) as f64)
 }
 
 /// A display aspect ratio: "16:9", "2:1", "2,39:1".
@@ -933,7 +938,7 @@ impl Chip {
 const AUDIO_CHIPS: usize = 4;
 
 /// The header's chips in rows: the file (format, size, duration, overall
-/// bitrate), the picture (codec, size, fps, depth, HDR, bitrate), the
+/// bitrate), the picture (codec, size, aspect, fps, depth, HDR, bitrate), the
 /// sound (a chip per audio track, the playing one marked; the subtitles'
 /// count and language). What the list below says, at a glance.
 pub fn chips_in(lang: Lang, s: &Subject) -> Vec<Vec<Chip>> {
@@ -1024,13 +1029,20 @@ pub fn chips_in(lang: Lang, s: &Subject) -> Vec<Vec<Chip>> {
             }
             picture.push(chip);
         }
+        let params = state.video_params.as_ref().filter(|_| track.selected);
         if let (Some(w), Some(h)) = (track.width, track.height) {
             picture.push(Chip::new(format!("{w}×{h}")));
+            let aspect = display_aspect(params, w, h, track.par.unwrap_or(1.0));
+            picture.push(Chip::new(aspect_in(lang, aspect)).tip(if ru {
+                "Соотношение сторон"
+            } else {
+                "Aspect ratio"
+            }));
         }
         if let Some(fps) = track.fps.filter(|f| *f > 0.0) {
             picture.push(Chip::new(fps_in(lang, fps)));
         }
-        if let Some(params) = state.video_params.as_ref().filter(|_| track.selected) {
+        if let Some(params) = params {
             if let Some((_, bits)) = params
                 .pixel_format
                 .as_deref()
@@ -1642,7 +1654,14 @@ mod tests {
             texts,
             [
                 vec!["MKV", "2,13 ГБ", "2:08:03", "2,4 Мбит/с"],
-                vec!["HEVC", "1920×1080", "23,976 fps", "10 бит", "HDR (PQ)"],
+                vec![
+                    "HEVC",
+                    "1920×1080",
+                    "16:9",
+                    "23,976 fps",
+                    "10 бит",
+                    "HDR (PQ)"
+                ],
                 vec![
                     "AAC 5.1 Русский",
                     "AC3 2.0 Английский",
