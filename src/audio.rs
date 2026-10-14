@@ -203,11 +203,27 @@ pub fn band_label(hz: u32) -> String {
     }
 }
 
-/// How much clearer speech raises the voice, in dB: the centre channel's
-/// gain; in stereo, `dialoguenhance`'s factor (its 1 at 4 dB).
-pub const VOICE_RANGE: std::ops::RangeInclusive<i64> = 1..=10;
+/// How much clearer speech raises the voice over the rest, in dB
+/// ([`centre_filter`]; in stereo, `dialoguenhance`'s factor first, its 1
+/// at 4 dB).
+pub const VOICE_RANGE: std::ops::RangeInclusive<i64> = 1..=20;
 /// What it was before it could be set: the centre raised 1.6 times.
 pub const VOICE_DEFAULT: i64 = 4;
+/// The most the centre itself is raised, in dB: more and a loud voice
+/// clipped; past it the other channels are lowered instead.
+const CENTRE_MAX_DB: i64 = 6;
+/// `dialoguenhance`'s strongest factor, reached at 12 dB.
+const ENHANCE_MAX: f64 = 3.0;
+
+/// The voice `db` over the rest of a layout whose third channel is the
+/// centre: the centre up to [`CENTRE_MAX_DB`], the others down by what is
+/// left (one expression for every channel).
+fn centre_filter(db: i64) -> String {
+    let up = db.min(CENTRE_MAX_DB);
+    let gain = |db: i64| 10f64.powf(db as f64 / 20.0);
+    let (centre, others) = (gain(up), gain(up - db));
+    format!("lavfi=[aeval=val(ch)*if(eq(ch\\,2)\\,{centre:.2}\\,{others:.2}):c=same]")
+}
 
 /// mpv's names of the layouts whose third channel is the centre (FL, FR,
 /// FC, …); others name it elsewhere or not at all (`5.1(alsa)`, `quad`,
@@ -247,13 +263,19 @@ pub fn voice_filter(layout: &str, db: i64) -> Option<String> {
     let db = db.clamp(*VOICE_RANGE.start(), *VOICE_RANGE.end());
     let speakers: Vec<&str> = layout.split('-').collect();
     if layout == "stereo" || speakers == ["fl", "fr"] {
-        // 0 to 3; its default 1 for the default.
-        let enhance = db as f64 / VOICE_DEFAULT as f64;
-        return Some(format!("lavfi=[dialoguenhance=enhance={enhance:.2}]"));
+        // Its 1 for the default; past its 3, the 3.0 it makes gets the
+        // rest as a centre raised over its sides.
+        let enhance = (db as f64 / VOICE_DEFAULT as f64).min(ENHANCE_MAX);
+        let rest = db - (ENHANCE_MAX * VOICE_DEFAULT as f64) as i64;
+        let mut filter = format!("lavfi=[dialoguenhance=enhance={enhance:.2}]");
+        if rest > 0 {
+            filter.push(',');
+            filter.push_str(&centre_filter(rest));
+        }
+        return Some(filter);
     }
-    let gain = 10f64.powf(db as f64 / 20.0);
     let centre = CENTRE_THIRD.contains(&layout) || speakers.get(2) == Some(&"fc");
-    centre.then(|| format!("lavfi=[aeval=val(ch)*if(eq(ch\\,2)\\,{gain:.2}\\,1):c=same]"))
+    centre.then(|| centre_filter(db))
 }
 
 /// The layout a track's voice filter is made for: mpv's, else one its
@@ -608,7 +630,24 @@ mod tests {
 
     #[test]
     fn voice_filters() {
-        let centre = "lavfi=[aeval=val(ch)*if(eq(ch\\,2)\\,1.58\\,1):c=same]";
+        let centre = "lavfi=[aeval=val(ch)*if(eq(ch\\,2)\\,1.58\\,1.00):c=same]";
+        // Past 6 dB the others go down instead: 16 dB is the centre +6, the
+        // rest -10.
+        assert_eq!(
+            voice_filter("5.1", 16).as_deref(),
+            Some("lavfi=[aeval=val(ch)*if(eq(ch\\,2)\\,2.00\\,0.32):c=same]")
+        );
+        // Stereo past the enhancer's 3 (12 dB): the rest on its centre.
+        assert_eq!(
+            voice_filter("stereo", 20).as_deref(),
+            Some(
+                "lavfi=[dialoguenhance=enhance=3.00],lavfi=[aeval=val(ch)*if(eq(ch\\,2)\\,2.00\\,0.79):c=same]"
+            )
+        );
+        assert_eq!(
+            voice_filter("stereo", 12).as_deref(),
+            Some("lavfi=[dialoguenhance=enhance=3.00]")
+        );
         assert_eq!(voice_filter("mono", VOICE_DEFAULT), None);
         assert_eq!(voice_filter("2.1", VOICE_DEFAULT), None);
         assert_eq!(voice_filter("quad", VOICE_DEFAULT), None);

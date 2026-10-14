@@ -657,8 +657,8 @@ fn sound_tab(
         let strength = Spec {
             suffix: tr!(" dB", " дБ"),
             tip: Some(tr!(
-                "How much the voice is raised: in 5.1 and more the centre channel by this much; in stereo the dialogue enhancer as strongly",
-                "Насколько поднимается голос: в 5.1 и больше — центральный канал на столько; в стерео — фильтр для диалогов с той же силой"
+                "How much louder the voice is than the rest: the centre channel is raised up to 6 dB, past that the other channels are lowered instead, so that a loud voice does not distort; in stereo the dialogue enhancer works as strongly first",
+                "Насколько голос громче остального: центральный канал поднимается до 6 дБ, сильнее — вместо этого приглушаются остальные каналы, чтобы громкий голос не хрипел; в стерео сначала с той же силой работает фильтр для диалогов"
             )),
             ..Spec::centred(range_of(audio::VOICE_RANGE), audio::VOICE_DEFAULT as f64)
         };
