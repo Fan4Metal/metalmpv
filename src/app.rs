@@ -2108,9 +2108,6 @@ impl App {
             state,
             playlist_visible: false,
             video_panel_open: self.video_panel.open,
-            video_panel_changed: !self.adjust.is_default()
-                || state.audio_delay != 0.0
-                || state.sub_delay != 0.0,
             fullscreen: true,
             has_prev: self.playlist.prev_in(self.settings.repeat).is_some(),
             has_next: self.playlist.next_in(self.settings.repeat).is_some(),
@@ -2705,9 +2702,6 @@ impl eframe::App for App {
                 state: &state,
                 playlist_visible: self.settings.playlist_visible,
                 video_panel_open: self.video_panel.open,
-                video_panel_changed: !self.adjust.is_default()
-                    || state.audio_delay != 0.0
-                    || state.sub_delay != 0.0,
                 fullscreen: false,
                 has_prev: self.playlist.prev_in(self.settings.repeat).is_some(),
                 has_next: self.playlist.next_in(self.settings.repeat).is_some(),

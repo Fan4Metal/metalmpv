@@ -111,7 +111,8 @@ pub struct Adjust {
     pub mirror: bool,
     /// 0 to 100 (CAS' strength in percent).
     pub sharpen: i64,
-    pub denoise: bool,
+    /// 0 to 100: hqdn3d's strengths in proportion, 40 near its defaults.
+    pub denoise: i64,
     pub deband: bool,
     pub aspect: Aspect,
 }
@@ -133,8 +134,16 @@ impl Adjust {
     /// mpv's `vf`: the filters in the order they act, empty for none.
     pub fn filters(&self) -> String {
         let mut vf = Vec::new();
-        if self.denoise {
-            vf.push("lavfi=[hqdn3d]".to_owned());
+        if self.denoise > 0 {
+            // FFmpeg's defaults are 4:3:6:4.5, spatial and temporal, the
+            // luma's and the chroma's.
+            let luma = self.denoise.clamp(0, 100) as f64 / 10.0;
+            vf.push(format!(
+                "lavfi=[hqdn3d={luma:.2}:{:.2}:{:.2}:{:.2}]",
+                luma * 0.75,
+                luma * 1.5,
+                luma * 1.125
+            ));
         }
         if self.sharpen > 0 {
             vf.push(format!(
@@ -180,10 +189,10 @@ mod tests {
         assert_eq!(a.filters(), "");
         a.mirror = true;
         a.sharpen = 50;
-        a.denoise = true;
+        a.denoise = 40;
         assert_eq!(
             a.filters(),
-            "lavfi=[hqdn3d],lavfi=[cas=strength=0.50],lavfi=[hflip]"
+            "lavfi=[hqdn3d=4.00:3.00:6.00:4.50],lavfi=[cas=strength=0.50],lavfi=[hflip]"
         );
         a.set(Color::Gamma, 300);
         assert_eq!(a.get(Color::Gamma), 100);

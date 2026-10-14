@@ -98,8 +98,7 @@ impl VideoPanel {
     /// button's, else at the window's bottom right corner; shown whole,
     /// kept on the window when the room above is short. A press outside it and its button closes
     /// it, unless a popup of its own is open (a list, the colour picker):
-    /// the press is that one's. A tab with something changed from its
-    /// default has a dot.
+    /// the press is that one's.
     pub fn show(
         &mut self,
         ctx: &egui::Context,
@@ -146,22 +145,14 @@ impl VideoPanel {
             .show(ctx, |ui| {
                 frame.show(ui, |ui| {
                     ui.set_width(WIDTH);
-                    let changed = [
-                        !adjust.is_default(),
-                        (kept.equalizer.on && kept.equalizer.gains != [0; 10])
-                            || *kept.normalize
-                            || now.audio_delay != 0.0,
-                        *kept.subs != SubStyle::default() || now.sub_delay != 0.0,
-                    ];
                     ui.horizontal(|ui| {
-                        let tabs = [
-                            (Tab::Video, tr!("Video", "Видео")),
-                            (Tab::Sound, tr!("Sound", "Звук")),
-                            (Tab::Subtitles, tr!("Subtitles", "Субтитры")),
-                        ];
-                        for ((tab, name), changed) in tabs.into_iter().zip(changed) {
-                            tab_button(ui, &mut self.tab, tab, name, changed);
-                        }
+                        ui.selectable_value(&mut self.tab, Tab::Video, tr!("Video", "Видео"));
+                        ui.selectable_value(&mut self.tab, Tab::Sound, tr!("Sound", "Звук"));
+                        ui.selectable_value(
+                            &mut self.tab,
+                            Tab::Subtitles,
+                            tr!("Subtitles", "Субтитры"),
+                        );
                     });
                     ui.separator();
                     match self.tab {
@@ -219,14 +210,22 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, has_video: bool, out: &mut Vec<Cm
             adjust.sharpen = 0;
         }
     });
-    ui.checkbox(
-        &mut adjust.denoise,
+    labelled(
+        ui,
         tr!("Noise reduction", "Шумоподавление"),
-    )
-    .on_hover_text(tr!(
-        "Smooths out grain and compression noise (hqdn3d), on the processor",
-        "Сглаживает зерно и шум сжатия (hqdn3d), на процессоре"
-    ));
+        |ui| {
+            let response = ui
+            .add(egui::Slider::new(&mut adjust.denoise, 0..=100).suffix("%"))
+            .on_hover_text(tr!(
+                "Smooths out grain and compression noise (hqdn3d), on the processor; 40% is FFmpeg's usual strength, more blurs; a double click turns it off",
+                "Сглаживает зерно и шум сжатия (hqdn3d), на процессоре; 40 % — обычная сила FFmpeg, больше — размывает; двойной щелчок выключает"
+            ));
+            let on = adjust.denoise != 0;
+            if response.double_clicked() || reset(ui, on, tr!("Off", "Выключить")) {
+                adjust.denoise = 0;
+            }
+        },
+    );
     ui.checkbox(
         &mut adjust.deband,
         tr!("Smooth gradient banding", "Сглаживание полос градиента"),
@@ -686,22 +685,6 @@ fn looks(
     }
 }
 
-/// A tab's name, a dot in the accent colour after it while `changed`.
-fn tab_button(ui: &mut Ui, current: &mut Tab, tab: Tab, name: &str, changed: bool) {
-    let response = ui.selectable_label(*current == tab, name);
-    if response.clicked() {
-        *current = tab;
-    }
-    let (dot, _) = ui.allocate_exact_size(vec2(8.0, response.rect.height()), Sense::hover());
-    if changed {
-        ui.painter().circle_filled(
-            egui::pos2(dot.left() + 2.0, dot.top() + 6.0),
-            3.0,
-            style::accent(),
-        );
-    }
-}
-
 /// A delay's row: a slider of seconds, a reset; the delay chosen, if
 /// another. The slider does not clamp: a delay set further by the keys
 /// shows as it is.
@@ -730,15 +713,16 @@ fn delay_row(ui: &mut Ui, label: &str, now: f64, tip: &str) -> Option<f64> {
     chosen
 }
 
-/// A line of sample text drawn as the subtitles look, on a ground from dark
-/// to light as a picture under them. An approximation: egui's font, the
-/// outline drawn round the letters, thicker than mpv's to be seen at this
-/// size, the box of the outline's colour a little see-through.
+/// Sample text drawn large as the subtitles look, on a ground from dark to
+/// light as a picture under them: the look, not the size, which is the
+/// same whatever is chosen. An approximation: egui's font, the outline
+/// drawn round the letters, the box of the outline's colour a little
+/// see-through.
 fn preview(ui: &mut Ui, style: &SubStyle) {
-    let (rect, response) = ui.allocate_exact_size(vec2(WIDTH, 60.0), Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(vec2(WIDTH, 72.0), Sense::hover());
     response.on_hover_text(tr!(
-        "Roughly as on the picture: the size follows, the font is the interface's.",
-        "Примерно как на изображении: размер учитывается, шрифт — интерфейса."
+        "The look of the subtitles, roughly: the font is the interface's, the size fixed.",
+        "Вид субтитров, примерно: шрифт интерфейса, размер постоянный."
     ));
     let painter = ui.painter_at(rect);
     let (dark, light) = (
@@ -759,8 +743,8 @@ fn preview(ui: &mut Ui, style: &SubStyle) {
     painter.add(ground);
 
     let rgb = |[r, g, b]: [u8; 3]| Color32::from_rgb(r, g, b);
-    let size = (18.0 * style.scale as f32 / 100.0).clamp(10.0, 32.0);
-    let text = tr!("Subtitles look like this", "Так выглядят субтитры");
+    let size = 32.0;
+    let text = tr!("Sample subtitles", "Пример субтитров");
     let galley =
         painter.layout_no_wrap(text.to_owned(), FontId::proportional(size), Color32::WHITE);
     let at = rect.center() - galley.size() / 2.0;

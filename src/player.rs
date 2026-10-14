@@ -1956,7 +1956,7 @@ mod tests {
         new.turn(1);
         new.flip = true;
         new.sharpen = 60;
-        new.denoise = true;
+        new.denoise = 70;
         new.deband = true;
         new.aspect = crate::adjust::Aspect::R4x3;
         player.adjust(&Adjust::default(), &new);
