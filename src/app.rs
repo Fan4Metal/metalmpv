@@ -1168,6 +1168,11 @@ impl App {
             Cmd::TogglePlaylist => {
                 if frameless::is_fullscreen(ctx) {
                     self.fullscreen_playlist = !self.fullscreen_playlist;
+                } else if self.interface() == Interface::Bare {
+                    // Only the picture: no playlist to show or hide there,
+                    // so the interface comes back with it.
+                    self.settings.playlist_visible = true;
+                    self.run(ctx, frame, Cmd::SetInterface(self.before_bare));
                 } else {
                     self.settings.playlist_visible = !self.settings.playlist_visible;
                 }
@@ -1175,6 +1180,9 @@ impl App {
             Cmd::TogglePlaylistWindow => {
                 self.settings.playlist_detached = !self.settings.playlist_detached;
                 self.settings.playlist_visible = true;
+                if self.interface() == Interface::Bare && !frameless::is_fullscreen(ctx) {
+                    self.run(ctx, frame, Cmd::SetInterface(self.before_bare));
+                }
             }
             Cmd::About => self.about.toggle(),
             Cmd::Settings => self.settings_dialog.toggle(),
@@ -1182,7 +1190,7 @@ impl App {
                 let shown = if frameless::is_fullscreen(ctx) {
                     self.fullscreen_playlist
                 } else {
-                    self.settings.playlist_visible
+                    self.settings.playlist_visible && self.interface() != Interface::Bare
                 };
                 if shown && let Some(i) = self.playlist.selected {
                     self.playlist.remove(i);
@@ -2081,10 +2089,11 @@ impl App {
                 cmds.push(Cmd::Volume(notches as f64 * input::VOLUME_STEP));
             }
         }
+        // In only the picture the playlist is not shown: the menu offers it.
         let playlist_visible = if self.fullscreen {
             self.fullscreen_playlist
         } else {
-            self.settings.playlist_visible
+            self.settings.playlist_visible && self.interface() != Interface::Bare
         };
         let chapter_marks = self.settings.chapter_marks;
         let marks = Marks {
