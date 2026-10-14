@@ -306,13 +306,34 @@ impl Track {
         })
     }
 
+    /// The format as people name it: the codec, made precise by the
+    /// profile FFmpeg gives a sound track ("DTS-HD MA", "DTS:X",
+    /// "E-AC3 Atmos", "HE-AAC").
+    pub fn format_name(&self) -> Option<String> {
+        let codec = self.codec.as_deref()?;
+        let name = codec_name(codec);
+        let Some(profile) = self.profile.as_deref().filter(|_| self.kind == Kind::Audio) else {
+            return Some(name);
+        };
+        Some(match codec {
+            // "DTS-HD MA + DTS:X IMAX" says the most at its end.
+            "dts" if profile.contains("DTS:X") => {
+                profile.rsplit(" + ").next().unwrap_or(profile).to_owned()
+            }
+            "dts" if profile.starts_with("DTS") => profile.to_owned(),
+            "eac3" | "truehd" | "ac3" if profile.contains("Atmos") => format!("{name} Atmos"),
+            "aac" if profile.starts_with("HE-AAC") => profile.to_owned(),
+            _ => name,
+        })
+    }
+
     /// The format, the channels and the marks (external, forced, default),
     /// each shown as a badge under the name.
     pub fn badges_in(&self, lang: Lang) -> Vec<String> {
         let ru = lang == Lang::Ru;
         let mut badges = Vec::new();
-        if let Some(codec) = &self.codec {
-            badges.push(codec_name(codec));
+        if let Some(format) = self.format_name() {
+            badges.push(format);
         }
         if let Some(n) = self.channels {
             badges.push(channels_in(lang, n));
@@ -443,6 +464,40 @@ fn words(text: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn format_names() {
+        let audio = |codec: &str, profile: Option<&str>| Track {
+            kind: Kind::Audio,
+            codec: Some(codec.into()),
+            profile: profile.map(Into::into),
+            ..Track::default()
+        };
+        let name = |t: Track| t.format_name().unwrap();
+        assert_eq!(name(audio("dts", Some("DTS-HD MA"))), "DTS-HD MA");
+        assert_eq!(name(audio("dts", Some("DTS-HD MA + DTS:X"))), "DTS:X");
+        assert_eq!(
+            name(audio("dts", Some("DTS-HD MA + DTS:X IMAX"))),
+            "DTS:X IMAX"
+        );
+        assert_eq!(
+            name(audio("eac3", Some("Dolby Digital Plus + Dolby Atmos"))),
+            "E-AC3 Atmos"
+        );
+        assert_eq!(
+            name(audio("truehd", Some("Dolby TrueHD + Dolby Atmos"))),
+            "TrueHD Atmos"
+        );
+        assert_eq!(name(audio("aac", Some("HE-AACv2"))), "HE-AACv2");
+        assert_eq!(name(audio("aac", Some("LC"))), "AAC");
+        assert_eq!(name(audio("dts", None)), "DTS");
+        let video = Track {
+            codec: Some("hevc".into()),
+            profile: Some("Main 10".into()),
+            ..Track::default()
+        };
+        assert_eq!(name(video), "HEVC");
+    }
 
     fn track(id: i64, kind: &str, extra: Vec<(&str, Value)>) -> Value {
         let mut entries = vec![

@@ -1742,8 +1742,8 @@ mod tests {
         eprintln!("{live:#?}");
         for t in &tracks {
             eprintln!(
-                "{:?} {} src-id {:?} ff-index {:?}",
-                t.kind, t.id, t.src_id, t.ff_index
+                "{:?} {} src-id {:?} ff-index {:?} profile {:?}",
+                t.kind, t.id, t.src_id, t.ff_index, t.profile
             );
         }
         assert!(live.video_bitrate.or(live.audio_bitrate).is_some());

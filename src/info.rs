@@ -235,8 +235,8 @@ pub fn track_details_in(lang: Lang, track: &Track, s: &Subject) -> String {
     let state = s.state;
     let ru = lang == Lang::Ru;
     let mut parts = Vec::new();
-    if let Some(codec) = &track.codec {
-        parts.push(tracks::codec_name(codec));
+    if let Some(format) = track.format_name() {
+        parts.push(format);
     }
     match track.kind {
         Kind::Video => {
@@ -319,14 +319,8 @@ pub fn track_rows_in(lang: Lang, track: &Track, s: &Subject) -> Vec<(String, Str
     let params = state.video_params.as_ref().filter(|_| on_screen);
     match track.kind {
         Kind::Video => {
-            if let Some((profile, level)) = track.dolby_vision {
-                let text = match (ru, level) {
-                    (false, 0) => format!("profile {profile}"),
-                    (true, 0) => format!("профиль {profile}"),
-                    (false, l) => format!("profile {profile}, level {l}"),
-                    (true, l) => format!("профиль {profile}, уровень {l}"),
-                };
-                rows.push(("Dolby Vision".into(), text));
+            if let Some(dv) = track.dolby_vision {
+                rows.push(("Dolby Vision".into(), dolby_vision_in(lang, dv)));
             }
             if let (Some(w), Some(h)) = (track.width, track.height) {
                 rows.push((label("Size", "Размер"), format!("{w}×{h}")));
@@ -515,6 +509,16 @@ pub fn track_rows_in(lang: Lang, track: &Track, s: &Subject) -> Vec<(String, Str
         rows.extend(tags_in(lang, &f.tags));
     }
     rows
+}
+
+/// Dolby Vision's profile and level: "profile 8, level 6".
+fn dolby_vision_in(lang: Lang, (profile, level): (i64, i64)) -> String {
+    match (lang, level) {
+        (Lang::En, 0) => format!("profile {profile}"),
+        (Lang::Ru, 0) => format!("профиль {profile}"),
+        (Lang::En, l) => format!("profile {profile}, level {l}"),
+        (Lang::Ru, l) => format!("профиль {profile}, уровень {l}"),
+    }
 }
 
 /// A codec's level: "4.1", "5.1, High tier"; "5.1, ярус High".
@@ -1047,6 +1051,9 @@ pub fn chips_in(lang: Lang, s: &Subject) -> Vec<Vec<Chip>> {
                 picture.push(chip);
             }
         }
+        if let Some(dv) = track.dolby_vision {
+            picture.push(Chip::new("Dolby Vision").tip(dolby_vision_in(lang, dv)));
+        }
         if let Some(bitrate) = s.bitrate(track) {
             picture.push(Chip::new(bitrate_in(lang, bitrate as f64)).tip(if ru {
                 "Битрейт видео"
@@ -1071,8 +1078,8 @@ pub fn chips_in(lang: Lang, s: &Subject) -> Vec<Vec<Chip>> {
     };
     for (i, track) in audio.iter().enumerate().take(shown) {
         let mut parts = Vec::new();
-        if let Some(codec) = &track.codec {
-            parts.push(tracks::codec_name(codec));
+        if let Some(format) = track.format_name() {
+            parts.push(format);
         }
         if let Some(n) = track.channels {
             parts.push(tracks::channels_in(lang, n));
