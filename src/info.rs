@@ -182,18 +182,25 @@ pub fn size_in(lang: Lang, bytes: i64) -> String {
     format!("{} {}", decimal_in(lang, value, decimals), units[unit])
 }
 
-/// A bitrate: "320 kb/s", "8.5 Mb/s"; "8,5 Мбит/с".
+/// A bitrate: "320 kb/s", "8.5 Mb/s"; "8,5 Мбит/с"; a text track's few
+/// bits "62 b/s". The unit follows the value as rounded (999.6 kb/s is
+/// "1.0 Mb/s", not "1000 kb/s").
 pub fn bitrate_in(lang: Lang, bits_per_second: f64) -> String {
-    let (k, m) = match lang {
-        Lang::En => ("kb/s", "Mb/s"),
-        Lang::Ru => ("кбит/с", "Мбит/с"),
+    let (b, k, m) = match lang {
+        Lang::En => ("b/s", "kb/s", "Mb/s"),
+        Lang::Ru => ("бит/с", "кбит/с", "Мбит/с"),
     };
-    if bits_per_second >= 1_000_000.0 {
+    let kb = bits_per_second / 1000.0;
+    if kb.round() >= 1000.0 {
         let mb = bits_per_second / 1_000_000.0;
-        let decimals = if mb >= 100.0 { 0 } else { 1 };
+        let decimals = if (mb * 10.0).round() >= 1000.0 { 0 } else { 1 };
         format!("{} {m}", decimal_in(lang, mb, decimals))
+    } else if kb >= 10.0 {
+        format!("{kb:.0} {k}")
+    } else if bits_per_second.round() >= 1000.0 {
+        format!("{} {k}", decimal_in(lang, kb, 1))
     } else {
-        format!("{:.0} {k}", bits_per_second / 1000.0)
+        format!("{bits_per_second:.0} {b}")
     }
 }
 
@@ -1264,6 +1271,11 @@ mod tests {
         assert_eq!(size_in(Lang::Ru, 160 << 20), "160 МБ");
         assert_eq!(bitrate_in(Lang::En, 320_000.0), "320 kb/s");
         assert_eq!(bitrate_in(Lang::Ru, 8_512_000.0), "8,5 Мбит/с");
+        assert_eq!(bitrate_in(Lang::En, 62.0), "62 b/s");
+        assert_eq!(bitrate_in(Lang::Ru, 62.0), "62 бит/с");
+        assert_eq!(bitrate_in(Lang::Ru, 4_260.0), "4,3 кбит/с");
+        assert_eq!(bitrate_in(Lang::En, 999_600.0), "1.0 Mb/s");
+        assert_eq!(bitrate_in(Lang::En, 99_960_000.0), "100 Mb/s");
         assert_eq!(container("matroska,webm"), "Matroska");
         assert_eq!(container("mov,mp4,m4a,3gp,3g2,mj2"), "MP4 / QuickTime");
         assert_eq!(container("mkv"), "Matroska");
