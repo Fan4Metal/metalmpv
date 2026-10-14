@@ -745,6 +745,13 @@ pub struct Player {
     /// the one before, reported late, is not this one's (it would skip
     /// the file just chosen).
     loading: bool,
+    /// Files asked for whose start mpv has not reported yet: an error
+    /// ending a file meanwhile is the one's before (it failed as another
+    /// was chosen), not the file chosen.
+    starts_due: u32,
+    /// Stopped by [`Player::stop`]: an end of the file reported late is
+    /// not one to move on from.
+    stopped: bool,
     /// Hardware decoding is on (the setting).
     hwdec: bool,
     /// Filters on the processor: hardware decoding copies the frames.
@@ -783,6 +790,8 @@ impl Player {
             scan_asked: None,
             live_asked: None,
             loading: false,
+            starts_due: 0,
+            stopped: false,
             hwdec: true,
             hwdec_copy: false,
             last_seek: None,
@@ -841,7 +850,7 @@ impl Player {
                         let was_eof = self.state.eof;
                         self.state.apply(prop, &value);
                         if prop == Prop::EofReached && self.state.eof && !was_eof {
-                            if self.loading {
+                            if self.loading || self.stopped {
                                 log::debug!("end of the file before the one loading: ignored");
                                 self.state.eof = false;
                             } else {
@@ -884,6 +893,13 @@ impl Player {
                     out.push(Happened::FileLoaded);
                 }
                 Event::PlaybackRestart => out.push(Happened::Restarted),
+                Event::StartFile => self.starts_due = self.starts_due.saturating_sub(1),
+                Event::EndFile {
+                    reason: EndReason::Error,
+                    error,
+                } if self.starts_due > 0 || self.stopped => {
+                    log::debug!("the file before the one chosen failed: {error:?}");
+                }
                 Event::EndFile {
                     reason: EndReason::Error,
                     error,
@@ -922,9 +938,11 @@ impl Player {
                     id: LOAD,
                     error: Some(e),
                 } => {
-                    // Refused before anything was opened: no end-file comes.
+                    // Refused before anything was opened: no end-file comes,
+                    // nor a start.
                     log::warn!("mpv loadfile failed: {e}");
                     self.loading = false;
+                    self.starts_due = self.starts_due.saturating_sub(1);
                     out.push(Happened::Failed(e));
                 }
                 Event::CommandReply { error: Some(e), .. } => log::warn!("mpv command failed: {e}"),
@@ -1007,6 +1025,8 @@ impl Player {
         self.state.paused = false;
         self.state.eof = false;
         self.loading = true;
+        self.starts_due += 1;
+        self.stopped = false;
         self.last_seek = None;
         self.data_end_at = None;
     }
@@ -1049,6 +1069,7 @@ impl Player {
     pub fn stop(&mut self) {
         self.mpv.command(0, &["stop"]);
         self.loading = false;
+        self.stopped = true;
     }
 
     /// Move by `seconds` (negative: back).
@@ -1506,6 +1527,8 @@ mod tests {
             scan_asked: None,
             live_asked: None,
             loading: false,
+            starts_due: 0,
+            stopped: false,
             hwdec: true,
             hwdec_copy: false,
             last_seek: None,
@@ -1592,6 +1615,8 @@ mod tests {
             scan_asked: None,
             live_asked: None,
             loading: false,
+            starts_due: 0,
+            stopped: false,
             hwdec: true,
             hwdec_copy: false,
             last_seek: None,
@@ -1706,6 +1731,8 @@ mod tests {
             scan_asked: None,
             live_asked: None,
             loading: false,
+            starts_due: 0,
+            stopped: false,
             hwdec: true,
             hwdec_copy: false,
             last_seek: None,
@@ -1822,6 +1849,8 @@ mod tests {
             scan_asked: None,
             live_asked: None,
             loading: false,
+            starts_due: 0,
+            stopped: false,
             hwdec: true,
             hwdec_copy: false,
             last_seek: None,
@@ -1853,6 +1882,19 @@ mod tests {
                 && tracks::selected(&s.tracks, Kind::Video).is_some()),
             "the next file kept the tracks turned off"
         );
+        // A file that cannot be opened fails, once the start of it is in.
+        player.load(Path::new("D:/metalmpv-missing/none.mkv"), None, None);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut failed = false;
+        while !failed && std::time::Instant::now() < deadline {
+            failed = player
+                .poll()
+                .iter()
+                .any(|h| matches!(h, Happened::Failed(_)));
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(failed, "a missing file did not fail");
+        assert_eq!(player.starts_due, 0);
     }
 
     /// The playback's figures and the tracks' ids on a real file without a
@@ -2017,6 +2059,8 @@ mod tests {
             scan_asked: None,
             live_asked: None,
             loading: false,
+            starts_due: 0,
+            stopped: false,
             hwdec: true,
             hwdec_copy: false,
             last_seek: None,
@@ -2271,6 +2315,8 @@ mod tests {
             scan_asked: None,
             live_asked: None,
             loading: false,
+            starts_due: 0,
+            stopped: false,
             hwdec: true,
             hwdec_copy: false,
             last_seek: None,
