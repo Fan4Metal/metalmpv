@@ -50,6 +50,8 @@ const SCROLL_GUTTER: f32 = 14.0;
 const MIN_ROOM: f32 = 120.0;
 /// The height of the row where a name is typed.
 const NAME_ROW: f32 = 28.0;
+/// The panel's `egui::Area`.
+const PANEL_ID: &str = "video_panel";
 /// A slider's knob, its radius.
 const KNOB: f32 = 6.0;
 
@@ -125,9 +127,10 @@ pub struct Now<'a> {
 }
 
 impl VideoPanel {
-    /// A name is being typed: the player's keys wait.
-    pub fn typing(&self) -> bool {
-        self.open && self.naming.is_some()
+    /// A name or a value is being typed: the player's keys wait, and the
+    /// field keeps the focus.
+    pub fn typing(&self, ctx: &egui::Context) -> bool {
+        self.open && (self.naming.is_some() || popover::has_focus(ctx, PANEL_ID))
     }
 
     pub fn toggle(&mut self) {
@@ -180,7 +183,7 @@ impl VideoPanel {
         // The height there is for the head and a tab, over the button.
         let margins = popover::frame(ctx).total_margin().sum().y;
         let limit = corner.y - ctx.content_rect().top() - popover::EDGE - margins;
-        let shown = popover::show(ctx, "video_panel", corner, content, |ui| {
+        let shown = popover::show(ctx, PANEL_ID, corner, content, |ui| {
             let top = ui.cursor().top();
             self.head(ui, now.has_video, &mut out);
             ui.add_space(4.0);
@@ -188,12 +191,19 @@ impl VideoPanel {
             // Every tab laid out unseen (an invisible Ui paints nothing and
             // takes no input) for the tallest: the panel keeps that height
             // whichever is shown, as one held by its bottom edge jumped
-            // when they changed.
+            // when they changed. Ids of their own: with the shown tab's, a
+            // list open there opened here too, and its search field took
+            // each key twice.
             let mut kept = kept;
             let mut tallest = 0.0_f32;
             for tab in Tab::ALL {
                 let rect = ui.available_rect_before_wrap();
-                let mut unseen = ui.new_child(egui::UiBuilder::new().max_rect(rect).invisible());
+                let mut unseen = ui.new_child(
+                    egui::UiBuilder::new()
+                        .id_salt(("unseen", tab as u8))
+                        .max_rect(rect)
+                        .invisible(),
+                );
                 let (mut no_name, mut no_cmds) = (None, Vec::new());
                 tab_contents(
                     &mut unseen,

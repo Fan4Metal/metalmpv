@@ -115,9 +115,15 @@ fn tabbed(
     // no input) for the taller: the window keeps that height whichever tab
     // is shown, as the panel does; held by its bottom edge, it jumped.
     let mut tallest = 0.0_f32;
-    for kind in [Kind::Audio, Kind::Sub] {
+    for (i, kind) in [Kind::Audio, Kind::Sub].into_iter().enumerate() {
         let rect = ui.available_rect_before_wrap();
-        let mut unseen = ui.new_child(egui::UiBuilder::new().max_rect(rect).invisible());
+        // Ids of their own, apart from the list shown.
+        let mut unseen = ui.new_child(
+            egui::UiBuilder::new()
+                .id_salt(("unseen", i))
+                .max_rect(rect)
+                .invisible(),
+        );
         column(&mut unseen, all, kind, room, &mut Vec::new());
         tallest = tallest.max(unseen.min_rect().height());
     }

@@ -106,6 +106,14 @@ pub fn underline(painter: &egui::Painter, r: Rect) {
     );
 }
 
+/// The focus is on a widget of window `id` (a value being typed).
+pub fn has_focus(ctx: &egui::Context, id: &str) -> bool {
+    let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new(id));
+    ctx.memory(|m| m.focused())
+        .and_then(|focused| ctx.read_response(focused))
+        .is_some_and(|r| r.layer_id == layer)
+}
+
 /// Show `add` in window `id`, its content `width` wide, its bottom right at
 /// `corner`; where it was drawn. The left edge is placed from the width the
 /// window is meant to have: placed by the last frame's size, content a
