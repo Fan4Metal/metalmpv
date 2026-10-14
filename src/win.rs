@@ -491,6 +491,15 @@ pub fn set_snap(on: bool) {
     SNAP.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// The windows take the media keys ([`set_media_keys`]).
+static MEDIA_KEYS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Whether the player's windows take the media keys; off, the keys and
+/// `WM_APPCOMMAND` go on to Windows (and through it to other programs).
+pub fn set_media_keys(on: bool) {
+    MEDIA_KEYS.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// The window is in fullscreen ([`set_fullscreen`]).
 static FULLSCREEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -636,6 +645,9 @@ fn media_message(
     lparam: windows_sys::Win32::Foundation::LPARAM,
 ) -> Option<windows_sys::Win32::Foundation::LRESULT> {
     use windows_sys::Win32::UI::WindowsAndMessaging::{WM_APPCOMMAND, WM_KEYDOWN};
+    if !MEDIA_KEYS.load(std::sync::atomic::Ordering::Relaxed) {
+        return None;
+    }
     match msg {
         WM_KEYDOWN => {
             let key = media_vk(wparam as u32)?;

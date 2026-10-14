@@ -176,6 +176,8 @@ pub struct App {
     /// Windows' media controls: the media keys without the focus, the
     /// flyout with the title (`smtc.rs`).
     smtc: Option<crate::smtc::Smtc>,
+    /// Windows has no media controls for the window: not asked again.
+    smtc_failed: bool,
     /// The last media key taken and when: the same press may come both
     /// as the window's key and from the media controls.
     last_media: Option<(win::MediaKey, Instant)>,
@@ -342,7 +344,8 @@ impl App {
             audio_device_used: String::new(),
             awake: win::Awake::No,
             taskbar: hwnd.and_then(crate::taskbar::Taskbar::new),
-            smtc: hwnd.and_then(crate::smtc::Smtc::new),
+            smtc: None,
+            smtc_failed: false,
             last_media: None,
             on_top: false,
         };
@@ -1327,6 +1330,22 @@ impl App {
             has_previous: self.playlist.prev_in(repeat).is_some(),
             has_next: self.playlist.next_in(repeat).is_some(),
         });
+    }
+
+    /// Take the media keys as the setting says: Windows' media controls
+    /// made or let go, the windows' own keys on or off.
+    fn follow_media_keys(&mut self) {
+        use crate::settings::MediaKeys;
+        let wanted = self.settings.media_keys;
+        win::set_media_keys(wanted != MediaKeys::Off);
+        if wanted == MediaKeys::Always {
+            if self.smtc.is_none() && !self.smtc_failed {
+                self.smtc = self.hwnd.and_then(crate::smtc::Smtc::new);
+                self.smtc_failed = self.smtc.is_none();
+            }
+        } else if self.smtc.take().is_some() {
+            log::debug!("media controls let go");
+        }
     }
 
     /// What plays in Windows' media controls: the state, previous and
@@ -2865,6 +2884,7 @@ impl eframe::App for App {
         win::set_playlist_follow(!self.fullscreen);
         self.follow_on_top(ctx);
         self.show_on_taskbar();
+        self.follow_media_keys();
         self.show_in_media_controls();
     }
 

@@ -17,7 +17,7 @@ use crate::i18n::LangChoice;
 use crate::input::Cmd;
 use crate::keymap::{Action, Chord, Group, Keymap, shortcut};
 use crate::settings::{
-    Interface, MAX_STEP, MAX_TRANSPARENCY, MIN_STEP, OSD_SCALE_RANGE, OnTop, Settings,
+    Interface, MAX_STEP, MAX_TRANSPARENCY, MIN_STEP, MediaKeys, OSD_SCALE_RANGE, OnTop, Settings,
 };
 use crate::update::{Status, Updates, release_url, version_of};
 
@@ -936,6 +936,30 @@ fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
             );
         },
     );
+    section(ui, tr!("Media keys", "Медиаклавиши"), |ui| {
+        row(
+            ui,
+            tr!(
+                "Play, pause, stop, previous, next",
+                "Воспроизведение, пауза, стоп, предыдущий, следующий"
+            ),
+            Some(tr!(
+                "The media keys of a keyboard, a headset or a remote. Always: also while another window is active, through Windows' media controls, whose flyout over the volume shows the title. Off: the player takes none, they go on to Windows and the other programs.",
+                "Медиаклавиши клавиатуры, гарнитуры или пульта. «Всегда» — также когда активно другое окно, через системные элементы управления мультимедиа, всплывающее окно которых над регулятором громкости показывает название. «Выключены» — плеер не перехватывает их, они достаются Windows и другим программам."
+            )),
+            230.0,
+            |ui| {
+                egui::ComboBox::from_id_salt("settings_media_keys")
+                    .selected_text(settings.media_keys.label())
+                    .width(220.0)
+                    .show_ui(ui, |ui| {
+                        for m in MediaKeys::ALL {
+                            ui.selectable_value(&mut settings.media_keys, m, m.label());
+                        }
+                    });
+            },
+        );
+    });
 }
 
 /// The video page; whether hardware decoding was switched.
@@ -1815,6 +1839,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.fullscreen_title = d.fullscreen_title;
     settings.snap_to_centre = d.snap_to_centre;
     settings.on_top = d.on_top;
+    settings.media_keys = d.media_keys;
     settings.interface = d.interface;
     changed.accent |= settings.accent != d.accent;
     settings.accent = d.accent;

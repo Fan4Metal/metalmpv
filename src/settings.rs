@@ -44,6 +44,7 @@ const SNAP_TO_CENTRE: &str = "snap_to_centre";
 const REPEAT: &str = "repeat";
 const ON_TOP: &str = "on_top";
 const INTERFACE: &str = "interface";
+const MEDIA_KEYS: &str = "media_keys";
 const KEYS: &str = "keys";
 const ACCENT: &str = "accent";
 const PLAYLIST_DETACHED: &str = "playlist_detached";
@@ -114,6 +115,44 @@ impl Interface {
             Interface::NoTitle => tr!("Without the title row", "Без заголовка"),
             Interface::Compact => tr!("Compact", "Компактный"),
             Interface::Bare => tr!("Only the picture", "Только видео"),
+        }
+    }
+}
+
+/// Which media keys (of keyboards, headsets, remotes) the player takes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MediaKeys {
+    /// Also while another window is active, through Windows' media
+    /// controls (`smtc.rs`), whose flyout shows the title.
+    #[default]
+    Always,
+    /// Only while the player's window is active.
+    Window,
+    /// None: they go on to Windows and the other programs.
+    Off,
+}
+
+impl MediaKeys {
+    pub const ALL: [MediaKeys; 3] = [MediaKeys::Always, MediaKeys::Window, MediaKeys::Off];
+
+    /// The stored name.
+    pub fn name(self) -> &'static str {
+        match self {
+            MediaKeys::Always => "always",
+            MediaKeys::Window => "window",
+            MediaKeys::Off => "off",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|m| m.name() == name)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            MediaKeys::Always => tr!("Always", "Всегда"),
+            MediaKeys::Window => tr!("While the player is active", "Когда активно окно плеера"),
+            MediaKeys::Off => tr!("Off", "Выключены"),
         }
     }
 }
@@ -322,6 +361,8 @@ pub struct Settings {
     pub on_top: OnTop,
     /// What the window shows around the picture (`8`; only the picture, `7`).
     pub interface: Interface,
+    /// Which media keys the player takes.
+    pub media_keys: MediaKeys,
     /// The keys, as changed on the Keys page (`keymap.rs`).
     pub keys: Keymap,
     /// The interface's accent colour and the icon's screen.
@@ -410,6 +451,7 @@ impl Default for Settings {
             repeat: Repeat::Off,
             on_top: OnTop::Never,
             interface: Interface::Full,
+            media_keys: MediaKeys::Always,
             keys: Keymap::default(),
             accent: Accent::Blue,
             audio_device: String::new(),
@@ -532,6 +574,10 @@ impl Settings {
                 .as_deref()
                 .and_then(Interface::from_name)
                 .unwrap_or(d.interface),
+            media_keys: get(MEDIA_KEYS)
+                .as_deref()
+                .and_then(MediaKeys::from_name)
+                .unwrap_or(d.media_keys),
             keys: get(KEYS).as_deref().map_or(d.keys, Keymap::from_setting),
             accent: get(ACCENT)
                 .as_deref()
@@ -669,6 +715,7 @@ impl Settings {
         storage.set_string(REPEAT, self.repeat.name().into());
         storage.set_string(ON_TOP, self.on_top.name().into());
         storage.set_string(INTERFACE, self.interface.name().into());
+        storage.set_string(MEDIA_KEYS, self.media_keys.name().into());
         storage.set_string(KEYS, self.keys.to_setting());
         storage.set_string(ACCENT, self.accent.name());
         storage.set_string(AUDIO_DEVICE, self.audio_device.clone());
@@ -788,6 +835,7 @@ mod tests {
             repeat: Repeat::All,
             on_top: OnTop::Playing,
             interface: Interface::Compact,
+            media_keys: MediaKeys::Window,
             keys: Keymap::from_setting("pause\tF\nstop\tSpace Ctrl+MouseBack\nmute\t"),
             accent: Accent::Custom(0x12ab9f),
             audio_device: "wasapi/{0.0.0.00000000}.{abc}".into(),
@@ -871,6 +919,7 @@ mod tests {
         storage.set_string(OSD_FONT_FILE, "x|C:/f.ttf".into());
         storage.set_string(WINDOW_NORMAL, "1,2,3".into());
         storage.set_string(INTERFACE, "none".into());
+        storage.set_string(MEDIA_KEYS, "sometimes".into());
         assert_eq!(Settings::load(&storage), Settings::default());
     }
 
