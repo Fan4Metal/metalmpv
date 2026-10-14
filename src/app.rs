@@ -51,9 +51,11 @@ const FULLSCREEN_TITLE_HEIGHT: f32 = 34.0;
 const FULLSCREEN_BAR_ZONE: f32 = 90.0;
 /// The shortest A-B repeat, in seconds.
 const MIN_LOOP: f64 = 0.1;
-/// Files handed over by other starts this close together make one
-/// playlist (Explorer starts one process per selected file).
-const SAME_BATCH: Duration = Duration::from_millis(1500);
+/// Files handed over by other starts this soon after the last ones make
+/// one playlist (Explorer starts one process per selected file, one after
+/// another). Short: a double click on another file comes later and
+/// plays it; with 1.5 s it was added to the playlist.
+const SAME_BATCH: Duration = Duration::from_millis(300);
 /// How long the window stays cloaked at most while it is being maximized.
 const UNCLOAK_TIMEOUT: Duration = Duration::from_secs(1);
 /// The storage key of where the files were left (`resume.rs`).
@@ -2166,6 +2168,13 @@ impl App {
         let received = crate::instance::take();
         if let Some(&(_, last)) = received.last() {
             let batch = same_batch(self.last_received, received[0].1);
+            log::debug!(
+                "{} files from other starts, {:?} after the last ones: {}",
+                received.len(),
+                self.last_received
+                    .map(|t| received[0].1.saturating_duration_since(t)),
+                if batch { "added" } else { "opened" }
+            );
             let paths: Vec<PathBuf> = received.into_iter().map(|(p, _)| p).collect();
             if batch {
                 self.add(paths);
@@ -3803,6 +3812,8 @@ mod tests {
         // The start's own files, then another start's 100 ms later.
         assert!(same_batch(Some(start), start + Duration::from_millis(100)));
         assert!(!same_batch(Some(start), start + Duration::from_secs(2)));
+        // A double click on another file half a second later plays it.
+        assert!(!same_batch(Some(start), start + Duration::from_millis(500)));
         // Nothing of its own: the files replace the playlist.
         assert!(!same_batch(None, start));
     }
