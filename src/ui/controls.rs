@@ -15,6 +15,9 @@ pub struct Bar<'a> {
     pub playlist_visible: bool,
     /// The Video, sound and subtitles panel is open (its button underlined).
     pub video_panel_open: bool,
+    /// The picture is adjusted or a delay set: a dot on the panel's
+    /// button, as these last over every file until changed back.
+    pub video_panel_changed: bool,
     pub fullscreen: bool,
     pub has_prev: bool,
     pub has_next: bool,
@@ -265,6 +268,13 @@ pub fn bar(ui: &mut Ui, bar: Bar<'_>) -> Vec<Cmd> {
         );
         if bar.video_panel_open {
             underline(ui, panel.rect);
+        }
+        if bar.video_panel_changed {
+            ui.painter().circle_filled(
+                panel.rect.right_top() + vec2(-9.0, 9.0),
+                3.0,
+                style::accent(),
+            );
         }
         *bar.panel_button = Some(panel.rect);
         if panel.clicked() {

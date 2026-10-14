@@ -929,6 +929,18 @@ impl App {
                     self.osd.show(Osd::Speed(speed));
                 }
             }
+            Cmd::SetSubDelay(seconds) => {
+                if let Some(player) = &mut self.player {
+                    player.set_sub_delay(seconds);
+                    self.osd.show(Osd::SubDelay(player.state.sub_delay));
+                }
+            }
+            Cmd::SetAudioDelay(seconds) => {
+                if let Some(player) = &mut self.player {
+                    player.set_audio_delay(seconds);
+                    self.osd.show(Osd::AudioDelay(player.state.audio_delay));
+                }
+            }
             Cmd::SubDelay(steps) => {
                 if let Some(player) = &mut self.player {
                     let delay = if steps == 0.0 {
@@ -2096,6 +2108,9 @@ impl App {
             state,
             playlist_visible: false,
             video_panel_open: self.video_panel.open,
+            video_panel_changed: !self.adjust.is_default()
+                || state.audio_delay != 0.0
+                || state.sub_delay != 0.0,
             fullscreen: true,
             has_prev: self.playlist.prev_in(self.settings.repeat).is_some(),
             has_next: self.playlist.next_in(self.settings.repeat).is_some(),
@@ -2690,6 +2705,9 @@ impl eframe::App for App {
                 state: &state,
                 playlist_visible: self.settings.playlist_visible,
                 video_panel_open: self.video_panel.open,
+                video_panel_changed: !self.adjust.is_default()
+                    || state.audio_delay != 0.0
+                    || state.sub_delay != 0.0,
                 fullscreen: false,
                 has_prev: self.playlist.prev_in(self.settings.repeat).is_some(),
                 has_next: self.playlist.next_in(self.settings.repeat).is_some(),
@@ -2885,7 +2903,11 @@ impl eframe::App for App {
             self.panel_button.take(),
             &mut self.adjust,
             kept,
-            video_size(&state).is_some(),
+            ui::picture::Now {
+                has_video: video_size(&state).is_some(),
+                audio_delay: state.audio_delay,
+                sub_delay: state.sub_delay,
+            },
         );
         cmds.extend(panel_cmds);
         if let Some(player) = &mut self.player {

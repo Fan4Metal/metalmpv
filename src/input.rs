@@ -30,6 +30,10 @@ pub enum Cmd {
     /// Move the subtitles by this many steps of `audio::DELAY_STEP`
     /// (`Shift+.` later, `Shift+,` earlier); 0 puts them back (`Shift+0`).
     SubDelay(f64),
+    /// The sound's delay set to this many seconds (the panel's slider).
+    SetAudioDelay(f64),
+    /// The subtitles' delay set to this many seconds (the panel's slider).
+    SetSubDelay(f64),
     /// The playback speed by this many steps of `format::SPEEDS` (`C`
     /// faster, `X` slower), 0 for normal (`Z`), as in GOM Player.
     Speed(i32),

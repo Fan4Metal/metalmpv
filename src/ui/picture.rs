@@ -9,11 +9,11 @@
 //! normalization (`audio.rs`). Subtitles: how they look (`sub_style.rs`;
 //! the font and the size also on the settings' page).
 
-use egui::{RichText, Ui, vec2};
+use egui::{Color32, FontId, Rect, RichText, Sense, Ui, Vec2, vec2};
 
 use super::{icons, style};
 use crate::adjust::{Adjust, Aspect, Color};
-use crate::audio::{EQ_BANDS, EQ_RANGE, Equalizer, Preset, band_label};
+use crate::audio::{DELAY_STEP, EQ_BANDS, EQ_RANGE, Equalizer, Preset, band_label};
 use crate::input::Cmd;
 use crate::sub_style::{self, SubStyle};
 
@@ -63,6 +63,19 @@ pub struct Kept<'a> {
     pub sub_presets: &'a mut Vec<sub_style::Own>,
 }
 
+/// What the panel shows of the playback now.
+#[derive(Clone, Copy, Debug)]
+pub struct Now {
+    /// A frame can be saved.
+    pub has_video: bool,
+    /// The sound's and the subtitles' delays, in seconds.
+    pub audio_delay: f64,
+    pub sub_delay: f64,
+}
+
+/// The delays' sliders reach this far either way; the keys go further.
+const DELAY_RANGE: f64 = 5.0;
+
 impl VideoPanel {
     /// A name is being typed: the player's keys wait.
     pub fn typing(&self) -> bool {
@@ -85,14 +98,15 @@ impl VideoPanel {
     /// button's, else at the window's bottom right corner; shown whole,
     /// kept on the window when the room above is short. A press outside it and its button closes
     /// it, unless a popup of its own is open (a list, the colour picker):
-    /// the press is that one's. `has_video`: a frame can be saved.
+    /// the press is that one's. A tab with something changed from its
+    /// default has a dot.
     pub fn show(
         &mut self,
         ctx: &egui::Context,
         button: Option<egui::Rect>,
         adjust: &mut Adjust,
         kept: Kept<'_>,
-        has_video: bool,
+        now: Now,
     ) -> Vec<Cmd> {
         let mut out = Vec::new();
         if !self.open {
@@ -132,22 +146,35 @@ impl VideoPanel {
             .show(ctx, |ui| {
                 frame.show(ui, |ui| {
                     ui.set_width(WIDTH);
+                    let changed = [
+                        !adjust.is_default(),
+                        (kept.equalizer.on && kept.equalizer.gains != [0; 10])
+                            || *kept.normalize
+                            || now.audio_delay != 0.0,
+                        *kept.subs != SubStyle::default() || now.sub_delay != 0.0,
+                    ];
                     ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.tab, Tab::Video, tr!("Video", "Видео"));
-                        ui.selectable_value(&mut self.tab, Tab::Sound, tr!("Sound", "Звук"));
-                        ui.selectable_value(
-                            &mut self.tab,
-                            Tab::Subtitles,
-                            tr!("Subtitles", "Субтитры"),
-                        );
+                        let tabs = [
+                            (Tab::Video, tr!("Video", "Видео")),
+                            (Tab::Sound, tr!("Sound", "Звук")),
+                            (Tab::Subtitles, tr!("Subtitles", "Субтитры")),
+                        ];
+                        for ((tab, name), changed) in tabs.into_iter().zip(changed) {
+                            tab_button(ui, &mut self.tab, tab, name, changed);
+                        }
                     });
                     ui.separator();
                     match self.tab {
-                        Tab::Video => video_tab(ui, adjust, has_video, &mut out),
-                        Tab::Sound => sound_tab(ui, kept),
-                        Tab::Subtitles => {
-                            subtitles_tab(ui, kept.subs, kept.sub_presets, &mut self.naming)
-                        }
+                        Tab::Video => video_tab(ui, adjust, now.has_video, &mut out),
+                        Tab::Sound => sound_tab(ui, kept, now, &mut out),
+                        Tab::Subtitles => subtitles_tab(
+                            ui,
+                            kept.subs,
+                            kept.sub_presets,
+                            &mut self.naming,
+                            now,
+                            &mut out,
+                        ),
                     }
                 });
             });
@@ -226,43 +253,41 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, has_video: bool, out: &mut Vec<Cm
         tr!("Rotation and flips", "Поворот и отражение"),
         &format!("{}°", adjust.rotate),
     );
-    let [left, right] = pair(
-        ui,
-        |ui, size| {
-            let turn = |p: &_, o, s, c| icons::turn(p, o, s, c, false);
-            icon_button(ui, turn, tr!("Turn left", "Повернуть влево"), size, |b| b)
-        },
-        |ui, size| {
-            let turn = |p: &_, o, s, c| icons::turn(p, o, s, c, true);
-            icon_button(ui, turn, tr!("Turn right", "Повернуть вправо"), size, |b| b)
-        },
-    );
-    if left.clicked() {
-        adjust.turn(-1);
-    }
-    if right.clicked() {
-        adjust.turn(1);
-    }
+    // Four icons in a row, named in their tooltips: the turns, then the
+    // flips (lit while on).
     let (flipped, mirrored) = (adjust.flip, adjust.mirror);
-    let [flip, mirror] = pair(
-        ui,
-        |ui, size| {
-            let flip = |p: &_, o, s, c| icons::flip(p, o, s, c, false);
-            let text = tr!("Upside down", "Перевернуть вертикально");
-            icon_button(ui, flip, text, size, |b| b.selected(flipped))
-        },
-        |ui, size| {
-            let mirror = |p: &_, o, s, c| icons::flip(p, o, s, c, true);
-            let text = tr!("Mirror", "Отразить зеркально");
-            icon_button(ui, mirror, text, size, |b| b.selected(mirrored))
-        },
-    );
-    if flip.clicked() {
-        adjust.flip = !adjust.flip;
-    }
-    if mirror.clicked() {
-        adjust.mirror = !adjust.mirror;
-    }
+    let size = Some(vec2(52.0, 28.0));
+    ui.horizontal(|ui| {
+        let left = |p: &_, o, s, c| icons::turn(p, o, s, c, false);
+        let right = |p: &_, o, s, c| icons::turn(p, o, s, c, true);
+        let flip = |p: &_, o, s, c| icons::flip(p, o, s, c, false);
+        let mirror = |p: &_, o, s, c| icons::flip(p, o, s, c, true);
+        if icon_button(ui, left, "", size, |b| b)
+            .on_hover_text(tr!("Turn left by 90°", "Повернуть влево на 90°"))
+            .clicked()
+        {
+            adjust.turn(-1);
+        }
+        if icon_button(ui, right, "", size, |b| b)
+            .on_hover_text(tr!("Turn right by 90°", "Повернуть вправо на 90°"))
+            .clicked()
+        {
+            adjust.turn(1);
+        }
+        ui.add_space(12.0);
+        if icon_button(ui, flip, "", size, |b| b.selected(flipped))
+            .on_hover_text(tr!("Upside down", "Перевернуть вертикально"))
+            .clicked()
+        {
+            adjust.flip = !adjust.flip;
+        }
+        if icon_button(ui, mirror, "", size, |b| b.selected(mirrored))
+            .on_hover_text(tr!("Mirror", "Отразить зеркально"))
+            .clicked()
+        {
+            adjust.mirror = !adjust.mirror;
+        }
+    });
 
     heading(ui, tr!("Frame", "Кадр"));
     let [save, folder] = pair(
@@ -309,8 +334,11 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, has_video: bool, out: &mut Vec<Cm
     );
 }
 
-fn sound_tab(ui: &mut Ui, kept: Kept<'_>) {
+fn sound_tab(ui: &mut Ui, kept: Kept<'_>, now: Now, out: &mut Vec<Cmd>) {
     let (eq, normalize) = (kept.equalizer, kept.normalize);
+    let spacing = ui.spacing().item_spacing.x;
+    ui.spacing_mut().slider_width = WIDTH - LABEL - VALUE - RESET - 3.0 * spacing;
+    ui.spacing_mut().interact_size.x = VALUE;
     heading(ui, tr!("Output", "Вывод"));
     labelled(ui, tr!("Device", "Устройство"), |ui| {
         super::settings::device_choice(
@@ -332,12 +360,24 @@ fn sound_tab(ui: &mut Ui, kept: Kept<'_>) {
         );
     }
 
+    if let Some(delay) = delay_row(
+        ui,
+        tr!("Delay", "Задержка"),
+        now.audio_delay,
+        tr!(
+            "Later when positive. Also Ctrl+= and Ctrl+-; not kept between runs.",
+            "Положительная — звук позже. Также Ctrl+= и Ctrl+-; не запоминается."
+        ),
+    ) {
+        out.push(Cmd::SetAudioDelay(delay));
+    }
+
     heading(ui, tr!("Equalizer", "Эквалайзер"));
     ui.horizontal(|ui| {
         ui.checkbox(&mut eq.on, tr!("On", "Включён"));
         ui.add_space(12.0);
         let preset = Preset::of(&eq.gains);
-        let name = preset.map_or(tr!("Own", "Свой"), Preset::label);
+        let name = preset.map_or(tr!("Custom", "Другой"), Preset::label);
         egui::ComboBox::from_id_salt("eq_preset")
             .selected_text(name)
             .width(150.0)
@@ -428,6 +468,8 @@ fn subtitles_tab(
     style: &mut SubStyle,
     own: &mut Vec<sub_style::Own>,
     naming: &mut Option<String>,
+    now: Now,
+    out: &mut Vec<Cmd>,
 ) {
     let d = SubStyle::default();
     let spacing = ui.spacing().item_spacing.x;
@@ -435,6 +477,8 @@ fn subtitles_tab(
     ui.spacing_mut().interact_size.x = VALUE;
     heading(ui, tr!("Style", "Стиль"));
     looks(ui, style, own, naming);
+    ui.add_space(4.0);
+    preview(ui, style);
 
     heading(ui, tr!("Text", "Текст"));
     labelled(ui, tr!("Font", "Шрифт"), |ui| {
@@ -496,7 +540,7 @@ fn subtitles_tab(
         ));
     });
 
-    heading(ui, tr!("Place", "Положение"));
+    heading(ui, tr!("Place and timing", "Положение и время"));
     slider_row(
         ui,
         tr!("Height", "Высота"),
@@ -505,6 +549,17 @@ fn subtitles_tab(
         (1.0, 0, ""),
         d.pos,
     );
+    if let Some(delay) = delay_row(
+        ui,
+        tr!("Delay", "Задержка"),
+        now.sub_delay,
+        tr!(
+            "Later when positive. Also Shift+. and Shift+,; not kept between runs.",
+            "Положительная — субтитры позже. Также Shift+. и Shift+,; не запоминается."
+        ),
+    ) {
+        out.push(Cmd::SetSubDelay(delay));
+    }
 
     ui.add_space(10.0);
     if reset_all(ui, *style != d) {
@@ -631,6 +686,128 @@ fn looks(
     }
 }
 
+/// A tab's name, a dot in the accent colour after it while `changed`.
+fn tab_button(ui: &mut Ui, current: &mut Tab, tab: Tab, name: &str, changed: bool) {
+    let response = ui.selectable_label(*current == tab, name);
+    if response.clicked() {
+        *current = tab;
+    }
+    let (dot, _) = ui.allocate_exact_size(vec2(8.0, response.rect.height()), Sense::hover());
+    if changed {
+        ui.painter().circle_filled(
+            egui::pos2(dot.left() + 2.0, dot.top() + 6.0),
+            3.0,
+            style::accent(),
+        );
+    }
+}
+
+/// A delay's row: a slider of seconds, a reset; the delay chosen, if
+/// another. The slider does not clamp: a delay set further by the keys
+/// shows as it is.
+fn delay_row(ui: &mut Ui, label: &str, now: f64, tip: &str) -> Option<f64> {
+    let mut value = now;
+    let mut chosen = None;
+    let unit = tr!(" s", " с");
+    labelled(ui, label, |ui| {
+        let response = ui
+            .add(
+                egui::Slider::new(&mut value, -DELAY_RANGE..=DELAY_RANGE)
+                    .step_by(DELAY_STEP / 2.0)
+                    .fixed_decimals(2)
+                    .suffix(unit)
+                    .clamping(egui::SliderClamping::Never),
+            )
+            .on_hover_text(tip);
+        if response.changed() && (value - now).abs() > 1e-9 {
+            chosen = Some(value);
+        }
+        if response.double_clicked() || reset(ui, now != 0.0, tr!("Back to 0", "Вернуть 0"))
+        {
+            chosen = Some(0.0);
+        }
+    });
+    chosen
+}
+
+/// A line of sample text drawn as the subtitles look, on a ground from dark
+/// to light as a picture under them. An approximation: egui's font, the
+/// outline drawn round the letters, thicker than mpv's to be seen at this
+/// size, the box of the outline's colour a little see-through.
+fn preview(ui: &mut Ui, style: &SubStyle) {
+    let (rect, response) = ui.allocate_exact_size(vec2(WIDTH, 60.0), Sense::hover());
+    response.on_hover_text(tr!(
+        "Roughly as on the picture: the size follows, the font is the interface's.",
+        "Примерно как на изображении: размер учитывается, шрифт — интерфейса."
+    ));
+    let painter = ui.painter_at(rect);
+    let (dark, light) = (
+        Color32::from_rgb(22, 26, 32),
+        Color32::from_rgb(150, 158, 168),
+    );
+    let mut ground = egui::Mesh::default();
+    for (corner, color) in [
+        (rect.left_top(), dark),
+        (rect.right_top(), light),
+        (rect.right_bottom(), light),
+        (rect.left_bottom(), dark),
+    ] {
+        ground.colored_vertex(corner, color);
+    }
+    ground.add_triangle(0, 1, 2);
+    ground.add_triangle(0, 2, 3);
+    painter.add(ground);
+
+    let rgb = |[r, g, b]: [u8; 3]| Color32::from_rgb(r, g, b);
+    let size = (18.0 * style.scale as f32 / 100.0).clamp(10.0, 32.0);
+    let text = tr!("Subtitles look like this", "Так выглядят субтитры");
+    let galley =
+        painter.layout_no_wrap(text.to_owned(), FontId::proportional(size), Color32::WHITE);
+    let at = rect.center() - galley.size() / 2.0;
+    // Points of outline per unit of mpv's.
+    let unit = size / 18.0 * 0.8;
+    let outline = style.outline as f32 * unit;
+    let draw = |offset: Vec2, color: Color32| {
+        painter.galley_with_override_text_color(at + offset, galley.clone(), color);
+    };
+    let ring = |radius: f32| -> Vec<Vec2> {
+        if radius <= 0.0 {
+            return Vec::new();
+        }
+        (0..16)
+            .map(|i| {
+                let a = i as f32 * std::f32::consts::TAU / 16.0;
+                vec2(a.cos(), a.sin()) * radius
+            })
+            .collect()
+    };
+    if style.boxed {
+        let [r, g, b] = style.outline_color;
+        let fill = Color32::from_rgba_unmultiplied(r, g, b, 0xC0);
+        let text_rect = Rect::from_min_size(at, galley.size());
+        painter.rect_filled(text_rect.expand(outline.max(2.0)), 2.0, fill);
+    } else {
+        if style.shadow > 0.0 {
+            let shadow = Color32::from_black_alpha(200);
+            let offset = Vec2::splat(style.shadow as f32 * unit);
+            for o in ring(outline) {
+                draw(offset + o, shadow);
+            }
+            draw(offset, shadow);
+        }
+        for radius in [outline, outline / 2.0] {
+            for o in ring(radius) {
+                draw(o, rgb(style.outline_color));
+            }
+        }
+    }
+    let letters = rgb(style.color);
+    draw(Vec2::ZERO, letters);
+    if style.bold {
+        draw(vec2(0.7, 0.0), letters);
+    }
+}
+
 /// A slider row with its reset: `format` is the step, the decimals shown
 /// and the suffix.
 fn slider_row(
@@ -723,7 +900,7 @@ type Icon = fn(&egui::Painter, egui::Pos2, f32, egui::Color32);
 /// The side of a button's icon.
 const ICON: f32 = 16.0;
 
-/// A button with `icon` before its text, its content centred in `size`
+/// A button with `icon` before its text (or alone, `text` empty), its content centred in `size`
 /// when given; `setup` adds to the button (selected, a shortcut). The icon
 /// takes the text's colour, faded with it when the button is disabled.
 fn icon_button(
@@ -733,11 +910,13 @@ fn icon_button(
     size: Option<egui::Vec2>,
     setup: impl FnOnce(egui::Button<'_>) -> egui::Button<'_>,
 ) -> egui::Response {
-    let id = ui.id().with(("icon", text));
-    let button = setup(egui::Button::new((
-        egui::Atom::custom(id, vec2(ICON, ICON)),
-        text,
-    )));
+    let id = ui.next_auto_id().with("icon");
+    let icon_atom = egui::Atom::custom(id, vec2(ICON, ICON));
+    let button = setup(if text.is_empty() {
+        egui::Button::new(icon_atom)
+    } else {
+        egui::Button::new((icon_atom, text))
+    });
     // The content is aligned by the layout it is put in.
     let shown = match size {
         Some(size) => {
