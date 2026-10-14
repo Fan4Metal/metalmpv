@@ -8,14 +8,16 @@
 //! pictures are kept in `logos` next to the settings for 30 days, so a list
 //! opened again asks nobody (older ones are deleted, a damaged one fetched
 //! again). Fetched on up to four threads of their own, started with the
-//! first logo asked for; nothing at all with the setting off
-//! (`channel_logos`). At most [`MAX_TEXTURES`] are kept in memory.
+//! first logo asked for, the latest asked first; those scrolled away
+//! before their turn are let go ([`Wanted`]). Nothing at all with the
+//! setting off (`channel_logos`). At most [`MAX_TEXTURES`] are kept in
+//! memory.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::sync::mpsc::{Receiver, channel};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant, SystemTime};
 
 use egui::{ColorImage, TextureHandle};
 
@@ -34,6 +36,9 @@ const WORKERS: usize = 4;
 const MAX_TEXTURES: usize = 400;
 /// Redirects followed at most.
 const MAX_REDIRECTS: usize = 3;
+/// A logo waiting its turn that was not asked for this long before the
+/// latest was (its row scrolled away) is let go.
+const STALE: Duration = Duration::from_secs(1);
 
 enum Slot {
     Loading,
@@ -50,8 +55,70 @@ pub struct Logos {
 }
 
 struct Pool {
-    requests: Sender<String>,
-    results: Receiver<(String, Option<ColorImage>)>,
+    wanted: Arc<(Mutex<Wanted>, Condvar)>,
+    results: Receiver<(String, Outcome)>,
+}
+
+/// What became of a logo asked for.
+enum Outcome {
+    Fetched(ColorImage),
+    Failed,
+    /// Not asked for again before its turn: asked anew if shown again.
+    LetGo,
+}
+
+/// The logos waiting for a thread, with when each was last asked for.
+#[derive(Default)]
+struct Wanted {
+    asked: HashMap<String, Instant>,
+    /// When the latest was asked for.
+    latest: Option<Instant>,
+}
+
+impl Wanted {
+    /// `url` is asked for (again) at `now`.
+    fn ask(&mut self, url: &str, now: Instant) {
+        self.latest = Some(now);
+        match self.asked.get_mut(url) {
+            Some(at) => *at = now,
+            None => {
+                self.asked.insert(url.to_owned(), now);
+            }
+        }
+    }
+
+    /// Asked for again at `now` if it is waiting still.
+    fn touch(&mut self, url: &str, now: Instant) {
+        if let Some(at) = self.asked.get_mut(url) {
+            *at = now;
+            self.latest = Some(now);
+        }
+    }
+
+    /// The logo to fetch next, the latest asked for, and those let go:
+    /// asked for more than [`STALE`] before the latest. Without new
+    /// requests (nothing drawn) none goes stale.
+    fn next(&mut self) -> (Option<String>, Vec<String>) {
+        let mut stale = Vec::new();
+        if let Some(latest) = self.latest {
+            self.asked.retain(|url, at| {
+                let keep = latest.saturating_duration_since(*at) <= STALE;
+                if !keep {
+                    stale.push(url.clone());
+                }
+                keep
+            });
+        }
+        let url = self
+            .asked
+            .iter()
+            .max_by_key(|(_, at)| **at)
+            .map(|(url, _)| url.clone());
+        if let Some(url) = &url {
+            self.asked.remove(url);
+        }
+        (url, stale)
+    }
 }
 
 impl Logos {
@@ -67,13 +134,26 @@ impl Logos {
             }
             self.slots.insert(url.to_owned(), Slot::Loading);
             let pool = self.pool.get_or_insert_with(|| Pool::start(ctx));
-            let _ = pool.requests.send(url.to_owned());
+            let (wanted, ready) = &*pool.wanted;
+            if let Ok(mut w) = wanted.lock() {
+                w.ask(url, Instant::now());
+            }
+            ready.notify_one();
         }
         let frame = ctx.cumulative_frame_nr();
         match self.slots.get_mut(url) {
             Some(Slot::Ready(texture, used)) => {
                 *used = frame;
                 Some(texture)
+            }
+            Some(Slot::Loading) => {
+                // Still shown: kept in the queue, and nearer its head.
+                if let Some(pool) = &self.pool
+                    && let Ok(mut w) = pool.wanted.0.lock()
+                {
+                    w.touch(url, Instant::now());
+                }
+                None
             }
             _ => None,
         }
@@ -103,9 +183,9 @@ impl Logos {
             return;
         };
         let mut added = false;
-        while let Ok((url, image)) = pool.results.try_recv() {
-            let slot = match image {
-                Some(image) => {
+        while let Ok((url, outcome)) = pool.results.try_recv() {
+            let slot = match outcome {
+                Outcome::Fetched(image) => {
                     added = true;
                     Slot::Ready(
                         ctx.load_texture(
@@ -116,7 +196,11 @@ impl Logos {
                         ctx.cumulative_frame_nr(),
                     )
                 }
-                None => Slot::Failed,
+                Outcome::Failed => Slot::Failed,
+                Outcome::LetGo => {
+                    self.slots.remove(&url);
+                    continue;
+                }
             };
             self.slots.insert(url, slot);
         }
@@ -128,31 +212,56 @@ impl Logos {
 
 impl Pool {
     fn start(ctx: &egui::Context) -> Self {
-        let (requests, queue) = channel::<String>();
+        let wanted = Arc::new((Mutex::new(Wanted::default()), Condvar::new()));
         let (done, results) = channel();
-        let queue = Arc::new(Mutex::new(queue));
         let _ = std::thread::Builder::new()
             .name("logos cleanup".into())
             .spawn(prune);
         for n in 0..WORKERS {
-            let (queue, done, ctx) = (queue.clone(), done.clone(), ctx.clone());
+            let (wanted, done, ctx) = (wanted.clone(), done.clone(), ctx.clone());
             let _ = std::thread::Builder::new()
                 .name(format!("logos {n}"))
                 .spawn(move || {
                     loop {
-                        let next = queue.lock().ok().and_then(|q| q.recv().ok());
-                        let Some(url) = next else {
+                        let Some(url) = take(&wanted, &done) else {
                             return;
                         };
-                        let image = load(&url).map_err(|e| log::info!("logo {url}: {e}")).ok();
-                        if done.send((url, image)).is_err() {
+                        let outcome = match load(&url) {
+                            Ok(image) => Outcome::Fetched(image),
+                            Err(e) => {
+                                log::info!("logo {url}: {e}");
+                                Outcome::Failed
+                            }
+                        };
+                        if done.send((url, outcome)).is_err() {
                             return;
                         }
                         ctx.request_repaint();
                     }
                 });
         }
-        Self { requests, results }
+        Self { wanted, results }
+    }
+}
+
+/// Wait for the next logo to fetch; those let go meanwhile are told to
+/// the app. `None` once the app is gone (a send fails).
+fn take(
+    wanted: &(Mutex<Wanted>, Condvar),
+    done: &std::sync::mpsc::Sender<(String, Outcome)>,
+) -> Option<String> {
+    let (lock, ready) = wanted;
+    let mut w = lock.lock().ok()?;
+    loop {
+        let (url, stale) = w.next();
+        for url in stale {
+            done.send((url, Outcome::LetGo)).ok()?;
+        }
+        if url.is_some() {
+            return url;
+        }
+        // Woken by a request (the threads live as long as the app).
+        w = ready.wait(w).ok()?;
     }
 }
 
@@ -377,6 +486,28 @@ fn cache_file(url: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_latest_asked_comes_first_and_those_scrolled_away_go() {
+        let t = Instant::now();
+        let ms = |n| t + Duration::from_millis(n);
+        let mut w = Wanted::default();
+        w.ask("a", ms(0));
+        w.ask("b", ms(10));
+        w.ask("c", ms(20));
+        // Still shown: asked again, so it goes first.
+        w.touch("a", ms(30));
+        assert_eq!(w.next(), (Some("a".into()), vec![]));
+        assert_eq!(w.next(), (Some("c".into()), vec![]));
+        // Scrolled on: "b" is not asked again, the new rows are.
+        w.ask("d", ms(2000));
+        assert_eq!(w.next(), (Some("d".into()), vec!["b".to_string()]));
+        assert_eq!(w.next(), (None, vec![]));
+        // Nothing drawn for a while: nothing goes stale.
+        w.ask("e", ms(3000));
+        w.touch("gone", ms(9000));
+        assert_eq!(w.next(), (Some("e".into()), vec![]));
+    }
 
     #[test]
     fn only_https_off_the_local_network() {
