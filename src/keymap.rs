@@ -31,6 +31,11 @@ pub struct Chord {
     pub press: Press,
 }
 
+/// `m` with Ctrl: a copy or cut event comes from a press with it.
+fn with_ctrl(m: Modifiers) -> Modifiers {
+    Modifiers { ctrl: true, ..m }
+}
+
 impl Chord {
     const fn key(key: Key) -> Self {
         Self::of(Press::Key(key), false, false, false)
@@ -84,12 +89,13 @@ impl Chord {
         Some(Self::new(press, m))
     }
 
-    /// The chord of a press in `event`, and whether it is a held key's
-    /// repeat. egui-winit turns `Ctrl+C` and `Ctrl+X` into `Copy` and `Cut`
-    /// with no key event (`Ctrl+Insert` and `Shift+Delete` too, taken here
-    /// for the former); `Ctrl+V` becomes a paste of the clipboard's text,
-    /// so it is not a key here.
-    pub fn of_event(event: &egui::Event) -> Option<(Self, bool)> {
+    /// The chord of a press in `event`, `modifiers` held, and whether it is
+    /// a held key's repeat. egui-winit turns `Ctrl+C` and `Ctrl+X` (with
+    /// any other modifiers), `Ctrl+Insert` and `Shift+Delete` into `Copy`
+    /// and `Cut` with no key event: the modifiers held tell them apart, but
+    /// for `Ctrl+Insert`, taken for `Ctrl+C`. `Ctrl+V` and `Shift+Insert`
+    /// become a paste of the clipboard's text, so they are no keys here.
+    pub fn of_event(event: &egui::Event, modifiers: egui::Modifiers) -> Option<(Self, bool)> {
         use egui::Event;
         match event {
             Event::Key {
@@ -105,8 +111,12 @@ impl Chord {
                 modifiers,
                 ..
             } => Some((Self::of_button(*button, *modifiers)?, false)),
-            Event::Copy => Some((Self::ctrl(Key::C), false)),
-            Event::Cut => Some((Self::ctrl(Key::X), false)),
+            Event::Copy => Some((Self::new(Press::Key(Key::C), with_ctrl(modifiers)), false)),
+            // Shift+Delete, or Ctrl+X.
+            Event::Cut if modifiers.shift && !modifiers.ctrl => {
+                Some((Self::new(Press::Key(Key::Delete), modifiers), false))
+            }
+            Event::Cut => Some((Self::new(Press::Key(Key::X), with_ctrl(modifiers)), false)),
             _ => None,
         }
     }
@@ -632,6 +642,28 @@ pub fn with_key(text: &str, cmd: Cmd) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn copy_and_cut_keep_their_modifiers() {
+        let name = |event, m| Chord::of_event(&event, m).map(|(c, _)| c.name());
+        let ctrl_shift = Modifiers::CTRL | Modifiers::SHIFT;
+        assert_eq!(
+            name(egui::Event::Copy, Modifiers::CTRL).as_deref(),
+            Some("Ctrl+C")
+        );
+        assert_eq!(
+            name(egui::Event::Copy, ctrl_shift).as_deref(),
+            Some("Ctrl+Shift+C")
+        );
+        assert_eq!(
+            name(egui::Event::Cut, Modifiers::CTRL).as_deref(),
+            Some("Ctrl+X")
+        );
+        assert_eq!(
+            name(egui::Event::Cut, Modifiers::SHIFT).as_deref(),
+            Some("Shift+Delete")
+        );
+    }
 
     #[test]
     fn ids_and_defaults_are_unique() {

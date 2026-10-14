@@ -169,7 +169,7 @@ pub fn keys(ctx: &egui::Context, map: &Keymap) -> Vec<Cmd> {
         i.events
             .iter()
             .filter_map(|e| {
-                let (chord, repeat) = Chord::of_event(e)?;
+                let (chord, repeat) = Chord::of_event(e, i.modifiers)?;
                 command(map, chord, repeat)
             })
             .collect()

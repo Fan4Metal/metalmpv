@@ -1519,7 +1519,7 @@ impl SettingsDialog {
         let Some((action, slot)) = self.capture else {
             return;
         };
-        let events = ctx.input(|i| i.events.clone());
+        let (events, modifiers) = ctx.input(|i| (i.events.clone(), i.modifiers));
         for event in &events {
             match event {
                 egui::Event::Key {
@@ -1540,7 +1540,7 @@ impl SettingsDialog {
                 }
                 _ => {}
             }
-            if let Some((chord, false)) = Chord::of_event(event) {
+            if let Some((chord, false)) = Chord::of_event(event, modifiers) {
                 let before = keys.clone();
                 self.taken = keys
                     .assign(action, slot, chord)
@@ -1671,8 +1671,8 @@ impl SettingsDialog {
         note(
             ui,
             tr!(
-                "The mouse wheel changes the volume, a double click switches fullscreen, a middle click shows or hides the playlist; the media keys play, pause, stop and change files. Ctrl+V cannot be chosen.",
-                "Колесо мыши меняет громкость, двойной щелчок переключает полноэкранный режим, средний щелчок показывает или скрывает плейлист; мультимедийные клавиши запускают, приостанавливают, останавливают и переключают файлы. Ctrl+V выбрать нельзя."
+                "The mouse wheel changes the volume, a double click switches fullscreen, a middle click shows or hides the playlist; the media keys play, pause, stop and change files. Ctrl+V and Shift+Insert cannot be chosen, and Ctrl+Insert is taken as Ctrl+C.",
+                "Колесо мыши меняет громкость, двойной щелчок переключает полноэкранный режим, средний щелчок показывает или скрывает плейлист; мультимедийные клавиши запускают, приостанавливают, останавливают и переключают файлы. Ctrl+V и Shift+Insert выбрать нельзя, а Ctrl+Insert считается сочетанием Ctrl+C."
             ),
         );
     }
