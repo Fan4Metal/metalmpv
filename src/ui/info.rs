@@ -374,6 +374,19 @@ fn body(ui: &mut Ui, subject: &Subject, cover: Option<&CoverView<'_>>, out: &mut
         row(ui, tr!("Cover", "Обложка"), &value);
     }
 
+    let live = info::live_rows_in(lang, subject);
+    if !live.is_empty() {
+        heading(ui, tr!("Playback", "Воспроизведение"));
+        for (label, value) in live {
+            row(ui, &label, &value);
+        }
+        if state.live.history.len() >= 2 {
+            row_with(ui, tr!("Last minute", "За минуту"), |ui| {
+                sparkline(ui, &state.live.history);
+            });
+        }
+    }
+
     let tags = info::tags_in(lang, &state.metadata);
     if !tags.is_empty() {
         heading(ui, tr!("Tags", "Теги"));
@@ -443,6 +456,75 @@ fn track_entry(ui: &mut Ui, track: &Track, subject: &Subject) {
             row(ui, &label, &value);
         }
     });
+}
+
+/// The bitrate of the last minute, a sample a second, the latest at the
+/// right edge: a line over its area from zero, the highest value under it
+/// and the one under the pointer in a tooltip.
+fn sparkline(ui: &mut Ui, history: &[f32]) {
+    let lang = lang();
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 36.0), Sense::hover());
+    let max = history.iter().copied().fold(0.0, f32::max).max(1.0);
+    let step = rect.width() / (crate::player::HISTORY - 1) as f32;
+    let first = rect.right() - step * (history.len() - 1) as f32;
+    let points: Vec<egui::Pos2> = history
+        .iter()
+        .enumerate()
+        .map(|(i, b)| {
+            egui::pos2(
+                first + step * i as f32,
+                rect.bottom() - b / max * (rect.height() - 2.0),
+            )
+        })
+        .collect();
+    let painter = ui.painter_at(rect.expand(4.0));
+    let base = egui::Stroke::new(1.0, Color32::from_white_alpha(28));
+    painter.hline(rect.x_range(), rect.bottom(), base);
+    let fill = style::accent().gamma_multiply(0.22);
+    let mut area = egui::Mesh::default();
+    for pair in points.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        let i = area.vertices.len() as u32;
+        area.colored_vertex(a, fill);
+        area.colored_vertex(b, fill);
+        area.colored_vertex(egui::pos2(b.x, rect.bottom()), fill);
+        area.colored_vertex(egui::pos2(a.x, rect.bottom()), fill);
+        area.add_triangle(i, i + 1, i + 2);
+        area.add_triangle(i, i + 2, i + 3);
+    }
+    painter.add(area);
+    painter.add(egui::Shape::line(
+        points.clone(),
+        egui::Stroke::new(2.0, style::accent()),
+    ));
+    if let Some(pointer) = response.hover_pos() {
+        let i = ((pointer.x - first) / step).round();
+        if i >= 0.0 && (i as usize) < points.len() {
+            let i = i as usize;
+            let at = points[i];
+            painter.vline(
+                at.x,
+                rect.y_range(),
+                egui::Stroke::new(1.0, Color32::from_white_alpha(70)),
+            );
+            painter.circle_filled(at, 4.0, style::accent());
+            let ago = history.len() - 1 - i;
+            let when = match (ago, lang) {
+                (0, crate::i18n::Lang::En) => "now".to_owned(),
+                (0, crate::i18n::Lang::Ru) => "сейчас".to_owned(),
+                (n, crate::i18n::Lang::En) => format!("{n} s ago"),
+                (n, crate::i18n::Lang::Ru) => format!("{n} с назад"),
+            };
+            let text = format!("{} · {when}", info::bitrate_in(lang, f64::from(history[i])));
+            response.on_hover_text_at_pointer(text);
+        }
+    }
+    let most = info::bitrate_in(lang, f64::from(max));
+    ui.label(
+        RichText::new(tr!(format!("up to {most}"), format!("до {most}")))
+            .small()
+            .color(style::TEXT_WEAK),
+    );
 }
 
 /// The hue of a kind of chip: the picture, the sound, the subtitles.

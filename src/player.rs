@@ -220,6 +220,25 @@ const FRAME_INFO: u64 = 100;
 const LOAD: u64 = 101;
 /// mpv's `playlist`, asked for when a file turned out to be a list.
 const PLAYLIST: u64 = 102;
+/// The figures of the playback, asked for while the information window is
+/// open ([`Player::ask_live`]): the replies' numbers from [`LIVE_FIRST`].
+const LIVE_FIRST: u64 = 110;
+const LIVE: [(&str, sys::mpv_format); 10] = [
+    ("video-bitrate", sys::MPV_FORMAT_DOUBLE),
+    ("audio-bitrate", sys::MPV_FORMAT_DOUBLE),
+    ("frame-drop-count", sys::MPV_FORMAT_INT64),
+    ("decoder-frame-drop-count", sys::MPV_FORMAT_INT64),
+    ("estimated-vf-fps", sys::MPV_FORMAT_DOUBLE),
+    ("display-fps", sys::MPV_FORMAT_DOUBLE),
+    ("audio-out-params", sys::MPV_FORMAT_NODE),
+    ("demuxer-cache-duration", sys::MPV_FORMAT_DOUBLE),
+    ("cache-speed", sys::MPV_FORMAT_INT64),
+    ("demuxer-via-network", sys::MPV_FORMAT_FLAG),
+];
+/// How often the figures are asked for.
+const LIVE_EVERY: std::time::Duration = std::time::Duration::from_secs(1);
+/// The seconds of bitrate the information window draws.
+pub const HISTORY: usize = 60;
 
 /// The entries of mpv's `playlist` (files or addresses with the titles
 /// the list gave them) and the one it plays.
@@ -311,6 +330,84 @@ pub struct State {
     /// Asked for while the information window is open
     /// ([`Player::ask_scan`]): the frame changes every moment.
     pub scan: Option<Scan>,
+    /// The frame on screen has HDR10+ metadata (asked with the scan).
+    pub hdr10_plus: bool,
+    /// The playback's figures now, asked for while the information window
+    /// is open ([`Player::ask_live`]).
+    pub live: Live,
+}
+
+/// How the playback goes, from mpv's figures of the moment.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Live {
+    /// Bits per second over the last packets (between two keyframes).
+    pub video_bitrate: Option<f64>,
+    pub audio_bitrate: Option<f64>,
+    /// The bitrate of the last [`HISTORY`] seconds, a sample a second, the
+    /// latest last: the video's, else the sound's. Not while paused.
+    pub history: Vec<f32>,
+    /// Frames dropped by the video output and by the decoder.
+    pub dropped: Option<i64>,
+    pub decoder_dropped: Option<i64>,
+    /// The frame rate after the filters, as measured.
+    pub fps: Option<f64>,
+    /// The screen's refresh rate.
+    pub display_fps: Option<f64>,
+    /// What goes to the sound device.
+    pub audio_out: Option<AudioOut>,
+    /// Seconds of data read ahead, and how fast it is read (bytes per
+    /// second).
+    pub cache: Option<f64>,
+    pub cache_speed: Option<i64>,
+    /// The file comes over the network.
+    pub network: bool,
+}
+
+/// What mpv gives the sound device (`audio-out-params`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AudioOut {
+    /// mpv's sample format: `floatp`, `s16`; `spdif-eac3` passes the
+    /// compressed sound through.
+    pub format: Option<String>,
+    pub samplerate: Option<i64>,
+    /// `5.1`, `stereo`.
+    pub channels: Option<String>,
+}
+
+impl Live {
+    fn apply(&mut self, index: usize, value: &Value) {
+        match index {
+            0 => self.video_bitrate = value.double().filter(|b| *b > 0.0),
+            1 => self.audio_bitrate = value.double().filter(|b| *b > 0.0),
+            2 => self.dropped = value.int(),
+            3 => self.decoder_dropped = value.int(),
+            4 => self.fps = value.double().filter(|f| *f > 0.0),
+            5 => self.display_fps = value.double().filter(|f| *f > 0.0),
+            6 => {
+                let text = |key| value.get(key).and_then(Value::string).map(str::to_owned);
+                self.audio_out = (*value != Value::None).then(|| AudioOut {
+                    format: text("format"),
+                    samplerate: value.get("samplerate").and_then(Value::int),
+                    channels: text("channels"),
+                });
+            }
+            7 => self.cache = value.double().filter(|c| *c >= 0.0),
+            8 => self.cache_speed = value.int(),
+            9 => self.network = value.flag(),
+            _ => {}
+        }
+    }
+
+    /// Note the bitrate of this second.
+    fn sample(&mut self) {
+        let Some(b) = self.video_bitrate.or(self.audio_bitrate) else {
+            return;
+        };
+        if self.history.len() >= HISTORY {
+            self.history.remove(0);
+        }
+        self.history.push(b as f32);
+    }
 }
 
 /// What mpv says of the decoded picture (`video-params`).
@@ -333,6 +430,10 @@ pub struct VideoParams {
     pub max_cll: Option<f64>,
     pub max_fall: Option<f64>,
     pub max_luma: Option<f64>,
+    /// The mastering display's black level in cd/m², and its gamut when
+    /// it is a known one ("Display P3").
+    pub min_luma: Option<f64>,
+    pub mastering: Option<&'static str>,
 }
 
 impl VideoParams {
@@ -355,9 +456,37 @@ impl VideoParams {
             max_cll: positive("max-cll"),
             max_fall: positive("max-fall"),
             max_luma: positive("max-luma"),
+            min_luma: positive("min-luma"),
+            mastering: gamut_of(value),
         };
         (params != Self::default()).then_some(params)
     }
+}
+
+/// The known gamut of the mastering display `video-params` names by its
+/// primaries (`prim-red-x` …), within 0.005.
+fn gamut_of(value: &Value) -> Option<&'static str> {
+    const GAMUTS: [(&str, [f64; 6]); 3] = [
+        ("BT.2020", [0.708, 0.292, 0.170, 0.797, 0.131, 0.046]),
+        ("Display P3", [0.680, 0.320, 0.265, 0.690, 0.150, 0.060]),
+        ("BT.709", [0.640, 0.330, 0.300, 0.600, 0.150, 0.060]),
+    ];
+    let keys = [
+        "prim-red-x",
+        "prim-red-y",
+        "prim-green-x",
+        "prim-green-y",
+        "prim-blue-x",
+        "prim-blue-y",
+    ];
+    let mut got = [0.0; 6];
+    for (g, key) in got.iter_mut().zip(keys) {
+        *g = value.get(key)?.double()?;
+    }
+    GAMUTS
+        .iter()
+        .find(|(_, p)| p.iter().zip(got).all(|(a, b)| (a - b).abs() < 0.005))
+        .map(|(name, _)| *name)
 }
 
 /// How the picture is scanned, from the frame on screen (`video-frame-info`).
@@ -399,6 +528,8 @@ impl Default for State {
             file_format: None,
             video_params: None,
             scan: None,
+            hdr10_plus: false,
+            live: Live::default(),
             loop_a: None,
             loop_b: None,
         }
@@ -589,6 +720,8 @@ pub struct Player {
     pub state: State,
     /// When `video-frame-info` was last asked for.
     scan_asked: Option<std::time::Instant>,
+    /// When the playback's figures were last asked for.
+    live_asked: Option<std::time::Instant>,
     /// A file was asked for and has not loaded or failed yet: the end of
     /// the one before, reported late, is not this one's (it would skip
     /// the file just chosen).
@@ -627,6 +760,7 @@ impl Player {
             mpv,
             state: State::default(),
             scan_asked: None,
+            live_asked: None,
             loading: false,
             hwdec: true,
             hwdec_copy: false,
@@ -657,7 +791,16 @@ impl Player {
                 Event::Property {
                     id: FRAME_INFO,
                     value,
-                } => self.state.scan = scan_of(&value),
+                } => {
+                    self.state.scan = scan_of(&value);
+                    // Dynamic HDR10+ metadata: the scene's light levels.
+                    self.state.hdr10_plus = value.get("scene-avg").is_some();
+                }
+                Event::Property { id, value }
+                    if (LIVE_FIRST..LIVE_FIRST + LIVE.len() as u64).contains(&id) =>
+                {
+                    self.state.live.apply((id - LIVE_FIRST) as usize, &value);
+                }
                 Event::Property {
                     id: PLAYLIST,
                     value,
@@ -711,7 +854,10 @@ impl Player {
                 Event::FileLoaded => {
                     self.loading = false;
                     self.state.scan = None;
+                    self.state.hdr10_plus = false;
                     self.scan_asked = None;
+                    self.state.live = Live::default();
+                    self.live_asked = None;
                     out.push(Happened::FileLoaded);
                 }
                 Event::PlaybackRestart => out.push(Happened::Restarted),
@@ -783,6 +929,28 @@ impl Player {
         self.scan_asked = Some(now);
         self.mpv
             .get(FRAME_INFO, "video-frame-info", sys::MPV_FORMAT_NODE);
+    }
+
+    /// Ask for the playback's figures every second; the bitrate of the
+    /// second before is noted for the graph (not while paused).
+    pub fn ask_live(&mut self) {
+        if self.state.idle {
+            return;
+        }
+        let now = std::time::Instant::now();
+        if self
+            .live_asked
+            .is_some_and(|t| now.duration_since(t) < LIVE_EVERY)
+        {
+            return;
+        }
+        if self.live_asked.is_some() && !self.state.paused && !self.state.buffering {
+            self.state.live.sample();
+        }
+        self.live_asked = Some(now);
+        for (i, (name, format)) in LIVE.iter().enumerate() {
+            self.mpv.get(LIVE_FIRST + i as u64, name, *format);
+        }
     }
 
     /// Play `path` from `start` seconds (`None`: the beginning) with
@@ -1235,6 +1403,7 @@ mod tests {
             mpv,
             state: State::default(),
             scan_asked: None,
+            live_asked: None,
             loading: false,
             hwdec: true,
             hwdec_copy: false,
@@ -1320,6 +1489,7 @@ mod tests {
             mpv,
             state: State::default(),
             scan_asked: None,
+            live_asked: None,
             loading: false,
             hwdec: true,
             hwdec_copy: false,
@@ -1433,6 +1603,7 @@ mod tests {
             mpv,
             state: State::default(),
             scan_asked: None,
+            live_asked: None,
             loading: false,
             hwdec: true,
             hwdec_copy: false,
@@ -1521,6 +1692,62 @@ mod tests {
             );
         }
         assert!(found.iter().any(|t| t.kind == Kind::Video));
+    }
+
+    /// The playback's figures and the tracks' ids on a real file without a
+    /// window: `cargo test live_figures -- --ignored --nocapture` with
+    /// METALMPV_SAMPLE. With `vo=null` there is no screen to give a rate.
+    #[test]
+    #[ignore = "needs vendor/libmpv and a sample video"]
+    fn live_figures_of_a_real_file() {
+        let sample = std::env::var("METALMPV_SAMPLE")
+            .unwrap_or_else(|_| "D:/Projects/video_converter/samples/test.mp4".into());
+        let api = sys::api().unwrap();
+        let mut mpv = Mpv::new(
+            api,
+            &[
+                ("vo", "null"),
+                ("ao", "null"),
+                ("idle", "yes"),
+                ("terminal", "no"),
+            ],
+        )
+        .unwrap();
+        mpv.observe(1, "track-list", sys::MPV_FORMAT_NODE);
+        mpv.observe(2, "metadata", sys::MPV_FORMAT_NODE);
+        mpv.command(0, &["loadfile", &sample]);
+        let mut live = Live::default();
+        let mut tracks = Vec::new();
+        let start = std::time::Instant::now();
+        let mut asked = start;
+        while start.elapsed() < std::time::Duration::from_secs(4) {
+            if asked.elapsed() > std::time::Duration::from_millis(500) {
+                asked = std::time::Instant::now();
+                for (i, (name, format)) in LIVE.iter().enumerate() {
+                    mpv.get(LIVE_FIRST + i as u64, name, *format);
+                }
+            }
+            while let Some(event) = mpv.next_event() {
+                match event {
+                    Event::Property { id: 1, value } => tracks = tracks::from_value(&value),
+                    Event::Property { id: 2, value } => eprintln!("metadata: {value:?}"),
+                    Event::Property { id, value } if id >= LIVE_FIRST => {
+                        live.apply((id - LIVE_FIRST) as usize, &value)
+                    }
+                    _ => {}
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        eprintln!("{live:#?}");
+        for t in &tracks {
+            eprintln!(
+                "{:?} {} src-id {:?} ff-index {:?}",
+                t.kind, t.id, t.src_id, t.ff_index
+            );
+        }
+        assert!(live.video_bitrate.or(live.audio_bitrate).is_some());
+        assert!(live.audio_out.is_some());
     }
 
     /// The sound's settings on a real file without a window or a sound
@@ -1627,6 +1854,7 @@ mod tests {
             mpv,
             state: State::default(),
             scan_asked: None,
+            live_asked: None,
             loading: false,
             hwdec: true,
             hwdec_copy: false,
@@ -1715,6 +1943,7 @@ mod tests {
             mpv,
             state: State::default(),
             scan_asked: None,
+            live_asked: None,
             loading: false,
             hwdec: true,
             hwdec_copy: false,

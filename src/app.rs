@@ -2826,6 +2826,9 @@ impl eframe::App for App {
             && let Some(player) = &mut self.player
         {
             player.ask_scan();
+            player.ask_live();
+            // The figures come every second, paused or not.
+            ctx.request_repaint_after(std::time::Duration::from_secs(1));
         }
         let channel = self
             .playlist

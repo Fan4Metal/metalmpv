@@ -8,7 +8,7 @@
 use std::path::Path;
 
 use crate::i18n::Lang;
-use crate::player::{Scan, State, VideoParams};
+use crate::player::{AudioOut, Scan, State, VideoParams};
 use crate::probe::{Facts, TrackFacts};
 use crate::tracks::{self, Kind, Track};
 
@@ -144,6 +144,23 @@ fn decimal_in(lang: Lang, value: f64, decimals: usize) -> String {
     }
 }
 
+/// A frame rate: "24 fps", "23,976 fps".
+fn fps_in(lang: Lang, fps: f64) -> String {
+    let decimals = if (fps - fps.round()).abs() < 0.001 {
+        0
+    } else {
+        3
+    };
+    format!("{} fps", decimal_in(lang, fps, decimals))
+}
+
+/// A refresh rate: "144 Hz", "59,94 Гц".
+fn hertz_in(lang: Lang, hz: f64) -> String {
+    let decimals = if (hz - hz.round()).abs() < 0.05 { 0 } else { 2 };
+    let unit = if lang == Lang::Ru { "Гц" } else { "Hz" };
+    format!("{} {unit}", decimal_in(lang, hz, decimals))
+}
+
 /// A file size: "734 KB", "1.37 GB"; "1,37 ГБ".
 pub fn size_in(lang: Lang, bytes: i64) -> String {
     let units: [&str; 5] = match lang {
@@ -227,12 +244,7 @@ pub fn track_details_in(lang: Lang, track: &Track, s: &Subject) -> String {
                 parts.push(format!("{w}×{h}"));
             }
             if let Some(fps) = track.fps.filter(|f| *f > 0.0 && !track.albumart) {
-                let decimals = if (fps - fps.round()).abs() < 0.001 {
-                    0
-                } else {
-                    3
-                };
-                parts.push(format!("{} fps", decimal_in(lang, fps, decimals)));
+                parts.push(fps_in(lang, fps));
             }
             let on_screen = track.selected && !track.albumart;
             if let Some(params) = state.video_params.as_ref().filter(|_| on_screen) {
@@ -334,13 +346,7 @@ pub fn track_rows_in(lang: Lang, track: &Track, s: &Subject) -> Vec<(String, Str
                 ));
             }
             if let Some(fps) = track.fps.filter(|f| *f > 0.0 && !track.albumart) {
-                let decimals = if (fps - fps.round()).abs() < 0.001 {
-                    0
-                } else {
-                    3
-                };
-                let text = format!("{} fps", decimal_in(lang, fps, decimals));
-                rows.push((label("Frame rate", "Частота кадров"), text));
+                rows.push((label("Frame rate", "Частота кадров"), fps_in(lang, fps)));
             }
             if let Some(rotation) = track.rotation {
                 rows.push((label("Rotation", "Поворот"), format!("{rotation}°")));
@@ -381,7 +387,7 @@ pub fn track_rows_in(lang: Lang, track: &Track, s: &Subject) -> Vec<(String, Str
                         rows.push((label(en, ru_text), color_name(value)));
                     }
                 }
-                if let Some(hdr) = hdr_in(lang, params) {
+                if let Some(hdr) = hdr_in(lang, params, state.hdr10_plus) {
                     rows.push(("HDR".into(), hdr));
                 }
             }
@@ -652,8 +658,9 @@ fn color_name(name: &str) -> String {
 
 /// What makes the picture HDR: the transfer function and the light levels
 /// the file states. `None` for SDR.
-fn hdr_in(lang: Lang, params: &VideoParams) -> Option<String> {
+fn hdr_in(lang: Lang, params: &VideoParams, hdr10_plus: bool) -> Option<String> {
     let kind = match params.gamma.as_deref() {
+        Some("pq") if hdr10_plus => "HDR10+ (PQ)",
         Some("pq") => "HDR10 (PQ)",
         Some("hlg") => "HLG",
         _ => return None,
@@ -671,10 +678,18 @@ fn hdr_in(lang: Lang, params: &VideoParams) -> Option<String> {
         parts.push(format!("MaxFALL {v:.0} {nits}"));
     }
     if let Some(v) = params.max_luma {
-        parts.push(match lang {
-            Lang::En => format!("mastering {v:.0} {nits}"),
-            Lang::Ru => format!("мастеринг {v:.0} {nits}"),
-        });
+        let range = match params.min_luma {
+            Some(min) => format!("{}–{v:.0}", decimal_in(lang, min, 4)),
+            None => format!("{v:.0}"),
+        };
+        let mut text = match lang {
+            Lang::En => format!("mastering {range} {nits}"),
+            Lang::Ru => format!("мастеринг {range} {nits}"),
+        };
+        if let Some(gamut) = params.mastering {
+            text.push_str(&format!(", {gamut}"));
+        }
+        parts.push(text);
     }
     Some(parts.join(" · "))
 }
@@ -746,6 +761,107 @@ pub fn file_rows_in(lang: Lang, s: &Subject) -> Vec<(String, String)> {
         }
     }
     rows
+}
+
+/// How the playback goes now (mpv's figures, asked for every second
+/// while the window is open): the bitrates of the moment, the frame rate
+/// against the screen's, dropped frames, what the sound device gets and,
+/// over the network, the cache.
+pub fn live_rows_in(lang: Lang, s: &Subject) -> Vec<(String, String)> {
+    let live = &s.state.live;
+    let ru = lang == Lang::Ru;
+    let label = |en: &str, ru_text: &str| if ru { ru_text } else { en }.to_owned();
+    let mut rows = Vec::new();
+    let picture = s.state.video().is_some();
+    if let Some(b) = live.video_bitrate.filter(|_| picture) {
+        rows.push((label("Video now", "Видео сейчас"), bitrate_in(lang, b)));
+    }
+    if let Some(b) = live.audio_bitrate {
+        rows.push((label("Sound now", "Звук сейчас"), bitrate_in(lang, b)));
+    }
+    if picture {
+        if let Some(fps) = live.fps {
+            let mut text = fps_in(lang, fps);
+            if let Some(hz) = live.display_fps {
+                let screen = if ru { "экран" } else { "screen" };
+                text = format!("{text}, {screen} {}", hertz_in(lang, hz));
+            }
+            rows.push((label("Frames shown", "Показ кадров"), text));
+        }
+        if let Some(dropped) = live.dropped {
+            let decoder = live.decoder_dropped.unwrap_or(0);
+            let text = match (decoder, ru) {
+                (0, _) => dropped.to_string(),
+                (d, false) => format!("output {dropped}, decoder {d}"),
+                (d, true) => format!("вывод {dropped}, декодер {d}"),
+            };
+            rows.push((label("Dropped frames", "Пропущено кадров"), text));
+        }
+    }
+    if let Some(text) = live.audio_out.as_ref().and_then(|o| audio_out_in(lang, o)) {
+        rows.push((label("Sound output", "Вывод звука"), text));
+    }
+    if live.network
+        && let Some(cache) = live.cache
+    {
+        let mut text = if ru {
+            format!("{} с", decimal_in(lang, cache, 0))
+        } else {
+            format!("{} s", decimal_in(lang, cache, 0))
+        };
+        if let Some(speed) = live.cache_speed.filter(|b| *b > 0) {
+            let per = if ru { "/с" } else { "/s" };
+            text.push_str(&format!(" · {}{per}", size_in(lang, speed)));
+        }
+        rows.push((label("Read ahead", "Буфер"), text));
+    }
+    rows
+}
+
+/// What the sound device gets: "48 kHz · 5.1 · float"; compressed sound
+/// passed through: "bitstream (E-AC3)".
+fn audio_out_in(lang: Lang, out: &AudioOut) -> Option<String> {
+    let ru = lang == Lang::Ru;
+    if let Some(codec) = out.format.as_deref().and_then(|f| f.strip_prefix("spdif-")) {
+        let codec = tracks::codec_name(codec);
+        return Some(if ru {
+            format!("битовый поток ({codec})")
+        } else {
+            format!("bitstream ({codec})")
+        });
+    }
+    let mut parts = Vec::new();
+    if let Some(rate) = out.samplerate.filter(|r| *r > 0) {
+        let khz = rate as f64 / 1000.0;
+        let decimals = if rate % 1000 == 0 { 0 } else { 1 };
+        let unit = if ru { "кГц" } else { "kHz" };
+        parts.push(format!("{} {unit}", decimal_in(lang, khz, decimals)));
+    }
+    if let Some(channels) = &out.channels {
+        parts.push(match channels.as_str() {
+            "stereo" => "2.0".to_owned(),
+            "mono" => tracks::channels_in(lang, 1),
+            c => c.to_owned(),
+        });
+    }
+    if let Some(format) = &out.format {
+        let format = format.trim_end_matches('p');
+        let bits = match format {
+            "u8" => Some(8),
+            "s16" => Some(16),
+            "s24" => Some(24),
+            "s32" => Some(32),
+            "s64" => Some(64),
+            _ => None,
+        };
+        parts.push(match (bits, format) {
+            (Some(b), _) if ru => format!("{b} бит"),
+            (Some(b), _) => format!("{b}-bit"),
+            (None, "double") => "float 64".to_owned(),
+            (None, f) => f.to_owned(),
+        });
+    }
+    (!parts.is_empty()).then(|| parts.join(" · "))
 }
 
 /// What a chip of the header does when clicked.
@@ -902,15 +1018,7 @@ pub fn chips_in(lang: Lang, s: &Subject) -> Vec<Vec<Chip>> {
             picture.push(Chip::new(format!("{w}×{h}")));
         }
         if let Some(fps) = track.fps.filter(|f| *f > 0.0) {
-            let decimals = if (fps - fps.round()).abs() < 0.001 {
-                0
-            } else {
-                3
-            };
-            picture.push(Chip::new(format!(
-                "{} fps",
-                decimal_in(lang, fps, decimals)
-            )));
+            picture.push(Chip::new(fps_in(lang, fps)));
         }
         if let Some(params) = state.video_params.as_ref().filter(|_| track.selected) {
             if let Some((_, bits)) = params
@@ -926,13 +1034,14 @@ pub fn chips_in(lang: Lang, s: &Subject) -> Vec<Vec<Chip>> {
                 }));
             }
             let hdr = match params.gamma.as_deref() {
+                Some("pq") if state.hdr10_plus => Some("HDR10+"),
                 Some("pq") => Some("HDR (PQ)"),
                 Some("hlg") => Some("HDR (HLG)"),
                 _ => None,
             };
             if let Some(hdr) = hdr {
                 let mut chip = Chip::new(hdr);
-                if let Some(tip) = hdr_in(lang, params) {
+                if let Some(tip) = hdr_in(lang, params, state.hdr10_plus) {
                     chip = chip.tip(tip);
                 }
                 picture.push(chip);
@@ -1064,6 +1173,14 @@ pub fn report_in(lang: Lang, s: &Subject) -> String {
         }
     };
     section(if ru { "Файл" } else { "File" }, file_rows_in(lang, s));
+    section(
+        if ru {
+            "Воспроизведение"
+        } else {
+            "Playback"
+        },
+        live_rows_in(lang, s),
+    );
     section(
         if ru { "Теги" } else { "Tags" },
         tags_in(lang, &state.metadata),
@@ -1325,6 +1442,63 @@ mod tests {
     }
 
     #[test]
+    fn live_rows() {
+        let state = State {
+            idle: false,
+            width: Some(1920),
+            height: Some(1080),
+            live: crate::player::Live {
+                video_bitrate: Some(8_400_000.0),
+                audio_bitrate: Some(640_000.0),
+                fps: Some(23.976),
+                display_fps: Some(143.998),
+                dropped: Some(12),
+                decoder_dropped: Some(3),
+                audio_out: Some(AudioOut {
+                    format: Some("floatp".into()),
+                    samplerate: Some(48000),
+                    channels: Some("5.1".into()),
+                }),
+                cache: Some(12.4),
+                cache_speed: Some(2_202_009),
+                network: true,
+                ..Default::default()
+            },
+            ..State::default()
+        };
+        let rows = live_rows_in(Lang::Ru, &subject(&state));
+        assert_eq!(value(&rows, "Видео сейчас"), Some("8,4 Мбит/с"));
+        assert_eq!(value(&rows, "Звук сейчас"), Some("640 кбит/с"));
+        assert_eq!(
+            value(&rows, "Показ кадров"),
+            Some("23,976 fps, экран 144 Гц")
+        );
+        assert_eq!(
+            value(&rows, "Пропущено кадров"),
+            Some("вывод 12, декодер 3")
+        );
+        assert_eq!(value(&rows, "Вывод звука"), Some("48 кГц · 5.1 · float"));
+        assert_eq!(value(&rows, "Буфер"), Some("12 с · 2,10 МБ/с"));
+        let out = AudioOut {
+            format: Some("spdif-eac3".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            audio_out_in(Lang::En, &out).as_deref(),
+            Some("bitstream (E-AC3)")
+        );
+        let out = AudioOut {
+            format: Some("s16".into()),
+            samplerate: Some(44100),
+            channels: Some("stereo".into()),
+        };
+        assert_eq!(
+            audio_out_in(Lang::En, &out).as_deref(),
+            Some("44.1 kHz · 2.0 · 16-bit")
+        );
+    }
+
+    #[test]
     fn hdr() {
         let params = VideoParams {
             gamma: Some("pq".into()),
@@ -1333,10 +1507,21 @@ mod tests {
             ..VideoParams::default()
         };
         assert_eq!(
-            hdr_in(Lang::En, &params).as_deref(),
+            hdr_in(Lang::En, &params, false).as_deref(),
             Some("HDR10 (PQ) · MaxCLL 1000 cd/m² · MaxFALL 400 cd/m²")
         );
         assert_eq!(color_name("bt.2020-ncl"), "BT.2020 NCL");
+        let params = VideoParams {
+            gamma: Some("pq".into()),
+            max_luma: Some(1000.0),
+            min_luma: Some(0.005),
+            mastering: Some("Display P3"),
+            ..VideoParams::default()
+        };
+        assert_eq!(
+            hdr_in(Lang::Ru, &params, true).as_deref(),
+            Some("HDR10+ (PQ) · мастеринг 0,0050–1000 кд/м², Display P3")
+        );
     }
 
     #[test]

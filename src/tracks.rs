@@ -361,6 +361,7 @@ pub fn codec_name(codec: &str) -> String {
         "mov_text" => "TX3G".into(),
         "eac3" => "E-AC3".into(),
         "truehd" => "TrueHD".into(),
+        "dtshd" => "DTS-HD".into(),
         "vorbis" => "Vorbis".into(),
         "opus" => "Opus".into(),
         "h264" => "H.264".into(),
