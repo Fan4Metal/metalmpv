@@ -213,27 +213,67 @@ pub fn voice_layout(layout: Option<&str>, channels: Option<i64>) -> Option<Strin
     })
 }
 
-/// Stereo spread over 5.1: FFmpeg's `surround` finds, band by band, what
-/// is common to both sides (the centre, mostly the voice), what differs
-/// (the surrounds) and the low end (the LFE).
-pub const UPMIX_FILTER: &str = "lavfi=[surround=chl_out=5.1]";
+/// Where the subwoofer's sound ends, in Hz: FFmpeg's `lfe_low` (its own
+/// default, 128, is high for a subwoofer; cinemas cross over at 80).
+pub const LFE_CUT_RANGE: std::ops::RangeInclusive<i64> = 40..=200;
+
+/// Stereo spread over 5.1, as the user set it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Upmix {
+    /// Below it the low end goes to the subwoofer ([`LFE_CUT_RANGE`]); it
+    /// fades out up to twice that.
+    pub lfe_cut: i64,
+    /// The low end taken out of the other channels (`lfe_mode=sub`), not
+    /// only copied to the subwoofer: for small speakers.
+    pub bass_only: bool,
+}
+
+impl Default for Upmix {
+    fn default() -> Self {
+        Self {
+            lfe_cut: 80,
+            bass_only: false,
+        }
+    }
+}
+
+impl Upmix {
+    /// The filter: FFmpeg's `surround` finds, band by band, what is common
+    /// to both sides (the centre, mostly the voice), what differs (the
+    /// surrounds) and the low end (the LFE).
+    pub fn filter(self) -> String {
+        let cut = self
+            .lfe_cut
+            .clamp(*LFE_CUT_RANGE.start(), *LFE_CUT_RANGE.end());
+        let mode = if self.bass_only { "sub" } else { "add" };
+        format!(
+            "lavfi=[surround=chl_out=5.1:lfe_low={cut}:lfe_high={}:lfe_mode={mode}]",
+            cut * 2
+        )
+    }
+}
 
 /// A layout the upmix takes: stereo.
 pub fn is_stereo(layout: &str) -> bool {
     layout == "stereo" || layout == "fl-fr"
 }
 
-/// mpv's `af`: stereo spread over 5.1 when `upmix` (for a stereo track,
-/// [`UPMIX_FILTER`]), the voice's filter when `voice` gives the channel
+/// mpv's `af`: stereo spread over 5.1 when `upmix` is given (for a
+/// stereo track, [`Upmix::filter`]), the voice's filter when `voice` gives the channel
 /// layout of the track playing ([`voice_filter`]; after the upmix, the
 /// 5.1's), the equalizer's bands that are not flat (one graph), then the
 /// normalization (which evens out what the others raised).
-pub fn filters(normalize: bool, eq: &Equalizer, voice: Option<&str>, upmix: bool) -> String {
+pub fn filters(
+    normalize: bool,
+    eq: &Equalizer,
+    voice: Option<&str>,
+    upmix: Option<Upmix>,
+) -> String {
     let mut af: Vec<String> = Vec::new();
-    if upmix {
-        af.push(UPMIX_FILTER.to_owned());
+    if let Some(upmix) = upmix {
+        af.push(upmix.filter());
     }
-    let voice = voice.map(|layout| if upmix { "5.1" } else { layout });
+    let voice = voice.map(|layout| if upmix.is_some() { "5.1" } else { layout });
     if let Some(filter) = voice.and_then(voice_filter) {
         af.push(filter);
     }
@@ -462,13 +502,13 @@ mod tests {
     #[test]
     fn equalizer_filters() {
         let mut eq = Equalizer::default();
-        assert_eq!(filters(false, &eq, None, false), "");
+        assert_eq!(filters(false, &eq, None, None), "");
         eq.gains = Preset::Bass.gains();
-        assert_eq!(filters(false, &eq, None, false), "", "off: no bands");
+        assert_eq!(filters(false, &eq, None, None), "", "off: no bands");
         eq.on = true;
         eq.gains = [0, 0, 0, 0, 0, 0, 0, 0, 3, -20];
         assert_eq!(
-            filters(true, &eq, None, false),
+            filters(true, &eq, None, None),
             format!(
                 "lavfi=[equalizer=f=8000:t=o:w=1:g=3,equalizer=f=16000:t=o:w=1:g=-12],{NORMALIZE_FILTER}"
             )
@@ -521,15 +561,27 @@ mod tests {
         assert_eq!(voice_layout(None, Some(6)), None);
         let eq = Equalizer::default();
         assert_eq!(
-            filters(true, &eq, Some("stereo"), false),
+            filters(true, &eq, Some("stereo"), None),
             format!("lavfi=[dialoguenhance],{NORMALIZE_FILTER}")
         );
         // Spread over 5.1, the voice is raised in its centre.
+        let upmix = Upmix::default();
         assert_eq!(
-            filters(false, &eq, Some("stereo"), true),
-            format!("{UPMIX_FILTER},{centre}")
+            upmix.filter(),
+            "lavfi=[surround=chl_out=5.1:lfe_low=80:lfe_high=160:lfe_mode=add]"
         );
-        assert_eq!(filters(false, &eq, None, true), UPMIX_FILTER);
+        assert_eq!(
+            filters(false, &eq, Some("stereo"), Some(upmix)),
+            format!("{},{centre}", upmix.filter())
+        );
+        let small = Upmix {
+            lfe_cut: 500,
+            bass_only: true,
+        };
+        assert_eq!(
+            small.filter(),
+            "lavfi=[surround=chl_out=5.1:lfe_low=200:lfe_high=400:lfe_mode=sub]"
+        );
         assert!(is_stereo("stereo") && is_stereo("fl-fr") && !is_stereo("5.1"));
         assert!(Channels::Auto.takes_upmix() && !Channels::Stereo.takes_upmix());
     }

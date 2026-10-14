@@ -297,6 +297,8 @@ const SUB_ASS_OVERRIDE: &str = "sub_ass_override";
 const SUB_MARGINS: &str = "sub_margins";
 const VOICE_BOOST: &str = "voice_boost";
 const UPMIX: &str = "upmix";
+const LFE_CUT: &str = "lfe_cut";
+const BASS_ONLY: &str = "bass_only";
 const EQ_PRESETS: &str = "eq_presets";
 const KEEP_ADJUST: &str = "keep_adjust";
 const ADJUST: &str = "adjust";
@@ -512,9 +514,10 @@ pub struct Settings {
     pub normalize: bool,
     /// Speech made clearer (`audio::voice_filter`).
     pub voice_boost: bool,
-    /// Stereo spread over 5.1 (`audio::UPMIX_FILTER`), where the output
-    /// can have more than two channels.
+    /// Stereo spread over 5.1 (`audio::Upmix`), where the output can have
+    /// more than two channels, with the subwoofer's cut and mode.
     pub upmix: bool,
+    pub upmix_lfe: audio::Upmix,
     /// The equalizer's gains the user saved; not a setting, Reset keeps
     /// them.
     pub eq_presets: Vec<audio::OwnEq>,
@@ -610,6 +613,7 @@ impl Default for Settings {
             normalize: false,
             voice_boost: false,
             upmix: false,
+            upmix_lfe: audio::Upmix::default(),
             eq_presets: Vec::new(),
             equalizer: audio::Equalizer::default(),
             passthrough: Passthrough::Off,
@@ -768,6 +772,18 @@ impl Settings {
             normalize: flag(NORMALIZE, d.normalize),
             voice_boost: flag(VOICE_BOOST, d.voice_boost),
             upmix: flag(UPMIX, d.upmix),
+            upmix_lfe: audio::Upmix {
+                lfe_cut: number(
+                    LFE_CUT,
+                    {
+                        let r = audio::LFE_CUT_RANGE;
+                        *r.start() as f64..=*r.end() as f64
+                    },
+                    d.upmix_lfe.lfe_cut as f64,
+                )
+                .round() as i64,
+                bass_only: flag(BASS_ONLY, d.upmix_lfe.bass_only),
+            },
             eq_presets: get(EQ_PRESETS)
                 .map(|v| audio::OwnEq::from_text(&v))
                 .unwrap_or_default(),
@@ -945,6 +961,8 @@ impl Settings {
         storage.set_string(NORMALIZE, self.normalize.to_string());
         storage.set_string(VOICE_BOOST, self.voice_boost.to_string());
         storage.set_string(UPMIX, self.upmix.to_string());
+        storage.set_string(LFE_CUT, self.upmix_lfe.lfe_cut.to_string());
+        storage.set_string(BASS_ONLY, self.upmix_lfe.bass_only.to_string());
         storage.set_string(EQ_PRESETS, audio::OwnEq::to_text(&self.eq_presets));
         storage.set_string(SUB_ASS_OVERRIDE, self.sub_ass_override.to_string());
         storage.set_string(SUB_MARGINS, self.sub_margins.to_string());
@@ -1077,6 +1095,10 @@ mod tests {
             normalize: true,
             voice_boost: true,
             upmix: true,
+            upmix_lfe: audio::Upmix {
+                lfe_cut: 120,
+                bass_only: true,
+            },
             eq_presets: vec![audio::OwnEq {
                 name: "Ночь".into(),
                 gains: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],

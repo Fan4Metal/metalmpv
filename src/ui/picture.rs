@@ -104,6 +104,7 @@ pub struct Kept<'a> {
     pub normalize: &'a mut bool,
     pub voice_boost: &'a mut bool,
     pub upmix: &'a mut bool,
+    pub upmix_lfe: &'a mut audio::Upmix,
     pub equalizer: &'a mut Equalizer,
     /// The equalizer's gains the user saved.
     pub eq_presets: &'a mut Vec<OwnEq>,
@@ -646,6 +647,34 @@ fn sound_tab(
             )
         };
         switch_line(ui, kept.upmix, tr!("Stereo to 5.1", "Стерео в 5.1"), Some(tip));
+    });
+    // The subwoofer of the upmix, while it is on.
+    ui.add_enabled_ui(takes && *kept.upmix, |ui| {
+        let d = audio::Upmix::default();
+        let cut = Spec {
+            step: 5.0,
+            suffix: tr!(" Hz", " Гц"),
+            tip: Some(tr!(
+                "Below it the low end goes to the subwoofer, fading out up to twice that. 80 Hz is the cinemas' crossover; higher, the bass starts to sound as if it came from the subwoofer",
+                "Ниже неё низкие частоты уходят на сабвуфер, затухая до удвоенной частоты. 80 Гц — разделение, принятое в кинотеатрах; выше бас начинает звучать так, будто идёт от сабвуфера"
+            )),
+            ..Spec::centred(range_of(audio::LFE_CUT_RANGE), d.lfe_cut as f64)
+        };
+        int_row(
+            ui,
+            tr!("Subwoofer up to", "Сабвуфер до"),
+            &mut kept.upmix_lfe.lfe_cut,
+            &cut,
+        );
+        switch_line(
+            ui,
+            &mut kept.upmix_lfe.bass_only,
+            tr!("Bass to the subwoofer only", "Басы только в сабвуфер"),
+            Some(tr!(
+                "The low end taken out of the other speakers, not only copied to the subwoofer: for small front speakers",
+                "Низкие частоты убираются из остальных колонок, а не только дублируются в сабвуфер: для небольших фронтальных колонок"
+            )),
+        );
     });
 
     heading(ui, tr!("Equalizer", "Эквалайзер"));

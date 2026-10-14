@@ -311,8 +311,7 @@ impl App {
 
         let mut updates = Updates::new(settings.check_updates, settings.last_update_check);
         updates.start_if_due(ctx);
-        let af_applied =
-            crate::audio::filters(settings.normalize, &settings.equalizer, None, false);
+        let af_applied = crate::audio::filters(settings.normalize, &settings.equalizer, None, None);
         let adjust = if settings.keep_adjust {
             settings.adjust.clone()
         } else {
@@ -585,9 +584,10 @@ impl App {
             tracks::selected(&state.tracks, Kind::Audio)
                 .and_then(|t| crate::audio::voice_layout(t.layout.as_deref(), t.channels))
         };
-        let upmix = self.settings.upmix
+        let upmix = (self.settings.upmix
             && self.settings.audio_channels.takes_upmix()
-            && layout.as_deref().is_some_and(crate::audio::is_stereo);
+            && layout.as_deref().is_some_and(crate::audio::is_stereo))
+        .then_some(self.settings.upmix_lfe);
         let af = crate::audio::filters(
             self.settings.normalize,
             &self.settings.equalizer,
@@ -3612,6 +3612,7 @@ impl eframe::App for App {
             normalize: &mut self.settings.normalize,
             voice_boost: &mut self.settings.voice_boost,
             upmix: &mut self.settings.upmix,
+            upmix_lfe: &mut self.settings.upmix_lfe,
             equalizer: &mut self.settings.equalizer,
             eq_presets: &mut self.settings.eq_presets,
             subs: &mut self.settings.sub,

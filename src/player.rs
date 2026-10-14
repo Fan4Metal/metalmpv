@@ -833,7 +833,7 @@ impl Player {
             setup.normalize,
             &setup.equalizer,
             None,
-            false,
+            None,
         ));
         player.set_passthrough(setup.passthrough);
         player.set_volume_max(setup.volume_max);
@@ -2273,7 +2273,7 @@ mod tests {
             on: true,
             gains: audio::Preset::Rock.gains(),
         };
-        mpv.set("af", &Value::Str(audio::filters(true, &eq, None, false)));
+        mpv.set("af", &Value::Str(audio::filters(true, &eq, None, None)));
         mpv.set(
             "audio-channels",
             &Value::Str(Channels::Stereo.option().into()),
@@ -2558,12 +2558,8 @@ mod tests {
                         if let Some(n) = tracks::selected(&tracks, Kind::Audio)
                             .and_then(|t| audio::voice_layout(t.layout.as_deref(), t.channels))
                         {
-                            let af = audio::filters(
-                                false,
-                                &audio::Equalizer::default(),
-                                Some(&n),
-                                false,
-                            );
+                            let af =
+                                audio::filters(false, &audio::Equalizer::default(), Some(&n), None);
                             eprintln!("{n}, af: {af}");
                             mpv.set("af", &Value::Str(af));
                             af_set = true;
@@ -2613,7 +2609,18 @@ mod tests {
         )
         .unwrap();
         mpv.request_log_messages("warn");
-        let af = audio::filters(false, &audio::Equalizer::default(), Some("stereo"), true);
+        // The subwoofer's options other than FFmpeg's defaults: taken too.
+        let upmix = audio::Upmix {
+            lfe_cut: 120,
+            bass_only: true,
+        };
+        let af = audio::filters(
+            false,
+            &audio::Equalizer::default(),
+            Some("stereo"),
+            Some(upmix),
+        );
+        eprintln!("af: {af}");
         mpv.set("af", &Value::Str(af));
         mpv.observe(1, "audio-out-params", sys::MPV_FORMAT_NODE);
         mpv.command(0, &["loadfile", &wav.to_string_lossy()]);
