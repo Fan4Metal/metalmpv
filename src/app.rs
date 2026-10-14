@@ -27,7 +27,7 @@ use crate::mpv::Mpv;
 use crate::player::{DataEnd, Happened, Player, Seek, State};
 use crate::playlist::{self, Playlist, Repeat};
 use crate::resume::{Positions, Tracks};
-use crate::settings::{Interface, OnTop, Settings};
+use crate::settings::{Interface, OnTop, Settings, WindowOnOpen};
 use crate::sizing;
 use crate::tracks::{self, Kind};
 use crate::ui::about::AboutDialog;
@@ -135,6 +135,9 @@ pub struct App {
     /// (`prefer_last_tracks`), once it is loaded (`pick_ready`).
     pick_tracks: bool,
     pick_ready: bool,
+    /// A file was loaded: the window is to be sized for its picture once
+    /// its size is known (`window_on_open`).
+    fit_on_open: bool,
     /// Fullscreen with the picture filling the screen, cropped (`6`,
     /// mpv's `panscan`); ends with fullscreen.
     fill: bool,
@@ -352,6 +355,7 @@ impl App {
             positions,
             pick_tracks: false,
             pick_ready: false,
+            fit_on_open: false,
             fill: false,
             before_bare: Interface::Full,
             sized_for: Interface::Full,
@@ -1351,6 +1355,41 @@ impl App {
     /// The picture's size as shown: the video's display size, turned by
     /// the Video panel's rotation (done when the picture is drawn, so not
     /// in mpv's `dwidth`/`dheight`).
+    /// The window for a file just loaded, as `window_on_open` says, once
+    /// its picture's size is known; not maximized or in fullscreen, nor for
+    /// sound alone.
+    fn fit_on_open(&mut self, ctx: &egui::Context, frame: &eframe::Frame, state: &State) {
+        if !self.fit_on_open {
+            return;
+        }
+        let no_picture = !state.tracks.is_empty()
+            && !state
+                .tracks
+                .iter()
+                .any(|t| t.kind == Kind::Video && !t.albumart);
+        if state.idle || no_picture {
+            self.fit_on_open = false;
+            return;
+        }
+        let Some(video) = self.picture_size(state) else {
+            return;
+        };
+        self.fit_on_open = false;
+        if frameless::is_fullscreen(ctx) || frameless::is_maximized(ctx) {
+            return;
+        }
+        let target = match self.settings.window_on_open {
+            WindowOnOpen::Keep => return,
+            WindowOnOpen::Video => video,
+            WindowOnOpen::Fit => {
+                let ppp = f64::from(ctx.pixels_per_point());
+                let area = self.picture_area.size();
+                sizing::fitted(video, [f64::from(area.x) * ppp, f64::from(area.y) * ppp])
+            }
+        };
+        self.size_window(ctx, frame, target);
+    }
+
     fn picture_size(&self, state: &State) -> Option<[f64; 2]> {
         let [w, h] = video_size(state)?;
         Some(if self.adjust.rotate % 180 == 90 {
@@ -1971,6 +2010,7 @@ impl App {
                     }
                     self.file_error = None;
                     self.pick_ready = self.pick_tracks;
+                    self.fit_on_open = self.settings.window_on_open != WindowOnOpen::Keep;
                 }
                 Happened::Expanded { entries, playing } => {
                     let entries = entries
@@ -3454,6 +3494,7 @@ impl eframe::App for App {
         for cmd in cmds {
             self.run(&ctx, frame, cmd);
         }
+        self.fit_on_open(&ctx, frame, &state);
         // Chosen in the settings.
         self.fit_interface(&ctx);
         self.update_window_title(&ctx, &title);

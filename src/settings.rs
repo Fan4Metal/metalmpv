@@ -43,6 +43,7 @@ const DROPPED: [&str; 3] = ["panels_pinned", "info_pinned", "info_colours"];
 const SNAP_TO_CENTRE: &str = "snap_to_centre";
 const REPEAT: &str = "repeat";
 const ON_TOP: &str = "on_top";
+const WINDOW_ON_OPEN: &str = "window_on_open";
 const INTERFACE: &str = "interface";
 const MEDIA_KEYS: &str = "media_keys";
 const AUDIO_LANGUAGES: &str = "audio_languages";
@@ -157,6 +158,42 @@ impl MediaKeys {
             MediaKeys::Always => tr!("Always", "Всегда"),
             MediaKeys::Window => tr!("While the player is active", "Когда активно окно плеера"),
             MediaKeys::Off => tr!("Off", "Выключены"),
+        }
+    }
+}
+
+/// What becomes of the window's size when a file is loaded.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WindowOnOpen {
+    #[default]
+    Keep,
+    /// Fitted to the picture, its black bars taken off (`Cmd::FitWindow`).
+    Fit,
+    /// 100 % of the video, made smaller to fit the screen (`1`).
+    Video,
+}
+
+impl WindowOnOpen {
+    pub const ALL: [WindowOnOpen; 3] = [WindowOnOpen::Keep, WindowOnOpen::Fit, WindowOnOpen::Video];
+
+    /// The stored name.
+    pub fn name(self) -> &'static str {
+        match self {
+            WindowOnOpen::Keep => "keep",
+            WindowOnOpen::Fit => "fit",
+            WindowOnOpen::Video => "video",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|w| w.name() == name)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            WindowOnOpen::Keep => tr!("Keeps its size", "Не меняется"),
+            WindowOnOpen::Fit => tr!("Fitted to the picture", "По изображению"),
+            WindowOnOpen::Video => tr!("100 % of the video", "100 % размера видео"),
         }
     }
 }
@@ -410,6 +447,8 @@ pub struct Settings {
     pub repeat: Repeat,
     /// When the window stays over the other windows (`Ctrl+T`).
     pub on_top: OnTop,
+    /// The window's size when a file is loaded.
+    pub window_on_open: WindowOnOpen,
     /// What the window shows around the picture (`8`; only the picture, `7`).
     pub interface: Interface,
     /// Which media keys the player takes.
@@ -504,6 +543,7 @@ impl Default for Settings {
             snap_to_centre: true,
             repeat: Repeat::Off,
             on_top: OnTop::Never,
+            window_on_open: WindowOnOpen::Keep,
             interface: Interface::Full,
             media_keys: MediaKeys::Always,
             keys: Keymap::default(),
@@ -625,6 +665,10 @@ impl Settings {
                 .as_deref()
                 .and_then(OnTop::from_name)
                 .unwrap_or(d.on_top),
+            window_on_open: get(WINDOW_ON_OPEN)
+                .as_deref()
+                .and_then(WindowOnOpen::from_name)
+                .unwrap_or(d.window_on_open),
             interface: get(INTERFACE)
                 .as_deref()
                 .and_then(Interface::from_name)
@@ -787,6 +831,7 @@ impl Settings {
         storage.set_string(SNAP_TO_CENTRE, self.snap_to_centre.to_string());
         storage.set_string(REPEAT, self.repeat.name().into());
         storage.set_string(ON_TOP, self.on_top.name().into());
+        storage.set_string(WINDOW_ON_OPEN, self.window_on_open.name().into());
         storage.set_string(INTERFACE, self.interface.name().into());
         storage.set_string(MEDIA_KEYS, self.media_keys.name().into());
         let prefs = &self.track_prefs;
@@ -912,6 +957,7 @@ mod tests {
             snap_to_centre: false,
             repeat: Repeat::All,
             on_top: OnTop::Playing,
+            window_on_open: WindowOnOpen::Fit,
             interface: Interface::Compact,
             media_keys: MediaKeys::Window,
             keys: Keymap::from_setting("pause\tF\nstop\tSpace Ctrl+MouseBack\nmute\t"),

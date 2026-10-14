@@ -18,6 +18,7 @@ use crate::input::Cmd;
 use crate::keymap::{Action, Chord, Group, Keymap, shortcut};
 use crate::settings::{
     Interface, MAX_STEP, MAX_TRANSPARENCY, MIN_STEP, MediaKeys, OSD_SCALE_RANGE, OnTop, Settings,
+    WindowOnOpen,
 };
 use crate::update::{Status, Updates, release_url, version_of};
 
@@ -738,6 +739,26 @@ fn general(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                     .show_ui(ui, |ui| {
                         for o in OnTop::ALL {
                             ui.selectable_value(&mut settings.on_top, o, o.label());
+                        }
+                    });
+            },
+        );
+        divider(ui);
+        row(
+            ui,
+            tr!("Window when a file opens", "Окно при открытии файла"),
+            Some(tr!(
+                "Fitted to the picture: the black bars taken off, the width kept. 100 %: a pixel of the video on a pixel of the screen, made smaller if the screen is. Not while maximized or in fullscreen.",
+                "По изображению — без чёрных полос, ширина сохраняется. 100 % — пиксель видео на пиксель экрана, меньше, если экран не вмещает. Не действует в развёрнутом окне и полноэкранном режиме."
+            )),
+            230.0,
+            |ui| {
+                egui::ComboBox::from_id_salt("settings_window_on_open")
+                    .selected_text(settings.window_on_open.label())
+                    .width(220.0)
+                    .show_ui(ui, |ui| {
+                        for w in WindowOnOpen::ALL {
+                            ui.selectable_value(&mut settings.window_on_open, w, w.label());
                         }
                     });
             },
@@ -1755,6 +1776,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.fullscreen_title = d.fullscreen_title;
     settings.snap_to_centre = d.snap_to_centre;
     settings.on_top = d.on_top;
+    settings.window_on_open = d.window_on_open;
     settings.media_keys = d.media_keys;
     settings.interface = d.interface;
     changed.accent |= settings.accent != d.accent;
