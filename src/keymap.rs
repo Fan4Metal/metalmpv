@@ -393,8 +393,8 @@ impl Action {
             Action::SoundInSync => tr!("Sound as it was", "Звук как было"),
             Action::Fullscreen => tr!("Fullscreen", "Полный экран"),
             Action::Escape => tr!(
-                "Leave fullscreen, then bring the interface back; in a window, close the program",
-                "Выйти из полноэкранного режима, затем вернуть интерфейс; в окне — закрыть программу"
+                "Close what is open, leave fullscreen, bring the interface back; else close the program",
+                "Закрыть открытое, выйти из полноэкранного режима, вернуть интерфейс; иначе закрыть программу"
             ),
             Action::Scale50 => tr!("Window for 50% of the video", "Окно под 50% размера видео"),
             Action::Scale100 => tr!(

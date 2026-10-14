@@ -1099,8 +1099,9 @@ impl App {
             }
             Cmd::Escape => {
                 // The big cover and the information window first, the
-                // Video panel, then fullscreen, then the program (as its
-                // close button: the settings are saved).
+                // tracks window, the panel, the fullscreen playlist, then
+                // fullscreen, the interface after 7, then the program (as
+                // its close button: the settings are saved).
                 if self.info.close() {
                 } else if self.tracks_window.open {
                     self.tracks_window.open = false;

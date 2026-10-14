@@ -4,7 +4,7 @@ MetalMPV's own source code is licensed under the MIT License (see [LICENSE](LICE
 
 ## libmpv
 
-The installer and the portable archive include `libmpv-2.dll`, the library of the [mpv](https://mpv.io) media player, which decodes and renders every file the program plays. The program loads it from its own folder at run time; the DLL can be replaced with another build of libmpv (client API 2.x).
+The installer and the portable archive include `libmpv-2.dll`, the library of the [mpv](https://mpv.io) media player, which decodes and renders every file the program plays. The program loads it from its own folder at run time; the DLL can be replaced with another build of libmpv (client API 2.3 or later, mpv 0.38 or later).
 
 The included build comes from [shinchiro/mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake), release [20261012](https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20261012), file `mpv-dev-x86_64-20261012-git-88eb9f2e73.7z` (mpv commit [`88eb9f2e73`](https://github.com/mpv-player/mpv/commit/88eb9f2e73)). It is built with mpv's GPL features and with FFmpeg configured as `--enable-gpl --enable-version3`, so the DLL as distributed is licensed under the **GNU General Public License, version 3** (see [licenses/GPL-3.0.txt](licenses/GPL-3.0.txt)). Consequently, the program as distributed together with this DLL is subject to the terms of the GPL version 3; the MIT-licensed source code of MetalMPV is compatible with them.
 

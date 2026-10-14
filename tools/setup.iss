@@ -56,8 +56,8 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"; InfoBeforeFile:
 [CustomMessages]
 english.AssocGroup=File types:
 russian.AssocGroup=Типы файлов:
-english.AssocTask=Register MetalMPV for video and audio files (MP4, MKV, AVI, MOV, WMV, MPEG, TS, MP3, FLAC and others)
-russian.AssocTask=Зарегистрировать MetalMPV для видео- и аудиофайлов (MP4, MKV, AVI, MOV, WMV, MPEG, TS, MP3, FLAC и других)
+english.AssocTask=Register MetalMPV for video and audio files and playlists (MP4, MKV, AVI, MOV, WMV, MPEG, TS, MP3, FLAC, M3U and others)
+russian.AssocTask=Зарегистрировать MetalMPV для видео- и аудиофайлов и плейлистов (MP4, MKV, AVI, MOV, WMV, MPEG, TS, MP3, FLAC, M3U и других)
 english.AssocStatus=Registering file types...
 russian.AssocStatus=Регистрация типов файлов...
 english.ChooseDefault=Choose MetalMPV as the default player (opens Windows Settings)

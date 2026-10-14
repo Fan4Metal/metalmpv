@@ -71,12 +71,12 @@ impl Page {
     fn summary(self) -> &'static str {
         match self {
             Page::General => tr!(
-                "The interface language and how a playlist is made.",
-                "Язык интерфейса и составление плейлиста."
+                "The language, the colour and layout of the interface, the window, and how a playlist is made.",
+                "Язык, цвет и вид интерфейса, окно и составление плейлиста."
             ),
             Page::Playback => tr!(
-                "Going on where a file was left; how far the arrow keys move playback; the chapter marks.",
-                "Продолжение с места остановки; на сколько перематывают клавиши со стрелками; метки глав."
+                "Going on where a file was left; how far the arrow keys move playback; the chapter marks; files not fully downloaded; the media keys.",
+                "Продолжение с места остановки; на сколько перематывают клавиши со стрелками; метки глав; неполные файлы; медиаклавиши."
             ),
             Page::Video => tr!(
                 "How video is decoded; the panels in fullscreen.",
@@ -681,8 +681,8 @@ fn general(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
             ui,
             tr!("Language", "Язык"),
             Some(tr!(
-                "\"System\" follows the language of Windows.",
-                "«Системный» следует языку Windows."
+                "\"As in Windows\" follows the language of Windows.",
+                "«Как в Windows» следует языку Windows."
             )),
             230.0,
             |ui| {
@@ -1252,8 +1252,8 @@ fn text(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
             ui,
             tr!("Font", "Шрифт"),
             Some(tr!(
-                "For text subtitles (SRT and the like); ASS subtitles keep their own fonts.",
-                "Для текстовых субтитров (SRT и подобных); у субтитров ASS свои шрифты."
+                "For text subtitles (SRT and the like); ASS subtitles keep their own fonts unless Style for ASS too is on in the panel.",
+                "Для текстовых субтитров (SRT и подобных); у субтитров ASS свои шрифты, если на панели не включён «Стиль и для ASS»."
             )),
             230.0,
             |ui| font_choice(ui, "sub_font", &settings.sub.font, 220.0),
