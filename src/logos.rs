@@ -274,8 +274,12 @@ fn load(url: &str) -> Result<ColorImage, String> {
             .ok()?;
         (age < KEEP).then(|| std::fs::read(f).ok()).flatten()
     });
-    if let Some(bytes) = fresh {
-        match decode(&bytes) {
+    // The address first, then the picture: a copy of another address with
+    // the same hash (one made to match it) is not this logo.
+    let header = format!("{url}\n");
+    let fresh = fresh.filter(|kept| kept.starts_with(header.as_bytes()));
+    if let Some(kept) = fresh {
+        match decode(&kept[header.len()..]) {
             Ok(image) => return Ok(image),
             // Cut short (the program ended while writing it): fetched again.
             Err(e) => {
@@ -291,7 +295,8 @@ fn load(url: &str) -> Result<ColorImage, String> {
         let _ = std::fs::create_dir_all(file.parent().unwrap_or(file));
         // Written aside and renamed: never half a file under its name.
         let part = file.with_extension("part");
-        if std::fs::write(&part, &bytes).is_ok() && std::fs::rename(&part, file).is_err() {
+        let kept = [header.as_bytes(), &bytes].concat();
+        if std::fs::write(&part, kept).is_ok() && std::fs::rename(&part, file).is_err() {
             let _ = std::fs::remove_file(&part);
         }
     }
@@ -343,7 +348,13 @@ fn allowed(url: &str) -> Option<(String, String)> {
         None => authority,
     }
     .to_ascii_lowercase();
-    if host.is_empty() || host.ends_with('.') || local(&host) || odd_number(&host) {
+    // Letters, digits, dots and hyphens only (an international name in
+    // its xn-- form): full-width digits or dots passed the checks here and
+    // could be read as a local address further on.
+    let plain = host
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-');
+    if host.is_empty() || !plain || host.ends_with('.') || local(&host) || odd_number(&host) {
         return None;
     }
     let path = tail.split('#').next().unwrap_or_default();
@@ -391,13 +402,18 @@ fn odd_number(host: &str) -> bool {
 }
 
 /// Whether `host` resolves to an address of this computer or of a local
-/// network (a public name may point there).
+/// network (a public name may point there), or does not resolve here:
+/// what WinHTTP would make of it then (through a proxy, say) is not known.
 fn resolves_locally(host: &str) -> bool {
     use std::net::{IpAddr, ToSocketAddrs};
     let Ok(addresses) = (host, 443).to_socket_addrs() else {
-        // Not resolved: WinHTTP will say so.
-        return false;
+        return true;
     };
+    let addresses: Vec<_> = addresses.collect();
+    if addresses.is_empty() {
+        return true;
+    }
+    let addresses = addresses.into_iter();
     addresses.map(|a| a.ip()).any(|ip| match ip {
         IpAddr::V4(v4) => local(&v4.to_string()),
         IpAddr::V6(v6) => {
@@ -417,7 +433,7 @@ fn fetch(url: &str) -> Result<Vec<u8>, String> {
     let body = loop {
         let (host, path) = allowed(&url).ok_or("not an address logos are fetched from")?;
         if resolves_locally(&host) {
-            return Err(format!("{host} is on the local network"));
+            return Err(format!("{host} is on the local network or not found"));
         }
         let (status, body, location) = crate::win::https_get_once(
             &host,
@@ -538,6 +554,9 @@ mod tests {
             "https://127.1/a.png",
             "https://0177.0.0.1/a.png",
             "https://0x7f.1/a.png",
+            "https://１２７.０.０.１/a.png",
+            "https://x.ｌｏｃａｌ/a.png",
+            "https://bad_host.com/a.png",
         ] {
             assert_eq!(allowed(url), None, "{url}");
         }
