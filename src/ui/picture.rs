@@ -24,7 +24,7 @@ const WIDTH: f32 = 400.0;
 /// The width of the labels' column.
 const LABEL: f32 = 110.0;
 /// The width of a slider's value.
-const VALUE: f32 = 44.0;
+const VALUE: f32 = 50.0;
 /// The room between the panel and its button.
 const GAP: f32 = 6.0;
 /// The panel's corner from the window's bottom right one when there is no
@@ -75,6 +75,8 @@ pub struct Now {
 
 /// The delays' sliders reach this far either way; the keys go further.
 const DELAY_RANGE: f64 = 5.0;
+/// The width of a delay's value: "-12.50 s".
+const DELAY_VALUE: f32 = 64.0;
 
 impl VideoPanel {
     /// A name is being typed: the player's keys wait.
@@ -130,16 +132,21 @@ impl VideoPanel {
             return out;
         }
         let screen = ctx.content_rect();
-        let at = match button {
-            Some(b) => b.right_top() - vec2(0.0, GAP),
-            None => screen.right_bottom() - vec2(CORNER, CORNER),
-        };
         let frame = egui::Frame::popup(&ctx.style_of(egui::Theme::Dark))
             .fill(style::PANEL_BG)
             .inner_margin(12);
+        // The left edge from the width the panel is meant to have, not the
+        // one measured last frame: content a little wider moved the panel,
+        // and it shook as it was laid out again.
+        let outer = WIDTH + frame.total_margin().sum().x;
+        let right_bottom = match button {
+            Some(b) => b.right_top() - vec2(0.0, GAP),
+            None => screen.right_bottom() - vec2(CORNER, CORNER),
+        };
+        let at = right_bottom - vec2(outer, 0.0);
         let shown = egui::Area::new(egui::Id::new("video_panel"))
             .order(egui::Order::Foreground)
-            .pivot(egui::Align2::RIGHT_BOTTOM)
+            .pivot(egui::Align2::LEFT_BOTTOM)
             .fixed_pos(at)
             .constrain_to(screen)
             .show(ctx, |ui| {
@@ -692,23 +699,31 @@ fn delay_row(ui: &mut Ui, label: &str, now: f64, tip: &str) -> Option<f64> {
     let mut value = now;
     let mut chosen = None;
     let unit = tr!(" s", " с");
-    labelled(ui, label, |ui| {
-        let response = ui
-            .add(
-                egui::Slider::new(&mut value, -DELAY_RANGE..=DELAY_RANGE)
-                    .step_by(DELAY_STEP / 2.0)
-                    .fixed_decimals(2)
-                    .suffix(unit)
-                    .clamping(egui::SliderClamping::Never),
-            )
-            .on_hover_text(tip);
-        if response.changed() && (value - now).abs() > 1e-9 {
-            chosen = Some(value);
-        }
-        if response.double_clicked() || reset(ui, now != 0.0, tr!("Back to 0", "Вернуть 0"))
-        {
-            chosen = Some(0.0);
-        }
+    // A field wide enough for "-12.50 s" and a slider as much shorter: a
+    // field that grew with a minus widened the panel, which, held by its
+    // right edge, shook as it was laid out again.
+    ui.scope(|ui| {
+        let spacing = ui.spacing().item_spacing.x;
+        ui.spacing_mut().interact_size.x = DELAY_VALUE;
+        ui.spacing_mut().slider_width = WIDTH - LABEL - DELAY_VALUE - RESET - 3.0 * spacing;
+        labelled(ui, label, |ui| {
+            let response = ui
+                .add(
+                    egui::Slider::new(&mut value, -DELAY_RANGE..=DELAY_RANGE)
+                        .step_by(DELAY_STEP / 2.0)
+                        .fixed_decimals(2)
+                        .suffix(unit)
+                        .clamping(egui::SliderClamping::Never),
+                )
+                .on_hover_text(tip);
+            if response.changed() && (value - now).abs() > 1e-9 {
+                chosen = Some(value);
+            }
+            let back = reset(ui, now != 0.0, tr!("Back to 0", "Вернуть 0"));
+            if response.double_clicked() || back {
+                chosen = Some(0.0);
+            }
+        });
     });
     chosen
 }
