@@ -90,17 +90,22 @@ pub fn wheel_notches(ui: &Ui) -> i32 {
         return 0;
     }
     let id = egui::Id::new("wheel_notches");
-    ui.ctx().data_mut(|d| {
-        let (rest, last) = d.get_temp_mut_or_default::<(f32, f64)>(id);
-        if time - *last > 1.0 || (*rest != 0.0 && rest.signum() != delta.signum()) {
-            *rest = 0.0;
-        }
-        *last = time;
-        *rest += delta;
-        let whole = rest.trunc();
-        *rest -= whole;
-        whole as i32
-    })
+    ui.ctx()
+        .data_mut(|d| notches(d.get_temp_mut_or_default::<(f32, f64)>(id), delta, time))
+}
+
+/// `delta` notches (a fraction from a touchpad) at `time` added to `kept`
+/// (the rest and when it came); the whole notches taken out.
+fn notches(kept: &mut (f32, f64), delta: f32, time: f64) -> i32 {
+    let (rest, last) = kept;
+    if time - *last > 1.0 || (*rest != 0.0 && rest.signum() != delta.signum()) {
+        *rest = 0.0;
+    }
+    *last = time;
+    *rest += delta;
+    let whole = rest.trunc();
+    *rest -= whole;
+    whole as i32
 }
 
 /// The app icon of one place, with the accent it was drawn in.
@@ -214,4 +219,31 @@ pub fn close_cross(ui: &mut Ui) -> bool {
 /// reports the third click as a triple click only).
 pub fn double_clicked(response: &Response) -> bool {
     response.double_clicked() || response.triple_clicked()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::notches;
+
+    #[test]
+    fn small_wheel_deltas_add_up() {
+        let mut kept = (0.0, 0.0);
+        // A touchpad's swipe: a tenth of a notch at a time.
+        let turned: i32 = (0..25)
+            .map(|i| notches(&mut kept, 0.1, 1.0 + i as f64 * 0.01))
+            .sum();
+        assert_eq!(turned, 2);
+        // A whole notch of a wheel is one.
+        assert_eq!(notches(&mut (0.0, 0.0), 1.0, 0.0), 1);
+        assert_eq!(notches(&mut (0.0, 0.0), -3.0, 0.0), -3);
+    }
+
+    #[test]
+    fn the_rest_is_forgotten_after_a_pause_or_a_turn_back() {
+        let mut kept = (0.0, 0.0);
+        assert_eq!(notches(&mut kept, 0.8, 1.0), 0);
+        assert_eq!(notches(&mut kept, 0.8, 2.5), 0);
+        assert_eq!(notches(&mut kept, -0.5, 2.6), 0);
+        assert_eq!(notches(&mut kept, -0.6, 2.7), -1);
+    }
 }

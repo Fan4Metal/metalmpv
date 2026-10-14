@@ -1719,9 +1719,7 @@ impl App {
     fn take_events(&mut self) {
         let received = crate::instance::take();
         if let Some(&(_, last)) = received.last() {
-            let batch = self
-                .last_received
-                .is_some_and(|t| received[0].1.duration_since(t) < SAME_BATCH);
+            let batch = same_batch(self.last_received, received[0].1);
             let paths: Vec<PathBuf> = received.into_iter().map(|(p, _)| p).collect();
             if batch {
                 self.add(paths);
@@ -2260,6 +2258,13 @@ impl App {
             self.shown_title = wanted;
         }
     }
+}
+
+/// Files that came at `at` join those that came last (at `last`): Explorer
+/// starts one process per selected file, the first of them this one (its
+/// own files count as received at the start).
+fn same_batch(last: Option<Instant>, at: Instant) -> bool {
+    last.is_some_and(|t| at.saturating_duration_since(t) < SAME_BATCH)
 }
 
 /// The panels over the picture in fullscreen that are shown.
@@ -3130,5 +3135,20 @@ impl eframe::App for App {
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         [0.0, 0.0, 0.0, 1.0]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn files_of_other_starts_join_the_first() {
+        let start = Instant::now();
+        // The start's own files, then another start's 100 ms later.
+        assert!(same_batch(Some(start), start + Duration::from_millis(100)));
+        assert!(!same_batch(Some(start), start + Duration::from_secs(2)));
+        // Nothing of its own: the files replace the playlist.
+        assert!(!same_batch(None, start));
     }
 }
