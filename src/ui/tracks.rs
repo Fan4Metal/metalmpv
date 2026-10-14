@@ -52,12 +52,16 @@ impl TracksWindow {
         }
         let corner = popover::corner(ctx, button);
         let width = if *wide { WIDTH } else { COLUMN };
+        // The height there is over the button: the lists are cut to it.
+        let margins = popover::frame(ctx).total_margin().sum().y;
+        let limit = corner.y - ctx.content_rect().top() - popover::EDGE - margins;
         let tab = &mut self.tab;
         let shown = popover::show(ctx, "tracks_window", corner, width, |ui| {
+            let top = ui.cursor().top();
             out = if *wide {
-                columns(ui, all, wide)
+                columns(ui, all, wide, |ui| limit - (ui.cursor().top() - top))
             } else {
-                tabbed(ui, all, tab, wide)
+                tabbed(ui, all, tab, wide, |ui| limit - (ui.cursor().top() - top))
             };
         });
         self.rect = Some(shown);
@@ -75,11 +79,21 @@ const WIDTH: f32 = 2.0 * COLUMN + 13.0;
 const ROW: f32 = 30.0;
 /// The height of a track's row: the name, the badges under it.
 const ROW_TWO: f32 = 44.0;
-/// A column scrolls past this height (Blu-ray rips may carry 30 subtitles).
+/// A column scrolls past this height (Blu-ray rips may carry 30 subtitles),
+/// or past the room the window has over its button, never under `MIN_LIST`.
 const MAX_LIST: f32 = 300.0;
+const MIN_LIST: f32 = 90.0;
+/// The height under the subtitles' list: Load from a file.
+const LOAD_ROW: f32 = 36.0;
 
 /// The lists as tabs, the button for two columns at their right.
-fn tabbed(ui: &mut Ui, all: &[Track], tab: &mut usize, wide: &mut bool) -> Vec<Cmd> {
+fn tabbed(
+    ui: &mut Ui,
+    all: &[Track],
+    tab: &mut usize,
+    wide: &mut bool,
+    room: impl Fn(&Ui) -> f32,
+) -> Vec<Cmd> {
     let mut out = Vec::new();
     ui.set_width(COLUMN);
     ui.horizontal(|ui| {
@@ -96,6 +110,7 @@ fn tabbed(ui: &mut Ui, all: &[Track], tab: &mut usize, wide: &mut bool) -> Vec<C
         });
     });
     ui.add_space(6.0);
+    let room = room(ui);
     // Both lists laid out unseen (an invisible Ui paints nothing and takes
     // no input) for the taller: the window keeps that height whichever tab
     // is shown, as the panel does; held by its bottom edge, it jumped.
@@ -103,20 +118,20 @@ fn tabbed(ui: &mut Ui, all: &[Track], tab: &mut usize, wide: &mut bool) -> Vec<C
     for kind in [Kind::Audio, Kind::Sub] {
         let rect = ui.available_rect_before_wrap();
         let mut unseen = ui.new_child(egui::UiBuilder::new().max_rect(rect).invisible());
-        column(&mut unseen, all, kind, &mut Vec::new());
+        column(&mut unseen, all, kind, room, &mut Vec::new());
         tallest = tallest.max(unseen.min_rect().height());
     }
     let kind = if *tab == 0 { Kind::Audio } else { Kind::Sub };
     ui.scope(|ui| {
         ui.set_min_height(tallest);
-        column(ui, all, kind, &mut out);
+        column(ui, all, kind, room, &mut out);
     });
     out
 }
 
 /// The lists side by side, under titles drawn as tabs shown, the button
 /// back to tabs at the right of the second.
-fn columns(ui: &mut Ui, all: &[Track], wide: &mut bool) -> Vec<Cmd> {
+fn columns(ui: &mut Ui, all: &[Track], wide: &mut bool, room: impl Fn(&Ui) -> f32) -> Vec<Cmd> {
     let mut out = Vec::new();
     ui.set_width(WIDTH);
     ui.horizontal(|ui| {
@@ -131,10 +146,11 @@ fn columns(ui: &mut Ui, all: &[Track], wide: &mut bool) -> Vec<Cmd> {
         });
     });
     ui.add_space(6.0);
+    let room = room(ui);
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
             ui.set_width(COLUMN);
-            column(ui, all, Kind::Audio, &mut out);
+            column(ui, all, Kind::Audio, room, &mut out);
         });
         let (line, _) =
             ui.allocate_exact_size(vec2(1.0, ui.min_rect().height().max(60.0)), Sense::hover());
@@ -145,18 +161,20 @@ fn columns(ui: &mut Ui, all: &[Track], wide: &mut bool) -> Vec<Cmd> {
         );
         ui.vertical(|ui| {
             ui.set_width(COLUMN);
-            column(ui, all, Kind::Sub, &mut out);
+            column(ui, all, Kind::Sub, room, &mut out);
         });
     });
     out
 }
 
-fn column(ui: &mut Ui, all: &[Track], kind: Kind, out: &mut Vec<Cmd>) {
+/// A list of `kind`, the column `room` high at most.
+fn column(ui: &mut Ui, all: &[Track], kind: Kind, room: f32, out: &mut Vec<Cmd>) {
     let audio = kind == Kind::Audio;
     let list = tracks::of_kind(all, kind);
+    let below = if audio { 0.0 } else { LOAD_ROW };
     egui::ScrollArea::vertical()
         .id_salt(("tracks", audio))
-        .max_height(MAX_LIST)
+        .max_height((room - below).clamp(MIN_LIST, MAX_LIST))
         .auto_shrink([false, true])
         .show(ui, |ui| {
             if !audio {
