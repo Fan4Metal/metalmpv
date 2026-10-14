@@ -188,18 +188,25 @@ pub fn voice_filter(channels: i64) -> Option<String> {
 
 /// mpv's `af`: the voice's filter when `voice` gives the channels of the
 /// track playing ([`voice_filter`]), the equalizer's bands that are not
-/// flat, then the normalization (which evens out what the others raised).
+/// flat (one graph), then the normalization (which evens out what the others raised).
 pub fn filters(normalize: bool, eq: &Equalizer, voice: Option<i64>) -> String {
     let mut af: Vec<String> = Vec::new();
     if let Some(filter) = voice.and_then(voice_filter) {
         af.push(filter);
     }
     if eq.on {
-        for (hz, gain) in EQ_BANDS.iter().zip(eq.gains) {
-            if gain != 0 {
+        // One graph for all the bands: one filter for mpv to set up.
+        let bands: Vec<String> = EQ_BANDS
+            .iter()
+            .zip(eq.gains)
+            .filter(|(_, gain)| *gain != 0)
+            .map(|(hz, gain)| {
                 let gain = gain.clamp(-EQ_RANGE, EQ_RANGE);
-                af.push(format!("lavfi=[equalizer=f={hz}:t=o:w=1:g={gain}]"));
-            }
+                format!("equalizer=f={hz}:t=o:w=1:g={gain}")
+            })
+            .collect();
+        if !bands.is_empty() {
+            af.push(format!("lavfi=[{}]", bands.join(",")));
         }
     }
     if normalize {
@@ -414,7 +421,7 @@ mod tests {
         assert_eq!(
             filters(true, &eq, None),
             format!(
-                "lavfi=[equalizer=f=8000:t=o:w=1:g=3],lavfi=[equalizer=f=16000:t=o:w=1:g=-12],{NORMALIZE_FILTER}"
+                "lavfi=[equalizer=f=8000:t=o:w=1:g=3,equalizer=f=16000:t=o:w=1:g=-12],{NORMALIZE_FILTER}"
             )
         );
         assert_eq!(Preset::of(&Preset::Rock.gains()), Some(Preset::Rock));
