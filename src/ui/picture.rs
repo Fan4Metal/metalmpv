@@ -9,11 +9,12 @@
 //! the pan, the sharpness, the noise reduction and the debanding, the
 //! aspect ratio, the deinterlacing, HDR on an ordinary screen, the turns
 //! and flips; Reset all, and whether they are kept between runs. Sound
-//! (`audio.rs`): the output device, the channels, the delay, the boost,
+//! (`audio.rs`): the output device, the channels, compressed sound to a
+//! receiver, the delay, the boost,
 //! the normalization, clearer speech, and the ten-band equalizer with its
 //! presets and the user's own. Subtitles (`sub_style.rs`): the looks,
-//! ready-made and the user's own, a preview, the font and the size (also
-//! on the settings' page), the colours, outline, shadow and box, the
+//! ready-made and the user's own, a preview, the font and the size, the
+//! colours, outline, shadow and box, the
 //! height, the delay, the black bars, and the style for ASS too.
 //!
 //! The values are rows of a label, a slider lit from its origin to the
@@ -29,7 +30,9 @@ use egui::{
 
 use super::{icons, popover, style};
 use crate::adjust::{self, Adjust, Aspect, Color, Deinterlace, ToneMap};
-use crate::audio::{self, Channels, EQ_BANDS, EQ_RANGE, Equalizer, OwnEq, Preset, band_label};
+use crate::audio::{
+    self, Channels, EQ_BANDS, EQ_RANGE, Equalizer, OwnEq, Passthrough, Preset, band_label,
+};
 use crate::input::Cmd;
 use crate::sub_style::{self, SubStyle};
 
@@ -96,6 +99,7 @@ pub struct Kept<'a> {
     pub audio_device: &'a mut String,
     pub devices: &'a [audio::Device],
     pub channels: &'a mut Channels,
+    pub passthrough: &'a mut Passthrough,
     pub volume_max: &'a mut f64,
     pub normalize: &'a mut bool,
     pub voice_boost: &'a mut bool,
@@ -518,20 +522,25 @@ fn sound_tab(
     now_playing(ui, &now);
 
     heading(ui, tr!("Output", "Вывод"));
-    let same = tr!(
-        "As on the settings' Sound page",
-        "Как на странице «Звук» в настройках"
+    let device_tip = tr!(
+        "The sound moves to it at once; kept between runs.",
+        "Звук переходит на него сразу; запоминается между запусками."
     );
-    labelled_tip(ui, tr!("Device", "Устройство"), Some(same), |ui| {
-        let width = ui.available_width();
-        super::settings::device_choice(
-            ui,
-            "panel_audio_device",
-            kept.audio_device,
-            kept.devices,
-            width,
-        );
-    });
+    labelled_tip(
+        ui,
+        tr!("Device", "Устройство"),
+        Some(device_tip),
+        |ui| {
+            let width = ui.available_width();
+            super::settings::device_choice(
+                ui,
+                "panel_audio_device",
+                kept.audio_device,
+                kept.devices,
+                width,
+            );
+        },
+    );
     if !super::settings::device_present(kept.audio_device, kept.devices) {
         note(
             ui,
@@ -547,12 +556,27 @@ fn sound_tab(
         "panel_channels",
         kept.channels.label(),
         Some(tr!(
-            "Auto: as the device is set up in Windows, more channels mixed down to it. As on the settings' Sound page",
-            "«Авто» — как устройство настроено в Windows, лишние каналы сводятся под него. Как на странице «Звук» в настройках"
+            "Auto: as the device is set up in Windows, more channels mixed down to it; a layout chosen by hand is what the sound is mixed to",
+            "«Авто» — как устройство настроено в Windows, лишние каналы сводятся под него; раскладка, выбранная вручную, — то, под что сводится звук"
         )),
         |ui| {
             for c in Channels::ALL {
                 ui.selectable_value(kept.channels, c, c.label());
+            }
+        },
+    );
+    combo_row(
+        ui,
+        tr!("Receiver", "Ресивер"),
+        "panel_passthrough",
+        kept.passthrough.label(),
+        Some(tr!(
+            "Dolby and DTS sound goes out compressed and the receiver decodes it; the volume, normalization, equalizer and channels here do not apply to it, and Windows gives the device to the player alone. A format the device does not take is decoded as usual",
+            "Звук Dolby и DTS уходит в сжатом виде, его декодирует ресивер; громкость, нормализация, эквалайзер и каналы программы на него не действуют, а Windows отдаёт устройство только плееру. Формат, который устройство не принимает, декодируется как обычно"
+        )),
+        |ui| {
+            for p in Passthrough::ALL {
+                ui.selectable_value(kept.passthrough, p, p.label());
             }
         },
     );
@@ -580,8 +604,8 @@ fn sound_tab(
         "panel_volume_max",
         &audio::boost_label(*kept.volume_max),
         Some(tr!(
-            "How far the volume goes past 100%. As on the settings' Sound page",
-            "Насколько громкость может превышать 100 %. Как на странице «Звук» в настройках"
+            "How far the volume goes past 100%; a loud passage may then distort",
+            "Насколько громкость может превышать 100 %; на громких местах возможны искажения"
         )),
         |ui| {
             for b in audio::BOOSTS {

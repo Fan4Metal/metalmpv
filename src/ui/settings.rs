@@ -11,7 +11,7 @@ use egui::{
 };
 
 use super::style::{self, Accent};
-use crate::audio::{BOOSTS, Channels, Device, Passthrough, boost_label};
+use crate::audio::Device;
 use crate::fonts::Family;
 use crate::i18n::LangChoice;
 use crate::input::Cmd;
@@ -35,20 +35,16 @@ pub enum Page {
     General,
     Playback,
     Video,
-    Audio,
-    Text,
     Files,
     Keys,
     Updates,
 }
 
 impl Page {
-    const ALL: [Page; 8] = [
+    const ALL: [Page; 6] = [
         Page::General,
         Page::Playback,
         Page::Video,
-        Page::Audio,
-        Page::Text,
         Page::Files,
         Page::Keys,
         Page::Updates,
@@ -59,8 +55,6 @@ impl Page {
             Page::General => tr!("General", "Общие"),
             Page::Playback => tr!("Playback", "Воспроизведение"),
             Page::Video => tr!("Video", "Видео"),
-            Page::Audio => tr!("Sound", "Звук"),
-            Page::Text => tr!("Subtitles and OSD", "Субтитры и OSD"),
             Page::Files => tr!("File types", "Типы файлов"),
             Page::Updates => tr!("Updates", "Обновления"),
             Page::Keys => tr!("Keyboard shortcuts", "Горячие клавиши"),
@@ -71,24 +65,16 @@ impl Page {
     fn summary(self) -> &'static str {
         match self {
             Page::General => tr!(
-                "The language, the colour and layout of the interface, the window, and how a playlist is made.",
-                "Язык, цвет и вид интерфейса, окно и составление плейлиста."
+                "The language, the colour and layout of the interface, the window, how a playlist is made and the on-screen messages. The sound and the subtitles' look are on the Video, sound and subtitles panel.",
+                "Язык, цвет и вид интерфейса, окно, составление плейлиста и экранные сообщения. Звук и вид субтитров — на панели «Видео, звук и субтитры»."
             ),
             Page::Playback => tr!(
-                "Going on where a file was left; how far the arrow keys move playback; the chapter marks; files not fully downloaded; the media keys.",
-                "Продолжение с места остановки; на сколько перематывают клавиши со стрелками; метки глав; неполные файлы; медиаклавиши."
+                "What is remembered of the files played; how far the arrow keys move playback; the chapter marks; files not fully downloaded; the media keys.",
+                "Что запоминается о воспроизведённых файлах; на сколько перематывают клавиши со стрелками; метки глав; неполные файлы; медиаклавиши."
             ),
             Page::Video => tr!(
                 "How video is decoded; the panels in fullscreen.",
                 "Как декодируется видео; панели в полноэкранном режиме."
-            ),
-            Page::Audio => tr!(
-                "Where the sound goes and with how many channels; the volume's boost and normalization.",
-                "Куда выводится звук и сколько в нём каналов; усиление и нормализация громкости."
-            ),
-            Page::Text => tr!(
-                "The font and the size of subtitles and of the on-screen messages.",
-                "Шрифт и размер субтитров и экранных сообщений."
             ),
             Page::Files => tr!(
                 "Registering MetalMPV with Windows for video and audio files.",
@@ -131,15 +117,9 @@ pub struct SettingsDialog {
 #[derive(Default)]
 pub struct Changed {
     pub hwdec: bool,
-    /// The subtitles' font or size.
-    pub subs: bool,
     pub osd_font: bool,
     /// Forget where the files were left.
     pub forget_positions: bool,
-    pub audio_channels: bool,
-    pub volume_max: bool,
-    pub normalize: bool,
-    pub passthrough: bool,
     /// The keys (`keymap::publish`).
     pub keys: bool,
     /// The accent colour (`style::set_accent`, the window icon).
@@ -154,14 +134,13 @@ impl SettingsDialog {
 
     /// Draw the window while it is open, editing `settings` and `updates`
     /// in place (the language is applied at once); `hwdec_current` is the
-    /// decoder mpv uses now, `audio_devices` the output devices there are.
+    /// decoder mpv uses now.
     pub fn show(
         &mut self,
         ctx: &egui::Context,
         settings: &mut Settings,
         updates: &mut Updates,
         hwdec_current: Option<&str>,
-        audio_devices: &[Device],
     ) -> Changed {
         let mut changed = Changed::default();
         if !self.open {
@@ -228,8 +207,8 @@ impl SettingsDialog {
                         egui::Button::new(tr!("Reset", "Сбросить")),
                     )
                     .on_hover_text(tr!(
-                        "Put the settings of this window and the equalizer back to their defaults",
-                        "Вернуть настройкам этого окна и эквалайзеру значения по умолчанию"
+                        "Put the settings of this window back to their defaults; the panel's are reset on the panel",
+                        "Вернуть настройкам этого окна значения по умолчанию; настройки панели сбрасываются на панели"
                     ))
                     .clicked()
                 {
@@ -281,10 +260,6 @@ impl SettingsDialog {
                                 Page::Updates => updates_page(ui, updates),
                                 Page::Playback => playback(ui, settings, &mut changed),
                                 Page::Video => changed.hwdec |= video(ui, settings, hwdec_current),
-                                Page::Audio => {
-                                    audio_page(ui, settings, audio_devices, &mut changed)
-                                }
-                                Page::Text => text(ui, settings, &mut changed),
                                 Page::Files => self.file_types.show(ui),
                                 Page::Keys => self.keys_page(ui, &mut settings.keys, &mut changed),
                             });
@@ -783,75 +758,72 @@ fn general(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
             |ui| switch(ui, &mut settings.channel_logos),
         );
     });
+    osd_section(ui, settings, changed);
 }
 
 fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
-    section(
-        ui,
-        tr!("Resume", "Продолжение просмотра"),
-        |ui| {
-            row(
-                ui,
-                tr!(
-                    "Go on from where it stopped",
-                    "Продолжать с места остановки"
-                ),
-                Some(&resume_hint()),
-                50.0,
-                |ui| switch(ui, &mut settings.resume_playback),
-            );
-            divider(ui);
-            row(
-                ui,
-                tr!("Remember the tracks", "Запоминать дорожки"),
-                Some(tr!(
-                    "A file opened again plays the audio track and the subtitles (or none) chosen in it last time.",
-                    "Файл при повторном открытии воспроизводится с той звуковой дорожкой и теми субтитрами (или без них), что были выбраны в нём в прошлый раз."
-                )),
-                50.0,
-                |ui| switch(ui, &mut settings.remember_tracks),
-            );
-            divider(ui);
-            row(
-                ui,
-                tr!(
-                    "Like tracks in new files",
-                    "В новых файлах — похожие дорожки"
-                ),
-                Some(tr!(
-                    "A file opened for the first time plays the audio track and the subtitles most like those last chosen by hand, by title and language: the same voice-over in the next episode of a series.",
-                    "Файл, открытый впервые, воспроизводится со звуковой дорожкой и субтитрами, больше всего похожими на последние выбранные вручную, по названию и языку: та же озвучка в следующей серии сериала."
-                )),
-                50.0,
-                |ui| switch(ui, &mut settings.prefer_last_tracks),
-            );
-            divider(ui);
-            row(
-                ui,
-                tr!("Remember the recent files", "Запоминать недавние файлы"),
-                Some(tr!(
-                    "The start screen lists the files played last; off, none are kept and the list is cleared.",
-                    "Стартовый экран показывает последние воспроизведённые файлы; выключено — они не запоминаются, а список очищается."
-                )),
-                50.0,
-                |ui| switch(ui, &mut settings.remember_recent),
-            );
-            divider(ui);
-            changed.forget_positions |= row(
-                ui,
-                tr!(
-                    "Remembered positions and tracks",
-                    "Запомненные позиции и дорожки"
-                ),
-                Some(tr!(
-                    "Also the recent files of the start screen.",
-                    "А также недавние файлы стартового экрана."
-                )),
-                160.0,
-                |ui| ui.button(tr!("Forget all", "Забыть всё")).clicked(),
-            );
-        },
-    );
+    section(ui, tr!("History", "История"), |ui| {
+        row(
+            ui,
+            tr!(
+                "Go on from where it stopped",
+                "Продолжать с места остановки"
+            ),
+            Some(&resume_hint()),
+            50.0,
+            |ui| switch(ui, &mut settings.resume_playback),
+        );
+        divider(ui);
+        row(
+            ui,
+            tr!("Remember the tracks", "Запоминать дорожки"),
+            Some(tr!(
+                "A file opened again plays the audio track and the subtitles (or none) chosen in it last time.",
+                "Файл при повторном открытии воспроизводится с той звуковой дорожкой и теми субтитрами (или без них), что были выбраны в нём в прошлый раз."
+            )),
+            50.0,
+            |ui| switch(ui, &mut settings.remember_tracks),
+        );
+        divider(ui);
+        row(
+            ui,
+            tr!(
+                "Like tracks in new files",
+                "В новых файлах — похожие дорожки"
+            ),
+            Some(tr!(
+                "A file opened for the first time plays the audio track and the subtitles most like those last chosen by hand, by title and language: the same voice-over in the next episode of a series.",
+                "Файл, открытый впервые, воспроизводится со звуковой дорожкой и субтитрами, больше всего похожими на последние выбранные вручную, по названию и языку: та же озвучка в следующей серии сериала."
+            )),
+            50.0,
+            |ui| switch(ui, &mut settings.prefer_last_tracks),
+        );
+        divider(ui);
+        row(
+            ui,
+            tr!("Remember the recent files", "Запоминать недавние файлы"),
+            Some(tr!(
+                "The start screen lists the files played last; off, none are kept and the list is cleared.",
+                "Стартовый экран показывает последние воспроизведённые файлы; выключено — они не запоминаются, а список очищается."
+            )),
+            50.0,
+            |ui| switch(ui, &mut settings.remember_recent),
+        );
+        divider(ui);
+        changed.forget_positions |= row(
+            ui,
+            tr!(
+                "Remembered positions and tracks",
+                "Запомненные позиции и дорожки"
+            ),
+            Some(tr!(
+                "Also the recent files of the start screen.",
+                "А также недавние файлы стартового экрана."
+            )),
+            160.0,
+            |ui| ui.button(tr!("Forget all", "Забыть всё")).clicked(),
+        );
+    });
     section(ui, tr!("Seek steps", "Шаги перемотки"), |ui| {
         row(
             ui,
@@ -861,8 +833,8 @@ fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                 tr!("Short step", "Короткий шаг"),
             ),
             Some(tr!(
-                "The short step, on keyframes.",
-                "Короткий шаг, по ключевым кадрам."
+                "On keyframes: instant, playback goes on from the keyframe nearest to the target.",
+                "По ключевым кадрам: мгновенно, воспроизведение продолжается с ключевого кадра, ближайшего к цели."
             )),
             120.0,
             |ui| step(ui, &mut settings.seek_short),
@@ -876,52 +848,13 @@ fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                 tr!("Long step", "Длинный шаг"),
             ),
             Some(tr!(
-                "The long step, on keyframes.",
-                "Длинный шаг, по ключевым кадрам."
+                "On keyframes, as the short one.",
+                "По ключевым кадрам, как и короткий."
             )),
             120.0,
             |ui| step(ui, &mut settings.seek_long),
         );
     });
-    note(
-        ui,
-        tr!(
-            "A seek on keyframes is instant: playback goes on from the keyframe nearest to the target.",
-            "Перемотка по ключевым кадрам мгновенна: воспроизведение продолжается с ключевого кадра, ближайшего к цели."
-        ),
-    );
-    section(
-        ui,
-        tr!("Exact seeking", "Точная перемотка"),
-        |ui| {
-            row(
-                ui,
-                &key_pair(
-                    Cmd::SeekExact(-1.0),
-                    Cmd::SeekExact(1.0),
-                    tr!("By a second", "На секунду"),
-                ),
-                Some(tr!(
-                    "Moves by 1 s to the exact frame.",
-                    "Перематывает на 1 с точно до кадра."
-                )),
-                0.0,
-                |_| (),
-            );
-            divider(ui);
-            row(
-                ui,
-                &key_pair(
-                    Cmd::Frame { forward: false },
-                    Cmd::Frame { forward: true },
-                    tr!("By a frame", "На кадр"),
-                ),
-                Some(tr!("Steps by one frame.", "Переходит на один кадр.")),
-                0.0,
-                |_| (),
-            );
-        },
-    );
     section(ui, tr!("Chapters", "Главы"), |ui| {
         row(
             ui,
@@ -1078,147 +1011,6 @@ pub fn device_choice(ui: &mut Ui, id: &str, chosen: &mut String, devices: &[Devi
 }
 
 /// The output device and channels, the volume's boost and normalization.
-fn audio_page(ui: &mut Ui, settings: &mut Settings, devices: &[Device], changed: &mut Changed) {
-    section(ui, tr!("Output", "Вывод"), |ui| {
-        let hint = if device_present(&settings.audio_device, devices) {
-            tr!(
-                "The sound moves to it at once. A device that is unplugged gives way to Windows' default until it is back.",
-                "Звук переходит на него сразу. Пока выбранное устройство отключено, звук идёт через устройство Windows по умолчанию."
-            )
-        } else {
-            tr!(
-                "The chosen device is not connected: the sound goes to Windows' default until it is back.",
-                "Выбранное устройство не подключено: звук идёт через устройство Windows по умолчанию, пока оно не вернётся."
-            )
-        };
-        row(
-            ui,
-            tr!("Device", "Устройство"),
-            Some(hint),
-            290.0,
-            |ui| {
-                device_choice(
-                    ui,
-                    "settings_audio_device",
-                    &mut settings.audio_device,
-                    devices,
-                    280.0,
-                );
-            },
-        );
-        divider(ui);
-        row(
-            ui,
-            tr!("Channels", "Каналы"),
-            Some(tr!(
-                "Auto: as the device is set up in Windows, more channels mixed down to it. A layout chosen by hand is what the sound is mixed to.",
-                "«Авто» — как устройство настроено в Windows, лишние каналы сводятся под него. Раскладка, выбранная вручную, — то, под что сводится звук."
-            )),
-            160.0,
-            |ui| {
-                let mut choice = settings.audio_channels;
-                egui::ComboBox::from_id_salt("settings_audio_channels")
-                    .selected_text(choice.label())
-                    .width(150.0)
-                    .show_ui(ui, |ui| {
-                        for c in Channels::ALL {
-                            ui.selectable_value(&mut choice, c, c.label());
-                        }
-                    });
-                if choice != settings.audio_channels {
-                    settings.audio_channels = choice;
-                    changed.audio_channels = true;
-                }
-            },
-        );
-        divider(ui);
-        row(
-            ui,
-            tr!("To a receiver as it is", "На ресивер без декодирования"),
-            Some(tr!(
-                "Dolby and DTS sound goes out compressed and the receiver decodes it; the volume, normalization and channels here do not apply to it, and Windows gives the device to the player alone. A format the device does not take is decoded as usual.",
-                "Звук Dolby и DTS уходит в сжатом виде, его декодирует ресивер; громкость, нормализация и каналы программы на него не действуют, а Windows отдаёт устройство только плееру. Формат, который устройство не принимает, декодируется как обычно."
-            )),
-            290.0,
-            |ui| {
-                let mut choice = settings.passthrough;
-                egui::ComboBox::from_id_salt("settings_passthrough")
-                    .selected_text(choice.label())
-                    .width(280.0)
-                    .show_ui(ui, |ui| {
-                        for p in Passthrough::ALL {
-                            ui.selectable_value(&mut choice, p, p.label());
-                        }
-                    });
-                if choice != settings.passthrough {
-                    settings.passthrough = choice;
-                    changed.passthrough = true;
-                }
-            },
-        );
-    });
-    section(ui, tr!("Volume", "Громкость"), |ui| {
-        row(
-            ui,
-            tr!("Volume boost", "Усиление громкости"),
-            Some(tr!(
-                "Lets the volume go past 100%; a loud passage may then distort.",
-                "Позволяет поднять громкость выше 100%; на громких местах возможны искажения."
-            )),
-            160.0,
-            |ui| {
-                let mut choice = settings.volume_max;
-                egui::ComboBox::from_id_salt("settings_volume_max")
-                    .selected_text(boost_label(choice))
-                    .width(150.0)
-                    .show_ui(ui, |ui| {
-                        for b in BOOSTS {
-                            ui.selectable_value(&mut choice, b, boost_label(b));
-                        }
-                    });
-                if choice != settings.volume_max {
-                    settings.volume_max = choice;
-                    changed.volume_max = true;
-                }
-            },
-        );
-        divider(ui);
-        if row(
-            ui,
-            tr!("Normalization", "Нормализация"),
-            Some(tr!(
-                "Evens out the volume as the film plays: quiet dialogue louder, loud scenes quieter.",
-                "Выравнивает громкость по ходу фильма: тихие диалоги громче, громкие сцены тише."
-            )),
-            50.0,
-            |ui| switch(ui, &mut settings.normalize),
-        )
-        .changed()
-        {
-            changed.normalize = true;
-        }
-    });
-    let [later, earlier, in_sync] = [1.0, -1.0, 0.0].map(|d| {
-        let key = shortcut(Cmd::AudioDelay(d));
-        if key.is_empty() {
-            tr!("(no key)", "(без клавиши)").to_owned()
-        } else {
-            key
-        }
-    });
-    note(
-        ui,
-        &tr!(
-            format!(
-                "{later} and {earlier} move the sound against the picture by 100 ms, {in_sync} puts it back."
-            ),
-            format!(
-                "{later} и {earlier} сдвигают звук относительно изображения на 100 мс, {in_sync} возвращает его на место."
-            )
-        ),
-    );
-}
-
 /// The keys of a pair of commands as a row's name (`← / →`), the keys
 /// changed on the Keys page included; `fallback` when neither has one.
 fn key_pair(back: Cmd, forward: Cmd, fallback: &str) -> String {
@@ -1245,36 +1037,8 @@ fn shorten(text: &str, chars: usize) -> String {
     }
 }
 
-/// The fonts and sizes of the subtitles and of the OSD line.
-fn text(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
-    section(ui, tr!("Subtitles", "Субтитры"), |ui| {
-        let chosen = row(
-            ui,
-            tr!("Font", "Шрифт"),
-            Some(tr!(
-                "For text subtitles (SRT and the like); ASS subtitles keep their own fonts unless Style for ASS too is on in the panel.",
-                "Для текстовых субтитров (SRT и подобных); у субтитров ASS свои шрифты, если на панели не включён «Стиль и для ASS»."
-            )),
-            230.0,
-            |ui| font_choice(ui, "sub_font", &settings.sub.font, 220.0),
-        );
-        if let Some(family) = chosen {
-            settings.sub.font = family.map(|f| f.name.clone()).unwrap_or_default();
-            changed.subs = true;
-        }
-        divider(ui);
-        changed.subs |= row(
-            ui,
-            tr!("Size", "Размер"),
-            Some(tr!(
-                "Of all subtitles, ASS included.",
-                "Всех субтитров, включая ASS."
-            )),
-            230.0,
-            |ui| percent(ui, &mut settings.sub.scale, crate::sub_style::SCALE_RANGE),
-        )
-        .changed();
-    });
+/// The font and the size of the OSD line, with a sample.
+fn osd_section(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
     section(
         ui,
         tr!("On-screen messages", "Экранные сообщения"),
@@ -1832,7 +1596,6 @@ fn step(ui: &mut Ui, value: &mut f64) {
 fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) {
     let d = Settings::default();
     changed.hwdec |= settings.hwdec != d.hwdec;
-    changed.subs |= settings.sub != d.sub;
     changed.osd_font |= settings.osd_font != d.osd_font;
     if settings.language != d.language {
         crate::i18n::set_lang(d.language.resolve());
@@ -1859,22 +1622,6 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.accent = d.accent;
     changed.keys |= settings.keys != d.keys;
     settings.keys = d.keys;
-    changed.audio_channels |= settings.audio_channels != d.audio_channels;
-    changed.volume_max |= settings.volume_max != d.volume_max;
-    changed.normalize |= settings.normalize != d.normalize || settings.equalizer != d.equalizer;
-    changed.passthrough |= settings.passthrough != d.passthrough;
-    settings.audio_device = d.audio_device;
-    settings.audio_channels = d.audio_channels;
-    settings.volume_max = d.volume_max;
-    settings.voice_boost = d.voice_boost;
-    settings.sub_ass_override = d.sub_ass_override;
-    settings.sub_margins = d.sub_margins;
-    settings.keep_adjust = d.keep_adjust;
-    settings.normalize = d.normalize;
-    // The equalizer is in the panel, but a setting kept like these.
-    settings.equalizer = d.equalizer;
-    settings.passthrough = d.passthrough;
-    settings.sub = d.sub;
     settings.osd_font = d.osd_font;
     settings.osd_font_file = d.osd_font_file;
     settings.osd_scale = d.osd_scale;

@@ -3276,15 +3276,13 @@ impl eframe::App for App {
             self.fullscreen_controls(&ctx, &state, &title, &mut cmds);
         }
 
-        // Before the settings too: their Reset sets these, and no flag of
-        // `Changed` tells.
+        // As before the panel changes them.
         let layout_before = (self.settings.sub_ass_override, self.settings.sub_margins);
         let changed = self.settings_dialog.show(
             &ctx,
             &mut self.settings,
             &mut self.updates,
             state.hwdec.as_deref(),
-            &state.audio_devices,
         );
         if changed.keys {
             crate::keymap::publish(&self.settings.keys);
@@ -3310,22 +3308,6 @@ impl eframe::App for App {
             if !self.settings.remember_recent {
                 self.settings.recent.clear();
             }
-        }
-        if let Some(player) = &mut self.player {
-            if changed.audio_channels {
-                player.set_channels(self.settings.audio_channels);
-            }
-            if changed.volume_max {
-                player.set_volume_max(self.settings.volume_max);
-            }
-            if changed.passthrough {
-                player.set_passthrough(self.settings.passthrough);
-            }
-        }
-        if changed.subs
-            && let Some(player) = &mut self.player
-        {
-            player.set_sub_style(&self.settings.sub);
         }
         if changed.forget_positions {
             self.positions.clear();
@@ -3394,12 +3376,17 @@ impl eframe::App for App {
         cmds.extend(info_cmds);
         let before = self.adjust.clone();
         let subs_before = self.settings.sub.clone();
-        let output_before = (self.settings.audio_channels, self.settings.volume_max);
+        let output_before = (
+            self.settings.audio_channels,
+            self.settings.volume_max,
+            self.settings.passthrough,
+        );
         let voice_boost = self.settings.voice_boost;
         let kept = ui::picture::Kept {
             audio_device: &mut self.settings.audio_device,
             devices: &state.audio_devices,
             channels: &mut self.settings.audio_channels,
+            passthrough: &mut self.settings.passthrough,
             volume_max: &mut self.settings.volume_max,
             normalize: &mut self.settings.normalize,
             voice_boost: &mut self.settings.voice_boost,
@@ -3450,6 +3437,9 @@ impl eframe::App for App {
             }
             if self.settings.volume_max != output_before.1 {
                 player.set_volume_max(self.settings.volume_max);
+            }
+            if self.settings.passthrough != output_before.2 {
+                player.set_passthrough(self.settings.passthrough);
             }
         }
         self.sync_audio_filters(&ctx, &state);
