@@ -735,6 +735,10 @@ pub struct Player {
     /// Filters on the processor: hardware decoding copies the frames.
     hwdec_copy: bool,
     last_seek: Option<SeekMark>,
+    /// The audio filters mpv has, and those before the last change
+    /// ([`Player::resync_audio`]).
+    af: String,
+    af_before: String,
     /// Stopped where the file's data ran out ([`Happened::NoData`]): Play
     /// goes on from here (the data there was played; the download may
     /// have gone on meanwhile), not from the start.
@@ -770,6 +774,8 @@ impl Player {
             hwdec_copy: false,
             last_seek: None,
             data_end_at: None,
+            af: String::new(),
+            af_before: String::new(),
         };
         player.set_channels(setup.channels);
         player.set_audio_filters(&audio::filters(setup.normalize, &setup.equalizer, None));
@@ -1115,16 +1121,38 @@ impl Player {
     pub fn set_audio_device(&mut self, name: &str) {
         let name = if name.is_empty() { "auto" } else { name };
         self.mpv.set("audio-device", &Value::Str(name.into()));
+        self.resync_audio(false);
     }
 
     pub fn set_channels(&mut self, channels: Channels) {
         self.mpv
             .set("audio-channels", &Value::Str(channels.option().into()));
+        self.resync_audio(false);
+    }
+
+    /// After the sound's chain was built anew (the device, the channels,
+    /// the filters): play the sound on from where the picture is. The
+    /// normalization's filter holds seconds of sound (its window), which
+    /// is dropped with the chain, and mpv went on from where its decoder
+    /// had got to, in silence until the picture caught up: eight seconds.
+    /// An exact seek to the position decodes the sound from here again
+    /// (0.2 s). Only with that filter, in the chain before or now
+    /// (`filters_changed`): without it the gap is the device's reopening
+    /// alone, and a seek would only make the picture stutter.
+    fn resync_audio(&mut self, filters_changed: bool) {
+        let holds = |af: &str| af.contains("dynaudnorm");
+        let needed = holds(&self.af) || (filters_changed && holds(&self.af_before));
+        if needed && !self.state.idle && !self.loading {
+            log::debug!("the sound's chain was rebuilt: seeking to the position");
+            self.mpv.command(0, &["seek", "0", "relative+exact"]);
+        }
     }
 
     /// The audio filters: `audio::filters`'s.
     pub fn set_audio_filters(&mut self, af: &str) {
         self.mpv.set("af", &Value::Str(af.to_owned()));
+        self.af_before = std::mem::replace(&mut self.af, af.to_owned());
+        self.resync_audio(true);
     }
 
     /// Give mpv what changed from `old` to `new` in the picture's
@@ -1191,6 +1219,7 @@ impl Player {
     pub fn set_passthrough(&mut self, passthrough: Passthrough) {
         self.mpv
             .set("audio-spdif", &Value::Str(passthrough.option().into()));
+        self.resync_audio(false);
     }
 
     /// The sound against the picture, in seconds; kept between files.
@@ -1443,6 +1472,8 @@ mod tests {
             hwdec_copy: false,
             last_seek: None,
             data_end_at: None,
+            af: String::new(),
+            af_before: String::new(),
         };
         for (prop, name, format) in PROPS {
             player.mpv.observe(prop as u64, name, format);
@@ -1529,6 +1560,8 @@ mod tests {
             hwdec_copy: false,
             last_seek: None,
             data_end_at: None,
+            af: String::new(),
+            af_before: String::new(),
         };
         for (prop, name, format) in PROPS {
             player.mpv.observe(prop as u64, name, format);
@@ -1643,6 +1676,8 @@ mod tests {
             hwdec_copy: false,
             last_seek: None,
             data_end_at: None,
+            af: String::new(),
+            af_before: String::new(),
         };
         player
             .mpv
@@ -1894,6 +1929,8 @@ mod tests {
             hwdec_copy: false,
             last_seek: None,
             data_end_at: None,
+            af: String::new(),
+            af_before: String::new(),
         };
         let style = SubStyle {
             font: "Arial".into(),
@@ -1953,6 +1990,87 @@ mod tests {
     /// takes the colour, the rotation, the filters and the debanding, the
     /// filters run, and a frame is saved. `cargo test picture_adjustments
     /// -- --ignored --nocapture` with METALMPV_SAMPLE.
+    /// How long the sound stops when the channels change: a real output
+    /// (it plays aloud, quietly), mpv's verbose log with the time since
+    /// the change. `cargo test channel_switch -- --ignored --nocapture`
+    /// with METALMPV_SAMPLE and METALMPV_CHANNELS (default `mono`).
+    #[test]
+    #[ignore = "needs vendor/libmpv, a sample video and a sound card"]
+    fn channel_switch_timing() {
+        let sample = std::env::var("METALMPV_SAMPLE")
+            .unwrap_or_else(|_| "D:/Projects/video_converter/samples/test.mp4".into());
+        let to = std::env::var("METALMPV_CHANNELS").unwrap_or_else(|_| "mono".into());
+        let api = sys::api().unwrap();
+        // The app's options (METALMPV_APP_OPTIONS=1), the picture to null.
+        let mut opts: Vec<(&str, &str)> = if std::env::var("METALMPV_APP_OPTIONS").is_ok() {
+            options(true)
+                .into_iter()
+                .filter(|(n, _)| *n != "vo" && *n != "msg-level")
+                .collect()
+        } else {
+            vec![("idle", "yes"), ("terminal", "no")]
+        };
+        opts.extend([
+            ("vo", "null"),
+            ("volume", "20"),
+            ("audio-channels", "auto-safe"),
+        ]);
+        let mut mpv = Mpv::new(api, &opts).unwrap();
+        if let Ok(buffer) = std::env::var("METALMPV_AUDIO_BUFFER") {
+            mpv.set("audio-buffer", &Value::Str(buffer));
+        }
+        // METALMPV_NORMALIZE=1: with the normalization's filter, which
+        // holds seconds of sound; METALMPV_RESYNC=1: seek to where the
+        // picture is after the change, as the app does.
+        if std::env::var("METALMPV_NORMALIZE").is_ok() {
+            mpv.set("af", &Value::Str(audio::NORMALIZE_FILTER.into()));
+        }
+        let resync = std::env::var("METALMPV_RESYNC").is_ok();
+        mpv.request_log_messages("v");
+        mpv.observe(1, "audio-out-params", sys::MPV_FORMAT_NODE);
+        mpv.observe(2, "time-pos", sys::MPV_FORMAT_DOUBLE);
+        mpv.command(0, &["loadfile", &sample]);
+        let start = std::time::Instant::now();
+        let mut switched: Option<std::time::Instant> = None;
+        let wanted = |text: &str, prefix: &str| {
+            ["ao", "ao/wasapi", "af", "cplayer", "ad"].contains(&prefix)
+                && !text.contains("time-pos")
+        };
+        while start.elapsed() < std::time::Duration::from_secs(8) {
+            if switched.is_none() && start.elapsed() > std::time::Duration::from_secs(3) {
+                eprintln!("--- audio-channels={to}");
+                mpv.set("audio-channels", &Value::Str(to.clone()));
+                if resync {
+                    mpv.command(0, &["seek", "0", "relative+exact"]);
+                }
+                switched = Some(std::time::Instant::now());
+            }
+            let ms = |t: Option<std::time::Instant>| {
+                t.map_or(String::from("   -"), |t| {
+                    format!("{:5.0}", t.elapsed().as_secs_f64() * 1000.0)
+                })
+            };
+            while let Some(event) = mpv.next_event() {
+                match event {
+                    Event::Log { prefix, text, .. }
+                        if switched.is_some() && wanted(&text, &prefix) =>
+                    {
+                        eprintln!("{} ms [{prefix}] {text}", ms(switched));
+                    }
+                    Event::Property { id: 1, value } if switched.is_some() => {
+                        eprintln!(
+                            "{} ms audio-out-params {:?}",
+                            ms(switched),
+                            value.get("channels")
+                        );
+                    }
+                    _ => {}
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
     /// The panel's options mpv must take as given: each is set, read back
     /// and compared; the errors mpv logs fail it. `cargo test
     /// panel_options -- --ignored --nocapture` with METALMPV_SAMPLE.
@@ -2065,6 +2183,8 @@ mod tests {
             hwdec_copy: false,
             last_seek: None,
             data_end_at: None,
+            af: String::new(),
+            af_before: String::new(),
         };
         let mut new = Adjust::default();
         new.set(Color::Brightness, 10);
