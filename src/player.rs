@@ -989,18 +989,21 @@ impl Player {
         if let Some(t) = start {
             options.push(format!("start={t:.3}"));
         }
-        if let Some(t) = tracks {
-            options.push(format!("aid={}", id(t.audio)));
-            options.push(format!("sid={}", id(t.sub)));
+        // Always given: setting `aid`/`sid`/`vid` during a file sets mpv's
+        // option too, and the next file would start with that track number
+        // (or none) instead of mpv's choice.
+        match tracks {
+            Some(t) => {
+                options.push(format!("aid={}", id(t.audio)));
+                options.push(format!("sid={}", id(t.sub)));
+            }
+            None => options.extend(["aid=auto".to_owned(), "sid=auto".to_owned()]),
         }
-        if options.is_empty() {
-            self.mpv.command(LOAD, &["loadfile", &path, "replace"]);
-        } else {
-            // The index (-1) comes before the options since mpv 0.38.
-            let options = options.join(",");
-            self.mpv
-                .command(LOAD, &["loadfile", &path, "replace", "-1", &options]);
-        }
+        options.push("vid=auto".to_owned());
+        // The index (-1) comes before the options since mpv 0.38.
+        let options = options.join(",");
+        self.mpv
+            .command(LOAD, &["loadfile", &path, "replace", "-1", &options]);
         self.state.paused = false;
         self.state.eof = false;
         self.loading = true;
@@ -1781,6 +1784,64 @@ mod tests {
             );
         }
         assert!(found.iter().any(|t| t.kind == Kind::Video));
+    }
+
+    /// A track chosen in one file is not carried to the next:
+    /// `cargo test tracks_start_afresh -- --ignored` (a video with sound in
+    /// METALMPV_SAMPLE, or the default below).
+    #[test]
+    #[ignore = "needs vendor/libmpv and a sample video with sound"]
+    fn tracks_start_afresh() {
+        let sample = std::env::var("METALMPV_SAMPLE")
+            .unwrap_or_else(|_| "D:/Projects/video_converter/samples/test.mp4".into());
+        let api = sys::api().unwrap();
+        let mpv = Mpv::new(
+            api,
+            &[
+                ("vo", "null"),
+                ("ao", "null"),
+                ("idle", "yes"),
+                ("terminal", "no"),
+            ],
+        )
+        .unwrap();
+        let mut player = Player {
+            mpv,
+            state: State::default(),
+            scan_asked: None,
+            live_asked: None,
+            loading: false,
+            hwdec: true,
+            hwdec_copy: false,
+            last_seek: None,
+            data_end_at: None,
+            af: String::new(),
+            af_before: String::new(),
+        };
+        observe_all(&player.mpv);
+        let wait = |player: &mut Player, until: &dyn Fn(&State) -> bool| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while std::time::Instant::now() < deadline {
+                player.poll();
+                if until(&player.state) {
+                    return true;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            false
+        };
+        let playing = |s: &State| tracks::selected(&s.tracks, Kind::Audio).is_some();
+        player.load(Path::new(&sample), None, None);
+        assert!(wait(&mut player, &playing), "no audio track at first");
+        player.select_track(Kind::Audio, None);
+        player.select_track(Kind::Video, None);
+        assert!(wait(&mut player, &|s| s.tracks.iter().all(|t| !t.selected)));
+        player.load(Path::new(&sample), None, None);
+        assert!(
+            wait(&mut player, &|s| playing(s)
+                && tracks::selected(&s.tracks, Kind::Video).is_some()),
+            "the next file kept the tracks turned off"
+        );
     }
 
     /// The playback's figures and the tracks' ids on a real file without a

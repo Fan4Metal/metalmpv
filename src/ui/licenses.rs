@@ -198,9 +198,7 @@ mod tests {
             .iter()
             .enumerate()
             .filter(|&(i, line)| {
-                !(i > 0
-                    && lines[i - 1] == "name = \"metalmpv\""
-                    && line.starts_with("version = "))
+                !(i > 0 && lines[i - 1] == "name = \"metalmpv\"" && line.starts_with("version = "))
             })
             .map(|(_, line)| *line)
             .collect();
