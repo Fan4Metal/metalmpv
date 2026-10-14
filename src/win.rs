@@ -1186,7 +1186,18 @@ pub fn local_time(time: std::time::SystemTime) -> Option<[u16; 6]> {
             universal: *const SYSTEMTIME,
             local: *mut SYSTEMTIME,
         ) -> i32;
+        fn GetDynamicTimeZoneInformation(zone: *mut DynamicZone) -> u32;
+        fn SystemTimeToTzSpecificLocalTimeEx(
+            zone: *const DynamicZone,
+            universal: *const SYSTEMTIME,
+            local: *mut SYSTEMTIME,
+        ) -> i32;
     }
+    /// `DYNAMIC_TIME_ZONE_INFORMATION`, only passed on: 432 bytes, aligned
+    /// as its `LONG`s.
+    #[repr(C, align(4))]
+    struct DynamicZone([u8; 432]);
+    const TIME_ZONE_ID_INVALID: u32 = u32::MAX;
     // FILETIME: 100 ns intervals since 1601.
     let since = time.duration_since(std::time::UNIX_EPOCH).ok()?;
     let ticks = u64::try_from(since.as_nanos() / 100).ok()? + 116_444_736_000_000_000;
@@ -1196,9 +1207,16 @@ pub fn local_time(time: std::time::SystemTime) -> Option<[u16; 6]> {
     };
     let mut universal: SYSTEMTIME = unsafe { std::mem::zeroed() };
     let mut local: SYSTEMTIME = unsafe { std::mem::zeroed() };
+    // The zone with its rules of each year (Moscow was UTC+4 in 2011-2014):
+    // with no zone given, this year's rules were used for every date.
+    let mut zone = DynamicZone([0; 432]);
     let ok = unsafe {
         FileTimeToSystemTime(&file_time, &mut universal) != 0
-            && SystemTimeToTzSpecificLocalTime(std::ptr::null(), &universal, &mut local) != 0
+            && if GetDynamicTimeZoneInformation(&mut zone) != TIME_ZONE_ID_INVALID {
+                SystemTimeToTzSpecificLocalTimeEx(&zone, &universal, &mut local) != 0
+            } else {
+                SystemTimeToTzSpecificLocalTime(std::ptr::null(), &universal, &mut local) != 0
+            }
     };
     ok.then_some([
         local.wYear,
@@ -1221,6 +1239,21 @@ pub fn double_click_time() -> f64 {
 
 #[cfg(test)]
 mod tests {
+    /// A date takes the zone's rules of its year: on a Moscow machine,
+    /// 2013 was UTC+4 and 2020 UTC+3 (elsewhere only the call is tried).
+    #[test]
+    fn local_time_by_the_rules_of_the_year() {
+        let at = |secs| std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs);
+        // 2020-07-01 and 2013-07-01, 00:00 UTC.
+        let (now, then) = (
+            super::local_time(at(1_593_561_600)).unwrap(),
+            super::local_time(at(1_372_636_800)).unwrap(),
+        );
+        if now[3] == 3 && then[0] == 2013 {
+            assert_eq!(then[3], 4, "{then:?}");
+        }
+    }
+
     #[test]
     fn media_keys() {
         use super::{MediaKey, media_command, media_vk};
