@@ -122,7 +122,7 @@ pub enum Cmd {
     ShowInFolder,
     /// The time in the control bar: both, elapsed, remaining (a click on it).
     CycleTime,
-    /// The position, the duration and the chapter on the OSD (`O`).
+    /// The position, the duration and the chapter on the OSD (`Tab`).
     ShowPosition,
     /// Size the window for the picture at this part of the video's size
     /// (`1` to `4`: 0.5, 1, 1.5, 2).
@@ -146,6 +146,14 @@ pub enum Cmd {
     SetInterface(crate::settings::Interface),
     /// Force the picture's shape, or the file's again (the context menu).
     SetAspect(crate::adjust::Aspect),
+    /// The picture's adjustments back to none, as the panel's Video tab's
+    /// Reset all (`Q`).
+    ResetPicture,
+    /// The subtitles' look back to the default (the Subtitles tab's Reset
+    /// all).
+    ResetSubStyle,
+    /// The equalizer flat and off.
+    ResetEqualizer,
     Minimize,
     ToggleMaximize,
     Close,
@@ -338,8 +346,13 @@ mod tests {
         assert_eq!(default_command(Key::E, ctrl, false), Some(Cmd::SaveFrame));
         assert_eq!(default_command(Key::E, none, false), None);
         assert_eq!(
-            default_command(Key::O, none, false),
+            default_command(Key::Tab, none, false),
             Some(Cmd::ShowPosition)
+        );
+        assert_eq!(default_command(Key::O, none, false), None);
+        assert_eq!(
+            default_command(Key::Q, none, false),
+            Some(Cmd::ResetPicture)
         );
         assert_eq!(
             default_command(Key::F11, none, false),

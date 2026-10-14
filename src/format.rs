@@ -312,6 +312,12 @@ pub enum Osd {
     FitScreen,
     /// The window sized to the picture, without the bars.
     FitWindow,
+    /// The picture's adjustments put back to none.
+    ResetPicture,
+    /// The subtitles' look put back to the default.
+    ResetSubStyle,
+    /// The equalizer flat and off.
+    ResetEqualizer,
     /// Fullscreen with the picture filling the screen, cropped, or the
     /// picture whole again.
     Fill(bool),
@@ -459,6 +465,18 @@ impl Osd {
             Osd::FitWindow => match ru {
                 false => "[ Window fitted to the picture ]".into(),
                 true => "[ Окно по размеру картинки ]".into(),
+            },
+            Osd::ResetPicture => match ru {
+                false => "[ Picture settings reset ]".into(),
+                true => "[ Настройки изображения сброшены ]".into(),
+            },
+            Osd::ResetSubStyle => match ru {
+                false => "[ Subtitles' look reset ]".into(),
+                true => "[ Вид субтитров сброшен ]".into(),
+            },
+            Osd::ResetEqualizer => match ru {
+                false => "[ Equalizer reset ]".into(),
+                true => "[ Эквалайзер сброшен ]".into(),
             },
             Osd::Fill(on) => match (on, ru) {
                 (true, false) => "[ Fullscreen without black bars ]".into(),

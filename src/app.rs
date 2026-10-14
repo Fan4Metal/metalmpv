@@ -1373,6 +1373,26 @@ impl App {
                     (aspect != crate::adjust::Aspect::Auto).then(|| aspect.label().to_owned()),
                 ));
             }
+            Cmd::ResetPicture => {
+                let before = std::mem::take(&mut self.adjust);
+                if let Some(player) = &mut self.player {
+                    player.adjust(&before, &self.adjust);
+                }
+                self.osd.show(Osd::ResetPicture);
+            }
+            Cmd::ResetSubStyle => {
+                self.settings.sub = crate::sub_style::SubStyle::default();
+                if let Some(player) = &mut self.player {
+                    player.set_sub_style(&self.settings.sub);
+                }
+                self.osd.show(Osd::ResetSubStyle);
+            }
+            Cmd::ResetEqualizer => {
+                // The filters follow in `sync_audio_filters`, next frame.
+                self.settings.equalizer = crate::audio::Equalizer::default();
+                self.osd.show(Osd::ResetEqualizer);
+                ctx.request_repaint();
+            }
             Cmd::ToggleInterface => {
                 let interface = if self.interface() == Interface::Bare {
                     self.before_bare
@@ -3260,6 +3280,9 @@ impl eframe::App for App {
             if let Some(id) = ctx.memory(|m| m.focused()) {
                 ctx.memory_mut(|m| m.surrender_focus(id));
             }
+            // Nor do Tab and the arrows move the focus to a widget this
+            // frame: they are the player's keys (Tab the position).
+            ctx.memory_mut(|m| m.move_focus(egui::FocusDirection::None));
             cmds.extend(input::keys(&ctx, &self.settings.keys));
         }
 

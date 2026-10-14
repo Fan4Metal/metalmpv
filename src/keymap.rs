@@ -183,6 +183,7 @@ fn key_label(key: Key) -> &'static str {
         Key::ArrowDown => "↓",
         Key::Space => tr!("Space", "Пробел"),
         Key::Escape => "Esc",
+        Key::Tab => "Tab",
         Key::PageUp => "PgUp",
         Key::PageDown => "PgDn",
         Key::Minus => "-",
@@ -282,7 +283,7 @@ actions! {
     Faster "faster" Playback Cmd::Speed(1), [Chord::key(Key::C)];
     Slower "slower" Playback Cmd::Speed(-1), [Chord::key(Key::X)];
     NormalSpeed "normal_speed" Playback Cmd::Speed(0), [Chord::key(Key::Z)];
-    Position "position" Playback Cmd::ShowPosition, [Chord::key(Key::O)];
+    Position "position" Playback Cmd::ShowPosition, [Chord::key(Key::Tab)];
     GoToTime "go_to_time" Playback Cmd::GoToTime, [Chord::ctrl(Key::G)];
     Repeat "repeat" Playback Cmd::CycleRepeat, [Chord::key(Key::R)];
     LoopA "loop_a" Playback Cmd::LoopA, [Chord::key(Key::OpenBracket)];
@@ -305,6 +306,8 @@ actions! {
         [Chord::ctrl(Key::Equals), Chord::ctrl(Key::Plus)];
     SoundEarlier "sound_earlier" Sound Cmd::AudioDelay(-1.0), [Chord::ctrl(Key::Minus)];
     SoundInSync "sound_in_sync" Sound Cmd::AudioDelay(0.0), [Chord::ctrl(Key::Num0)];
+    ResetSubStyle "reset_sub_style" Sound Cmd::ResetSubStyle, [];
+    ResetEqualizer "reset_equalizer" Sound Cmd::ResetEqualizer, [];
 
     Fullscreen "fullscreen" Window Cmd::ToggleFullscreen,
         [Chord::key(Key::Enter), Chord::of(Press::Key(Key::Enter), false, true, false),
@@ -317,6 +320,7 @@ actions! {
     FitScreen "fit_screen" Window Cmd::FitScreen, [Chord::key(Key::Num5)];
     FitWindow "fit_window" Window Cmd::FitWindow, [Chord::key(Key::Backtick)];
     Fill "fill" Window Cmd::ToggleFill, [Chord::key(Key::Num6)];
+    ResetPicture "reset_picture" Window Cmd::ResetPicture, [Chord::key(Key::Q)];
     Interface "interface" Window Cmd::ToggleInterface, [Chord::key(Key::Num7)];
     Interfaces "interfaces" Window Cmd::CycleInterface, [Chord::key(Key::Num8)];
     OnTop "on_top" Window Cmd::CycleOnTop, [Chord::ctrl(Key::T)];
@@ -401,6 +405,11 @@ impl Action {
             Action::SoundLater => tr!("Sound later by 100 ms", "Звук позже на 100 мс"),
             Action::SoundEarlier => tr!("Sound earlier by 100 ms", "Звук раньше на 100 мс"),
             Action::SoundInSync => tr!("Sound as it was", "Звук как было"),
+            Action::ResetSubStyle => tr!("Reset the subtitles' look", "Сбросить вид субтитров"),
+            Action::ResetEqualizer => tr!(
+                "Reset the equalizer (flat, off)",
+                "Сбросить эквалайзер (ровный, выкл.)"
+            ),
             Action::Fullscreen => tr!("Fullscreen", "Полный экран"),
             Action::Escape => tr!(
                 "Close what is open, leave fullscreen, bring the interface back; else close the program",
@@ -424,6 +433,10 @@ impl Action {
             Action::Fill => tr!(
                 "Fullscreen without black bars (crops) / with them",
                 "Полный экран без чёрных полос (с обрезкой) / с полосами"
+            ),
+            Action::ResetPicture => tr!(
+                "Reset the picture's settings (colour, zoom, filters, turns)",
+                "Сбросить настройки изображения (цвет, масштаб, фильтры, повороты)"
             ),
             Action::Interface => tr!(
                 "Only the picture / the interface again",

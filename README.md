@@ -155,7 +155,7 @@ The sound and the look of the subtitles are set on the Video, sound and subtitle
 
 ## Keyboard shortcuts
 
-The keys below are the defaults. In the settings, the **Keyboard shortcuts** category lists the actions in groups, each with its keys: a click on a key waits for the key combination (or the mouse's back or forward button, with `Ctrl`, `Alt` or `Shift` if wanted) that takes its place, **+** adds one more, the cross removes it, and `Esc` gives up. A combination another action had is taken from that action, and the page says so, with **Undo** beside. A search field above the groups leaves the actions whose name or keys contain the text typed. A few actions without a default key can be given one: Stop, A-B repeat: start, end, off (one key for the three in turn), Load subtitles, Equalizer, Playlist in a window of its own / in the player, Minimize and Maximize. **Reset the keys** puts them all back. The menus and tooltips show the keys as they are set. The mouse wheel, the double and middle clicks and the media keys stay as described; `Ctrl+V` and `Shift+Insert` cannot be chosen, and `Ctrl+Insert` is taken as `Ctrl+C`.
+The keys below are the defaults. In the settings, the **Keyboard shortcuts** category lists the actions in groups, each with its keys: a click on a key waits for the key combination (or the mouse's back or forward button, with `Ctrl`, `Alt` or `Shift` if wanted) that takes its place, **+** adds one more, the cross removes it, and `Esc` gives up. A combination another action had is taken from that action, and the page says so, with **Undo** beside. A search field above the groups leaves the actions whose name or keys contain the text typed. A few actions without a default key can be given one: Stop, A-B repeat: start, end, off (one key for the three in turn), Load subtitles, Equalizer, Reset the equalizer (flat, off), Reset the subtitles' look, Playlist in a window of its own / in the player, Minimize and Maximize. **Reset the keys** puts them all back. The menus and tooltips show the keys as they are set. The mouse wheel, the double and middle clicks and the media keys stay as described; `Ctrl+V` and `Shift+Insert` cannot be chosen, and `Ctrl+Insert` is taken as `Ctrl+C`.
 
 | Key | Action |
 |---|---|
@@ -171,7 +171,7 @@ The keys below are the defaults. In the settings, the **Keyboard shortcuts** cat
 | `I` | The file information window |
 | `U`, `F7` | The Video, sound and subtitles panel |
 | `Ctrl+E` | Save the frame (into Pictures\MetalMPV unless another folder is chosen) |
-| `O` | Shows the position, the duration and the chapter playing on the screen |
+| `Tab` | Shows the position, the duration and the chapter playing on the screen |
 | `Ctrl+G` | Go to time: a window for a time in the file |
 | `A` | Next audio track |
 | `S`, `J` | Next subtitles; after the last, none |
@@ -188,6 +188,7 @@ The keys below are the defaults. In the settings, the **Keyboard shortcuts** cat
 | `5` | The largest window the screen holds, without black bars |
 | `` ` `` | Window fitted to the picture, without black bars |
 | `6` | Fullscreen without black bars (the picture cropped); again, with them |
+| `Q` | Reset the picture's settings: colour, zoom, filters, turns (as **Reset all** on the panel's Video tab) |
 | `7` | Only the picture, without the title row, the control bar and the playlist; again, the interface returns |
 | `8` | Interface: full, without the title row, compact, only the picture, in turn (also in the context menu) |
 | `Esc` | Closes the file information window, else the tracks window, else the Video, sound and subtitles panel, else the playlist shown in fullscreen, else leaves fullscreen, else brings the interface back after `7`, else closes the program |
