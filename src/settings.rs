@@ -297,6 +297,8 @@ const SUB_ASS_OVERRIDE: &str = "sub_ass_override";
 const SUB_MARGINS: &str = "sub_margins";
 const VOICE_BOOST: &str = "voice_boost";
 const UPMIX: &str = "upmix";
+const NORMALIZE_STRENGTH: &str = "normalize_strength";
+const VOICE_LEVEL: &str = "voice_level";
 const LFE_CUT: &str = "lfe_cut";
 const BASS_ONLY: &str = "bass_only";
 const LFE_LEVEL: &str = "lfe_level";
@@ -518,6 +520,10 @@ pub struct Settings {
     /// Stereo spread over 5.1 (`audio::Upmix`), where the output can have
     /// more than two channels, with the subwoofer's cut and mode.
     pub upmix: bool,
+    /// How strongly the normalization works.
+    pub normalize_strength: audio::Normalize,
+    /// How much clearer speech raises the voice, in dB.
+    pub voice_db: i64,
     pub upmix_lfe: audio::Upmix,
     /// The equalizer's gains the user saved; not a setting, Reset keeps
     /// them.
@@ -614,6 +620,8 @@ impl Default for Settings {
             normalize: false,
             voice_boost: false,
             upmix: false,
+            normalize_strength: audio::Normalize::Medium,
+            voice_db: audio::VOICE_DEFAULT,
             upmix_lfe: audio::Upmix::default(),
             eq_presets: Vec::new(),
             equalizer: audio::Equalizer::default(),
@@ -670,7 +678,7 @@ impl Settings {
             mute: self.mute,
             volume_max: self.volume_max,
             channels: self.audio_channels,
-            normalize: self.normalize,
+            normalize: self.normalize.then_some(self.normalize_strength),
             equalizer: self.equalizer.clone(),
             passthrough: self.passthrough,
         }
@@ -773,6 +781,19 @@ impl Settings {
             normalize: flag(NORMALIZE, d.normalize),
             voice_boost: flag(VOICE_BOOST, d.voice_boost),
             upmix: flag(UPMIX, d.upmix),
+            normalize_strength: get(NORMALIZE_STRENGTH)
+                .as_deref()
+                .and_then(audio::Normalize::from_name)
+                .unwrap_or(d.normalize_strength),
+            voice_db: number(
+                VOICE_LEVEL,
+                {
+                    let r = audio::VOICE_RANGE;
+                    *r.start() as f64..=*r.end() as f64
+                },
+                d.voice_db as f64,
+            )
+            .round() as i64,
             upmix_lfe: audio::Upmix {
                 lfe_cut: number(
                     LFE_CUT,
@@ -971,6 +992,8 @@ impl Settings {
         storage.set_string(NORMALIZE, self.normalize.to_string());
         storage.set_string(VOICE_BOOST, self.voice_boost.to_string());
         storage.set_string(UPMIX, self.upmix.to_string());
+        storage.set_string(NORMALIZE_STRENGTH, self.normalize_strength.name().into());
+        storage.set_string(VOICE_LEVEL, self.voice_db.to_string());
         storage.set_string(LFE_CUT, self.upmix_lfe.lfe_cut.to_string());
         storage.set_string(BASS_ONLY, self.upmix_lfe.bass_only.to_string());
         storage.set_string(LFE_LEVEL, self.upmix_lfe.lfe_level.to_string());
@@ -1106,6 +1129,8 @@ mod tests {
             normalize: true,
             voice_boost: true,
             upmix: true,
+            normalize_strength: audio::Normalize::Strong,
+            voice_db: 7,
             upmix_lfe: audio::Upmix {
                 lfe_cut: 120,
                 bass_only: true,

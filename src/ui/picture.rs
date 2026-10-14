@@ -102,6 +102,8 @@ pub struct Kept<'a> {
     pub passthrough: &'a mut Passthrough,
     pub volume_max: &'a mut f64,
     pub normalize: &'a mut bool,
+    pub normalize_strength: &'a mut audio::Normalize,
+    pub voice_db: &'a mut i64,
     pub voice_boost: &'a mut bool,
     pub upmix: &'a mut bool,
     pub upmix_lfe: &'a mut audio::Upmix,
@@ -624,6 +626,24 @@ fn sound_tab(
             "Выравнивает громкость по ходу фильма: тихие диалоги громче, громкие сцены тише. Не действует на звук, передаваемый на ресивер без декодирования"
         )),
     );
+    // A function's settings only while it is on: the tab grew long.
+    if *kept.normalize {
+        combo_row(
+            ui,
+            tr!("Strength", "Сила"),
+            "panel_normalize_strength",
+            kept.normalize_strength.label(),
+            Some(tr!(
+                "Soft: raises quiet passages 3 times at most and follows slowly, the change hardly heard. Medium: 5 times. Strong: 10 times and quickly, whispers and blasts alike, for the night",
+                "Мягкая: поднимает тихие места не больше чем в 3 раза и подстраивается медленно, изменения почти не слышны. Средняя: в 5 раз. Сильная: в 10 раз и быстро, шёпот и взрывы почти вровень, для ночного просмотра"
+            )),
+            |ui| {
+                for n in audio::Normalize::ALL {
+                    ui.selectable_value(kept.normalize_strength, n, n.label());
+                }
+            },
+        );
+    }
     switch_line(
         ui,
         kept.voice_boost,
@@ -633,6 +653,17 @@ fn sound_tab(
             "Поднимает голос над музыкой: в стерео — фильтром FFmpeg для диалогов, в 5.1 и больше — центральным каналом; моно остаётся как есть. Не действует на звук, передаваемый на ресивер без декодирования"
         )),
     );
+    if *kept.voice_boost {
+        let strength = Spec {
+            suffix: tr!(" dB", " дБ"),
+            tip: Some(tr!(
+                "How much the voice is raised: in 5.1 and more the centre channel by this much; in stereo the dialogue enhancer as strongly",
+                "Насколько поднимается голос: в 5.1 и больше — центральный канал на столько; в стерео — фильтр для диалогов с той же силой"
+            )),
+            ..Spec::centred(range_of(audio::VOICE_RANGE), audio::VOICE_DEFAULT as f64)
+        };
+        int_row(ui, tr!("Strength", "Сила"), kept.voice_db, &strength);
+    }
     let takes = kept.channels.takes_upmix();
     ui.add_enabled_ui(takes, |ui| {
         let tip = if takes {
@@ -649,7 +680,7 @@ fn sound_tab(
         switch_line(ui, kept.upmix, tr!("Stereo to 5.1", "Стерео в 5.1"), Some(tip));
     });
     // The subwoofer of the upmix, while it is on.
-    ui.add_enabled_ui(takes && *kept.upmix, |ui| {
+    if takes && *kept.upmix {
         let d = audio::Upmix::default();
         let cut = Spec {
             step: 5.0,
@@ -689,7 +720,7 @@ fn sound_tab(
                 "Низкие частоты убираются из остальных колонок, а не только дублируются в сабвуфер: для небольших фронтальных колонок"
             )),
         );
-    });
+    }
 
     heading(ui, tr!("Equalizer", "Эквалайзер"));
     eq_head(ui, kept.equalizer, kept.eq_presets, naming);

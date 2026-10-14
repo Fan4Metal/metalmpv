@@ -11,9 +11,54 @@ pub const DELAY_STEP: f64 = 0.1;
 pub const BOOSTS: [f64; 4] = [100.0, 130.0, 150.0, 200.0];
 /// The highest volume there may be, in percent.
 pub const MAX_VOLUME: f64 = 200.0;
-/// The normalization: FFmpeg's dynamic normalizer, which raises quiet
-/// passages and lowers loud ones as the film plays.
-pub const NORMALIZE_FILTER: &str = "lavfi=[dynaudnorm=f=250:g=31:p=0.5:m=5:r=0.9:b=1]";
+/// How strongly the normalization evens the volume out: FFmpeg's dynamic
+/// normalizer, which raises quiet passages and lowers loud ones as the
+/// film plays.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Normalize {
+    /// Raised 3 times at most, slowly: the change is hardly heard.
+    Soft,
+    /// Raised 5 times at most (the only one before).
+    #[default]
+    Medium,
+    /// Raised 10 times at most, quickly: whispers and blasts alike, at night.
+    Strong,
+}
+
+impl Normalize {
+    pub const ALL: [Normalize; 3] = [Normalize::Soft, Normalize::Medium, Normalize::Strong];
+
+    /// The stored name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Normalize::Soft => "soft",
+            Normalize::Medium => "medium",
+            Normalize::Strong => "strong",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|n| n.name() == name)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Normalize::Soft => tr!("Soft", "Мягкая"),
+            Normalize::Medium => tr!("Medium", "Средняя"),
+            Normalize::Strong => tr!("Strong", "Сильная"),
+        }
+    }
+
+    /// mpv's `af`: `f` the frame in ms (how quickly it follows), `g` the
+    /// frames it smooths over (odd), `m` the most it raises.
+    pub fn filter(self) -> &'static str {
+        match self {
+            Normalize::Soft => "lavfi=[dynaudnorm=f=500:g=31:p=0.5:m=3:r=0.9:b=1]",
+            Normalize::Medium => "lavfi=[dynaudnorm=f=250:g=31:p=0.5:m=5:r=0.9:b=1]",
+            Normalize::Strong => "lavfi=[dynaudnorm=f=150:g=15:p=0.5:m=10:r=0.9:b=1]",
+        }
+    }
+}
 
 /// The equalizer's bands, their centres in Hz.
 pub const EQ_BANDS: [u32; 10] = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
@@ -158,8 +203,11 @@ pub fn band_label(hz: u32) -> String {
     }
 }
 
-/// How much the centre channel is raised to make speech clearer (+4 dB).
-const CENTRE_GAIN: f64 = 1.6;
+/// How much clearer speech raises the voice, in dB: the centre channel's
+/// gain; in stereo, `dialoguenhance`'s factor (its 1 at 4 dB).
+pub const VOICE_RANGE: std::ops::RangeInclusive<i64> = 1..=10;
+/// What it was before it could be set: the centre raised 1.6 times.
+pub const VOICE_DEFAULT: i64 = 4;
 
 /// mpv's names of the layouts whose third channel is the centre (FL, FR,
 /// FC, …); others name it elsewhere or not at all (`5.1(alsa)`, `quad`,
@@ -193,14 +241,19 @@ const CENTRE_THIRD: [&str; 18] = [
 /// count the decoder gives (one expression for every channel: a list of
 /// one per channel failed when the count differed from the track's).
 /// `None` for mono, where the voice is all there is, and for layouts
-/// without a centre third (an AC-3 2/2.1 has the LFE there).
-pub fn voice_filter(layout: &str) -> Option<String> {
+/// without a centre third (an AC-3 2/2.1 has the LFE there). `db`: how
+/// much ([`VOICE_RANGE`]).
+pub fn voice_filter(layout: &str, db: i64) -> Option<String> {
+    let db = db.clamp(*VOICE_RANGE.start(), *VOICE_RANGE.end());
     let speakers: Vec<&str> = layout.split('-').collect();
     if layout == "stereo" || speakers == ["fl", "fr"] {
-        return Some("lavfi=[dialoguenhance]".to_owned());
+        // 0 to 3; its default 1 for the default.
+        let enhance = db as f64 / VOICE_DEFAULT as f64;
+        return Some(format!("lavfi=[dialoguenhance=enhance={enhance:.2}]"));
     }
+    let gain = 10f64.powf(db as f64 / 20.0);
     let centre = CENTRE_THIRD.contains(&layout) || speakers.get(2) == Some(&"fc");
-    centre.then(|| format!("lavfi=[aeval=val(ch)*if(eq(ch\\,2)\\,{CENTRE_GAIN}\\,1):c=same]"))
+    centre.then(|| format!("lavfi=[aeval=val(ch)*if(eq(ch\\,2)\\,{gain:.2}\\,1):c=same]"))
 }
 
 /// The layout a track's voice filter is made for: mpv's, else one its
@@ -274,21 +327,21 @@ pub fn is_stereo(layout: &str) -> bool {
 
 /// mpv's `af`: stereo spread over 5.1 when `upmix` is given (for a
 /// stereo track, [`Upmix::filter`]), the voice's filter when `voice` gives the channel
-/// layout of the track playing ([`voice_filter`]; after the upmix, the
-/// 5.1's), the equalizer's bands that are not flat (one graph), then the
-/// normalization (which evens out what the others raised).
+/// layout of the track playing and the strength ([`voice_filter`]; after
+/// the upmix, the 5.1's), the equalizer's bands that are not flat (one
+/// graph), then the normalization (which evens out what the others raised).
 pub fn filters(
-    normalize: bool,
+    normalize: Option<Normalize>,
     eq: &Equalizer,
-    voice: Option<&str>,
+    voice: Option<(&str, i64)>,
     upmix: Option<Upmix>,
 ) -> String {
     let mut af: Vec<String> = Vec::new();
     if let Some(upmix) = upmix {
         af.push(upmix.filter());
     }
-    let voice = voice.map(|layout| if upmix.is_some() { "5.1" } else { layout });
-    if let Some(filter) = voice.and_then(voice_filter) {
+    let voice = voice.map(|(layout, db)| (if upmix.is_some() { "5.1" } else { layout }, db));
+    if let Some(filter) = voice.and_then(|(layout, db)| voice_filter(layout, db)) {
         af.push(filter);
     }
     if eq.on {
@@ -306,8 +359,8 @@ pub fn filters(
             af.push(format!("lavfi=[{}]", bands.join(",")));
         }
     }
-    if normalize {
-        af.push(NORMALIZE_FILTER.to_owned());
+    if let Some(normalize) = normalize {
+        af.push(normalize.filter().to_owned());
     }
     af.join(",")
 }
@@ -489,7 +542,7 @@ pub struct Setup {
     /// The volume's ceiling, 100 to [`MAX_VOLUME`].
     pub volume_max: f64,
     pub channels: Channels,
-    pub normalize: bool,
+    pub normalize: Option<Normalize>,
     pub equalizer: Equalizer,
     pub passthrough: Passthrough,
 }
@@ -516,15 +569,16 @@ mod tests {
     #[test]
     fn equalizer_filters() {
         let mut eq = Equalizer::default();
-        assert_eq!(filters(false, &eq, None, None), "");
+        assert_eq!(filters(None, &eq, None, None), "");
         eq.gains = Preset::Bass.gains();
-        assert_eq!(filters(false, &eq, None, None), "", "off: no bands");
+        assert_eq!(filters(None, &eq, None, None), "", "off: no bands");
         eq.on = true;
         eq.gains = [0, 0, 0, 0, 0, 0, 0, 0, 3, -20];
         assert_eq!(
-            filters(true, &eq, None, None),
+            filters(Some(Normalize::Medium), &eq, None, None),
             format!(
-                "lavfi=[equalizer=f=8000:t=o:w=1:g=3,equalizer=f=16000:t=o:w=1:g=-12],{NORMALIZE_FILTER}"
+                "lavfi=[equalizer=f=8000:t=o:w=1:g=3,equalizer=f=16000:t=o:w=1:g=-12],{}",
+                Normalize::Medium.filter()
             )
         );
         assert_eq!(Preset::of(&Preset::Rock.gains()), Some(Preset::Rock));
@@ -554,29 +608,41 @@ mod tests {
 
     #[test]
     fn voice_filters() {
-        let centre = "lavfi=[aeval=val(ch)*if(eq(ch\\,2)\\,1.6\\,1):c=same]";
-        assert_eq!(voice_filter("mono"), None);
-        assert_eq!(voice_filter("2.1"), None);
-        assert_eq!(voice_filter("quad"), None);
-        assert_eq!(voice_filter("5.1(alsa)"), None);
+        let centre = "lavfi=[aeval=val(ch)*if(eq(ch\\,2)\\,1.58\\,1):c=same]";
+        assert_eq!(voice_filter("mono", VOICE_DEFAULT), None);
+        assert_eq!(voice_filter("2.1", VOICE_DEFAULT), None);
+        assert_eq!(voice_filter("quad", VOICE_DEFAULT), None);
+        assert_eq!(voice_filter("5.1(alsa)", VOICE_DEFAULT), None);
         // AC-3 2/2.1: the LFE third.
-        assert_eq!(voice_filter("fl-fr-lfe-sl-sr"), None);
+        assert_eq!(voice_filter("fl-fr-lfe-sl-sr", VOICE_DEFAULT), None);
         for layout in ["stereo", "fl-fr"] {
             assert_eq!(
-                voice_filter(layout).as_deref(),
-                Some("lavfi=[dialoguenhance]")
+                voice_filter(layout, VOICE_DEFAULT).as_deref(),
+                Some("lavfi=[dialoguenhance=enhance=1.00]")
             );
         }
         for layout in ["5.1", "5.1(side)", "7.1", "fl-fr-fc-lfe-sl-sr", "3.0"] {
-            assert_eq!(voice_filter(layout).as_deref(), Some(centre), "{layout}");
+            assert_eq!(
+                voice_filter(layout, VOICE_DEFAULT).as_deref(),
+                Some(centre),
+                "{layout}"
+            );
         }
         assert_eq!(voice_layout(None, Some(2)).as_deref(), Some("stereo"));
         assert_eq!(voice_layout(Some("5.1"), Some(6)).as_deref(), Some("5.1"));
         assert_eq!(voice_layout(None, Some(6)), None);
         let eq = Equalizer::default();
         assert_eq!(
-            filters(true, &eq, Some("stereo"), None),
-            format!("lavfi=[dialoguenhance],{NORMALIZE_FILTER}")
+            filters(
+                Some(Normalize::Medium),
+                &eq,
+                Some(("stereo", VOICE_DEFAULT)),
+                None
+            ),
+            format!(
+                "lavfi=[dialoguenhance=enhance=1.00],{}",
+                Normalize::Medium.filter()
+            )
         );
         // Spread over 5.1, the voice is raised in its centre.
         let upmix = Upmix::default();
@@ -585,7 +651,7 @@ mod tests {
             "lavfi=[surround=chl_out=5.1:lfe_low=80:lfe_high=160:lfe_mode=add:lfe_out=0.316]"
         );
         assert_eq!(
-            filters(false, &eq, Some("stereo"), Some(upmix)),
+            filters(None, &eq, Some(("stereo", VOICE_DEFAULT)), Some(upmix)),
             format!("{},{centre}", upmix.filter())
         );
         let small = Upmix {

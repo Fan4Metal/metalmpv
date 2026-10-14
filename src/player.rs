@@ -2273,7 +2273,15 @@ mod tests {
             on: true,
             gains: audio::Preset::Rock.gains(),
         };
-        mpv.set("af", &Value::Str(audio::filters(true, &eq, None, None)));
+        mpv.set(
+            "af",
+            &Value::Str(audio::filters(
+                Some(audio::Normalize::Medium),
+                &eq,
+                None,
+                None,
+            )),
+        );
         mpv.set(
             "audio-channels",
             &Value::Str(Channels::Stereo.option().into()),
@@ -2455,7 +2463,7 @@ mod tests {
         // holds seconds of sound; METALMPV_RESYNC=1: seek to where the
         // picture is after the change, as the app does.
         if std::env::var("METALMPV_NORMALIZE").is_ok() {
-            mpv.set("af", &Value::Str(audio::NORMALIZE_FILTER.into()));
+            mpv.set("af", &Value::Str(audio::Normalize::Medium.filter().into()));
         }
         let resync = std::env::var("METALMPV_RESYNC").is_ok();
         mpv.request_log_messages("v");
@@ -2558,8 +2566,12 @@ mod tests {
                         if let Some(n) = tracks::selected(&tracks, Kind::Audio)
                             .and_then(|t| audio::voice_layout(t.layout.as_deref(), t.channels))
                         {
-                            let af =
-                                audio::filters(false, &audio::Equalizer::default(), Some(&n), None);
+                            let af = audio::filters(
+                                None,
+                                &audio::Equalizer::default(),
+                                Some((&n, 7)),
+                                None,
+                            );
                             eprintln!("{n}, af: {af}");
                             mpv.set("af", &Value::Str(af));
                             af_set = true;
@@ -2588,10 +2600,42 @@ mod tests {
 
     /// Stereo spread over 5.1 comes out as six channels, the voice raised
     /// in the centre after it: a stereo WAV made here, played headless.
-    /// `cargo test upmix -- --ignored --nocapture`.
+    /// `cargo test sound_filters -- --ignored --nocapture`.
     #[test]
     #[ignore = "needs vendor/libmpv"]
-    fn upmix_gives_six_channels() {
+    fn sound_filters_upmix_to_six_channels() {
+        // The subwoofer's options other than FFmpeg's defaults: taken too.
+        let upmix = audio::Upmix {
+            lfe_cut: 120,
+            bass_only: true,
+            lfe_level: -6,
+        };
+        let af = audio::filters(
+            Some(audio::Normalize::Strong),
+            &audio::Equalizer::default(),
+            Some(("stereo", 7)),
+            Some(upmix),
+        );
+        assert_eq!(channels_out(af), Some(6));
+    }
+
+    /// Stereo's voice filter at its strongest and the soft normalization
+    /// are taken.
+    #[test]
+    #[ignore = "needs vendor/libmpv"]
+    fn sound_filters_of_stereo() {
+        let af = audio::filters(
+            Some(audio::Normalize::Soft),
+            &audio::Equalizer::default(),
+            Some(("stereo", *audio::VOICE_RANGE.end())),
+            None,
+        );
+        assert!(channels_out(af).is_some());
+    }
+
+    /// The channels a stereo WAV made here comes out with through `af`,
+    /// played headless; mpv's errors fail the test.
+    fn channels_out(af: String) -> Option<i64> {
         let dir = std::env::temp_dir().join("metalmpv_upmix");
         std::fs::create_dir_all(&dir).unwrap();
         let wav = dir.join("stereo.wav");
@@ -2609,18 +2653,6 @@ mod tests {
         )
         .unwrap();
         mpv.request_log_messages("warn");
-        // The subwoofer's options other than FFmpeg's defaults: taken too.
-        let upmix = audio::Upmix {
-            lfe_cut: 120,
-            bass_only: true,
-            lfe_level: -6,
-        };
-        let af = audio::filters(
-            false,
-            &audio::Equalizer::default(),
-            Some("stereo"),
-            Some(upmix),
-        );
         eprintln!("af: {af}");
         mpv.set("af", &Value::Str(af));
         mpv.observe(1, "audio-out-params", sys::MPV_FORMAT_NODE);
@@ -2643,7 +2675,7 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         assert!(errors.is_empty(), "{errors:#?}");
-        assert_eq!(count, Some(6));
+        count
     }
 
     /// `seconds` of a WAV, 16-bit stereo at `rate`: a different tone on
