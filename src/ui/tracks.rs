@@ -81,7 +81,7 @@ const ROW: f32 = 30.0;
 const ROW_TWO: f32 = 44.0;
 /// A column scrolls past this height (Blu-ray rips may carry 30 subtitles),
 /// or past the room the window has over its button, never under `MIN_LIST`.
-const MAX_LIST: f32 = 300.0;
+const MAX_LIST: f32 = 480.0;
 const MIN_LIST: f32 = 90.0;
 /// The height under the subtitles' list: Load from a file.
 const LOAD_ROW: f32 = 36.0;
