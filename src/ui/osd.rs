@@ -96,6 +96,12 @@ fn paint_line(ctx: &egui::Context, video: Rect, text: &str, scale: f32, alpha: f
     ));
     let painter = painter.with_clip_rect(video);
     let pos = video.left_top() + vec2(size * 0.6, size * 0.45);
+    paint_text(&painter, pos, text, size, alpha);
+}
+
+/// The OSD's `text` from `pos` (its top left corner) at `size` points,
+/// with its shadow: also the settings' preview.
+pub fn paint_text(painter: &egui::Painter, pos: egui::Pos2, text: &str, size: f32, alpha: f32) {
     let font = FontId::new(size, style::osd_family());
     let shadow = egui::Color32::from_black_alpha((200.0 * alpha) as u8);
     for d in [

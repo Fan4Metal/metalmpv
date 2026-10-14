@@ -145,14 +145,14 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | Subtitles and OSD | Subtitles: font | default | A font installed in Windows, for text subtitles (SRT and the like); ASS subtitles keep their own fonts |
 | Subtitles and OSD | Subtitles: size | 100 % | The size of all subtitles, 50–300 % |
 | Subtitles and OSD | On-screen messages: font | default | A font installed in Windows, for the yellow line in the top left corner |
-| Subtitles and OSD | On-screen messages: size | 100 % | 50–200 % of the usual size, which follows the height of the picture |
-| Updates | Check at start-up | off | See [Update check and privacy](#update-check-and-privacy); **Check now** asks at once |
+| Subtitles and OSD | On-screen messages: size | 100 % | 50–200 % of the usual size, which follows the height of the picture; a sample line under it shows the font and the size |
+| Updates | Check at start-up | off | See [Update check and privacy](#update-check-and-privacy); **Check now** asks at once, and the date of the last check is shown |
 
 The list of fonts has a search field at its top. The **Keyboard shortcuts** category lists every action with its keys, which can be changed (see [Keyboard shortcuts](#keyboard-shortcuts)). The volume, the window and the playlist's visibility and width are remembered between runs.
 
 ## Keyboard shortcuts
 
-The keys below are the defaults. In the settings, the **Keyboard shortcuts** category lists the actions in groups, each with its keys: a click on a key waits for the key combination (or the mouse's back or forward button, with `Ctrl`, `Alt` or `Shift` if wanted) that takes its place, **+** adds one more, the cross removes it, and `Esc` gives up. A combination another action had is taken from that action, and the page says so. A few actions without a default key can be given one: Stop, A-B repeat: start, end, off (one key for the three in turn), Load subtitles, Equalizer, Playlist in a window of its own / in the player, Minimize and Maximize. **Reset the keys** puts them all back. The menus and tooltips show the keys as they are set. The mouse wheel, the double and middle clicks and the media keys stay as described; `Ctrl+V` cannot be chosen.
+The keys below are the defaults. In the settings, the **Keyboard shortcuts** category lists the actions in groups, each with its keys: a click on a key waits for the key combination (or the mouse's back or forward button, with `Ctrl`, `Alt` or `Shift` if wanted) that takes its place, **+** adds one more, the cross removes it, and `Esc` gives up. A combination another action had is taken from that action, and the page says so, with **Undo** beside. A search field above the groups leaves the actions whose name or keys contain the text typed. A few actions without a default key can be given one: Stop, A-B repeat: start, end, off (one key for the three in turn), Load subtitles, Equalizer, Playlist in a window of its own / in the player, Minimize and Maximize. **Reset the keys** puts them all back. The menus and tooltips show the keys as they are set. The mouse wheel, the double and middle clicks and the media keys stay as described; `Ctrl+V` cannot be chosen.
 
 | Key | Action |
 |---|---|

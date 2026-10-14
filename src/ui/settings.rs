@@ -120,8 +120,11 @@ pub struct SettingsDialog {
     /// The press that gave the choice up: its click must not start it
     /// again.
     gave_up: Option<(Action, Option<usize>)>,
-    /// The last key chosen and the action that lost it.
-    taken: Option<(Chord, Action)>,
+    /// The last key chosen, the action that lost it and the keys before,
+    /// for Undo.
+    taken: Option<(Chord, Action, Keymap)>,
+    /// What the Keys page shows: actions whose name or keys have it.
+    key_filter: String,
 }
 
 /// What changed in the window this frame and has to be applied.
@@ -1264,8 +1267,28 @@ fn text(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                 230.0,
                 |ui| percent(ui, &mut settings.osd_scale, OSD_SCALE_RANGE),
             );
+            divider(ui);
+            osd_preview(ui, settings.osd_scale);
         },
     );
+}
+
+/// A line of the OSD in its font and size on a dark ground, as over a
+/// picture of medium height (the font chosen shows from the next frame).
+fn osd_preview(ui: &mut Ui, scale: f64) {
+    // The OSD's size over a picture about 570 points high.
+    let size = 22.0 * (scale / 100.0) as f32;
+    ui.add_space(8.0);
+    let (rect, _) = ui.allocate_exact_size(
+        vec2(ui.available_width(), (size * 2.2).max(40.0)),
+        Sense::hover(),
+    );
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, 6.0, Color32::from_rgb(0x14, 0x16, 0x1a));
+    let text = tr!("[ Volume 80% ]", "[ Громкость 80% ]");
+    let pos = rect.left_top() + vec2(size * 0.6, (rect.height() - size * 1.2) / 2.0);
+    super::osd::paint_text(&painter, pos, text, size, 1.0);
+    ui.add_space(8.0);
 }
 
 /// A size in percent.
@@ -1374,6 +1397,13 @@ fn updates_page(ui: &mut Ui, updates: &mut Updates) {
                 update_status(ui, updates);
                 ui.add_space(8.0);
             }
+            if let Some(date) = check_date(updates.last_check) {
+                ui.weak(tr!(
+                    format!("Last checked: {date}"),
+                    format!("Последняя проверка: {date}")
+                ));
+                ui.add_space(8.0);
+            }
         },
     );
     section(
@@ -1388,6 +1418,17 @@ fn updates_page(ui: &mut Ui, updates: &mut Updates) {
             ui.add_space(8.0);
         },
     );
+}
+
+/// When updates were last checked for, as the user reads dates; none
+/// before the first check.
+fn check_date(unix_seconds: u64) -> Option<String> {
+    if unix_seconds == 0 {
+        return None;
+    }
+    let time = std::time::UNIX_EPOCH + std::time::Duration::from_secs(unix_seconds);
+    let local = crate::win::local_time(time)?;
+    Some(crate::format::date_in(crate::i18n::lang(), local))
 }
 
 /// The outcome of the last check, if any.
@@ -1462,7 +1503,10 @@ impl SettingsDialog {
                 _ => {}
             }
             if let Some((chord, false)) = Chord::of_event(event) {
-                self.taken = keys.assign(action, slot, chord).map(|other| (chord, other));
+                let before = keys.clone();
+                self.taken = keys
+                    .assign(action, slot, chord)
+                    .map(|other| (chord, other, before));
                 self.capture = None;
                 changed.keys = true;
                 break;
@@ -1511,21 +1555,65 @@ impl SettingsDialog {
                 },
             );
         });
-        if let Some((chord, other)) = self.taken {
+        let mut undo = None;
+        if let Some((chord, other, before)) = &self.taken {
             ui.add_space(4.0);
-            ui.label(
-                RichText::new(tr!(
-                    format!("{} no longer does “{}”.", chord.label(), other.name()),
-                    format!("{} больше не делает «{}».", chord.label(), other.name())
-                ))
-                .size(12.5)
-                .color(style::OSD),
-            );
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(tr!(
+                        format!("{} no longer does “{}”.", chord.label(), other.name()),
+                        format!("{} больше не делает «{}».", chord.label(), other.name())
+                    ))
+                    .size(12.5)
+                    .color(style::OSD),
+                );
+                if ui.small_button(tr!("Undo", "Отменить")).clicked() {
+                    undo = Some(before.clone());
+                }
+            });
         }
+        if let Some(before) = undo {
+            *keys = before;
+            self.taken = None;
+            changed.keys = true;
+        }
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut self.key_filter)
+                    .hint_text(tr!("Find an action or a key", "Найти действие или клавишу"))
+                    .desired_width(260.0),
+            );
+            if !self.key_filter.is_empty() && ui.small_button("×").clicked() {
+                self.key_filter.clear();
+            }
+        });
+        let filter = self.key_filter.trim().to_lowercase();
+        let shown: Vec<Action> = Action::ALL
+            .iter()
+            .copied()
+            .filter(|&action| {
+                filter.is_empty()
+                    || action.name().to_lowercase().contains(&filter)
+                    || keys
+                        .chords(action)
+                        .iter()
+                        .any(|c| c.label().to_lowercase().contains(&filter))
+            })
+            .collect();
+        let mut any = false;
         for group in Group::ALL {
+            let actions: Vec<Action> = shown
+                .iter()
+                .copied()
+                .filter(|a| a.group() == group)
+                .collect();
+            if actions.is_empty() {
+                continue;
+            }
+            any = true;
             section(ui, group.title(), |ui| {
-                let actions = Action::ALL.iter().filter(|a| a.group() == group);
-                for (i, &action) in actions.enumerate() {
+                for (i, &action) in actions.iter().enumerate() {
                     if i > 0 {
                         divider(ui);
                     }
@@ -1538,6 +1626,9 @@ impl SettingsDialog {
                     });
                 }
             });
+        }
+        if !any {
+            note(ui, tr!("Nothing found.", "Ничего не найдено."));
         }
         note(
             ui,
