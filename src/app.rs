@@ -146,6 +146,13 @@ pub struct App {
     /// picture stays put (`fit_interface`; not while maximized or in
     /// fullscreen, which keep their size, but once it is a window again).
     sized_for: Interface,
+    /// What a shrink for an interface could not take off (the window at
+    /// its least size), in pixels across and down, with the rectangle it
+    /// left: the next growth from there is that much less, else `7` twice
+    /// left a small window larger.
+    fit_slack: Option<([i32; 4], [i32; 2])>,
+    /// Points to pixels as of the last frame, for `save`.
+    ppp: f32,
     /// The docked playlist's width as of the last frame with it, in points.
     playlist_inset: f32,
     /// The title row is shown over the picture's top this frame (an
@@ -347,6 +354,8 @@ impl App {
             fill: false,
             before_bare: Interface::Full,
             sized_for: Interface::Full,
+            fit_slack: None,
+            ppp: 1.0,
             playlist_inset: 0.0,
             title_strip: false,
             shown_over: (false, false),
@@ -1789,21 +1798,57 @@ impl App {
         let Some(window) = win::window_rect(hwnd) else {
             return;
         };
-        let (old, new) = (self.insets(self.sized_for), self.insets(now));
+        let mut slack = match self.fit_slack {
+            Some((left, slack)) if left == window => slack,
+            _ => [0, 0],
+        };
+        let rect = self.refit(
+            window,
+            self.sized_for,
+            now,
+            ctx.pixels_per_point(),
+            &mut slack,
+        );
         self.sized_for = now;
-        let ppp = ctx.pixels_per_point();
-        let grow = |i: usize| (new[i] * ppp).round() as i32 - (old[i] * ppp).round() as i32;
-        let rect = [
-            window[0] - grow(0),
-            window[1] - grow(1),
-            window[2] + grow(2),
-            window[3] + grow(3),
-        ];
         let rect = match win::work_area(hwnd) {
             Some(work) => sizing::placed(rect, [rect[2] - rect[0], rect[3] - rect[1]], work),
             None => rect,
         };
+        self.fit_slack = (slack != [0, 0]).then_some((rect, slack));
         win::set_rect(hwnd, rect);
+    }
+
+    /// `window` (in pixels) made for interface `from`, grown or shrunk for
+    /// `to` by the difference of their insets, the picture keeping its
+    /// place. Not under the window's least size: what a shrink could not
+    /// take off is added to `slack`, and a growth takes it off first.
+    fn refit(
+        &self,
+        window: [i32; 4],
+        from: Interface,
+        to: Interface,
+        ppp: f32,
+        slack: &mut [i32; 2],
+    ) -> [i32; 4] {
+        let least = crate::MIN_SIZE.map(|v| (v * ppp).round() as i32);
+        sizing::refit(
+            window,
+            self.insets(from),
+            self.insets(to),
+            ppp,
+            least,
+            slack,
+        )
+    }
+
+    /// The bar's layout over the picture or in fullscreen: compact in the
+    /// compact interface, and with only the picture when that came from
+    /// the compact one.
+    fn compact_bar(&self) -> bool {
+        match self.interface() {
+            Interface::Bare => self.before_bare == Interface::Compact,
+            interface => interface == Interface::Compact,
+        }
     }
 
     /// The title row comes over the picture's top (an interface without
@@ -1822,7 +1867,7 @@ impl App {
     /// open.
     fn wants_bar_over(&self, ctx: &egui::Context) -> bool {
         let area = self.picture_area;
-        let height = ui::controls::height(self.settings.interface == Interface::Compact);
+        let height = ui::controls::height(self.compact_bar());
         let zone = Rect::from_min_max(
             egui::pos2(area.left(), area.bottom() - height - 16.0),
             area.max,
@@ -2453,7 +2498,7 @@ impl App {
         if !panels.bottom {
             return;
         }
-        let compact = self.settings.interface == Interface::Compact;
+        let compact = self.compact_bar();
         let bar = self.controls_bar(state, true, compact);
         egui::Area::new(egui::Id::new("fullscreen_controls"))
             .order(egui::Order::Foreground)
@@ -3072,6 +3117,12 @@ impl eframe::App for App {
     fn ui(&mut self, root_ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = root_ui.ctx().clone();
         self.uncloak(&ctx);
+        self.ppp = ctx.pixels_per_point();
+        // Whatever chose it (a key, the menu, the settings' page): the
+        // interface only the picture gives back.
+        if self.settings.interface != Interface::Bare {
+            self.before_bare = self.settings.interface;
+        }
         let fullscreen = frameless::is_fullscreen(&ctx);
         // Fullscreen left by other means (Esc, Enter, `1`…): the picture is
         // whole again.
@@ -3184,7 +3235,7 @@ impl eframe::App for App {
                     }
                 }
                 if bar_over {
-                    let compact = self.settings.interface == Interface::Compact;
+                    let compact = self.compact_bar();
                     let area = ui.max_rect();
                     let rect = Rect::from_min_max(
                         egui::pos2(area.left(), area.bottom() - ui::controls::height(compact)),
@@ -3436,6 +3487,14 @@ impl eframe::App for App {
         if let Some(hwnd) = self.hwnd.filter(|_| !self.fullscreen)
             && let Some(r) = win::normal_rect(hwnd)
         {
+            // The interface changed while maximized: the window is made
+            // for it once restored, so the rectangle kept is too (the next
+            // start takes the interface as the window's).
+            let r = if self.sized_for == self.interface() {
+                r
+            } else {
+                self.refit(r, self.sized_for, self.interface(), self.ppp, &mut [0, 0])
+            };
             self.settings.window_normal = Some(r);
         }
         self.settings.save(storage);

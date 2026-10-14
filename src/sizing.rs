@@ -64,9 +64,63 @@ pub fn snapped_to_centre(rect: [i32; 4], work: [i32; 4], reach: i32) -> [i32; 4]
     [rect[0] + dx, rect[1] + dy, rect[2] + dx, rect[3] + dy]
 }
 
+/// `window` (pixels) grown or shrunk from insets `old` to `new` (points,
+/// left, top, right, bottom), the picture keeping its place; not under
+/// `least` (pixels): what a shrink could not take off is added to `slack`,
+/// and a growth takes it off first.
+pub fn refit(
+    window: [i32; 4],
+    old: [f32; 4],
+    new: [f32; 4],
+    ppp: f32,
+    least: [i32; 2],
+    slack: &mut [i32; 2],
+) -> [i32; 4] {
+    let grow = |i: usize| (new[i] * ppp).round() as i32 - (old[i] * ppp).round() as i32;
+    let mut size = |axis: usize, change: i32| {
+        let mut size = window[axis + 2] - window[axis] + change;
+        if change > 0 {
+            let taken = slack[axis].min(change);
+            size -= taken;
+            slack[axis] -= taken;
+        }
+        if size < least[axis] {
+            slack[axis] += least[axis] - size;
+            size = least[axis];
+        }
+        size
+    };
+    let (width, height) = (size(0, grow(0) + grow(2)), size(1, grow(1) + grow(3)));
+    let (left, top) = (window[0] - grow(0), window[1] - grow(1));
+    [left, top, left + width, top + height]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refit_comes_back_at_the_least_size() {
+        // Full with a docked playlist (300 across, title 32 and bar 80) to
+        // only the picture and back, in a small window.
+        let full = [0.0, 32.0, 300.0, 80.0];
+        let bare = [0.0; 4];
+        let least = [560, 340];
+        let window = [100, 100, 700, 600];
+        let mut slack = [0, 0];
+        let small = refit(window, full, bare, 1.0, least, &mut slack);
+        assert_eq!(small, [100, 132, 660, 520]);
+        assert_eq!(slack, [260, 0]);
+        let back = refit(small, bare, full, 1.0, least, &mut slack);
+        assert_eq!(back, window);
+        assert_eq!(slack, [0, 0]);
+        // Room to spare: no slack.
+        let big = [0, 0, 1200, 900];
+        let mut slack = [0, 0];
+        let less = refit(big, full, bare, 2.0, least, &mut slack);
+        assert_eq!(less, [0, 64, 600, 740]);
+        assert_eq!(refit(less, bare, full, 2.0, least, &mut slack), big);
+    }
 
     #[test]
     fn snaps_near_the_centre_only() {
