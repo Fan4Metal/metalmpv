@@ -1775,7 +1775,8 @@ impl App {
     /// restored first. In fullscreen, fullscreen ends and the window is
     /// sized in the next frame (`pending_picture`).
     /// Files dropped on a window: subtitle files dropped on a playing video
-    /// go with it, the others are opened.
+    /// go with it, the others are added to the playlist (opened when it is
+    /// empty).
     fn drop_files(&mut self, dropped: Vec<PathBuf>, state: &State) {
         let (subs, media): (Vec<PathBuf>, Vec<PathBuf>) = dropped
             .into_iter()
@@ -1783,8 +1784,15 @@ impl App {
         for sub in &subs {
             self.add_subtitles(sub);
         }
-        if !media.is_empty() {
+        // Into an empty playlist as opened (the folder filled in when the
+        // setting says so); else added to it, played if nothing plays.
+        if media.is_empty() {
+            return;
+        }
+        if self.playlist.is_empty() {
             self.open(media);
+        } else {
+            self.add(media);
         }
     }
 
@@ -2420,7 +2428,14 @@ impl App {
             ui.painter().text(
                 rect.center(),
                 Align2::CENTER_CENTER,
-                tr!("Drop to play", "Отпустите, чтобы воспроизвести"),
+                if self.playlist.is_empty() {
+                    tr!("Drop to play", "Отпустите, чтобы воспроизвести")
+                } else {
+                    tr!(
+                        "Drop to add to the playlist",
+                        "Отпустите, чтобы добавить в плейлист"
+                    )
+                },
                 FontId::proportional(20.0),
                 style::TEXT_BRIGHT,
             );
