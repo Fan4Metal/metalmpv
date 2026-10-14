@@ -80,7 +80,15 @@ def fnv1a64(data: bytes) -> str:
 
 def lock_hash() -> str:
     # Without carriage returns: git may check Cargo.lock out with either.
-    return fnv1a64((ROOT / "Cargo.lock").read_bytes().replace(b"\r", b""))
+    # Without this package's own version: a release changes it, and the
+    # notices with it would have to be written again for nothing.
+    lines = (ROOT / "Cargo.lock").read_bytes().replace(b"\r", b"").split(b"\n")
+    kept = [
+        line
+        for i, line in enumerate(lines)
+        if not (i > 0 and lines[i - 1] == b'name = "metalmpv"' and line.startswith(b"version = "))
+    ]
+    return fnv1a64(b"\n".join(kept))
 
 
 def crates():

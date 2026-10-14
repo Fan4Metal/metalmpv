@@ -189,10 +189,23 @@ fn wrap(line: &'static str, columns: usize, out: &mut Vec<Cow<'static, str>>) {
 mod tests {
     use super::*;
 
-    /// tools/notices.py's hash of Cargo.lock, without carriage returns.
-    fn fnv1a64(data: &[u8]) -> String {
+    /// tools/notices.py's hash of Cargo.lock: without carriage returns and
+    /// without this package's own version (a release changes it).
+    fn lock_hash(lock: &str) -> String {
+        let lock = lock.replace('\r', "");
+        let lines: Vec<&str> = lock.split('\n').collect();
+        let kept: Vec<&str> = lines
+            .iter()
+            .enumerate()
+            .filter(|&(i, line)| {
+                !(i > 0
+                    && lines[i - 1] == "name = \"metalmpv\""
+                    && line.starts_with("version = "))
+            })
+            .map(|(_, line)| *line)
+            .collect();
         let mut h: u64 = 0xCBF2_9CE4_8422_2325;
-        for &b in data.iter().filter(|&&b| b != b'\r') {
+        for b in kept.join("\n").bytes() {
             h ^= u64::from(b);
             h = h.wrapping_mul(0x0000_0100_0000_01B3);
         }
@@ -201,12 +214,21 @@ mod tests {
 
     #[test]
     fn notices_follow_cargo_lock() {
-        let lock = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.lock")).unwrap();
-        let hash = fnv1a64(&lock);
+        let lock =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.lock")).unwrap();
+        let hash = lock_hash(&lock);
         assert!(
             NOTICES.contains(&format!("Cargo.lock FNV-1a 64: {hash}")),
             "licenses/THIRD_PARTY_NOTICES.txt is older than Cargo.lock: run python tools/notices.py"
         );
+    }
+
+    #[test]
+    fn own_version_leaves_the_hash() {
+        let lock = |v: &str| format!("[[package]]\r\nname = \"metalmpv\"\r\nversion = \"{v}\"\r\n");
+        assert_eq!(lock_hash(&lock("0.1.0-dev")), lock_hash(&lock("0.1.0")));
+        let other = |v: &str| format!("[[package]]\nname = \"egui\"\nversion = \"{v}\"\n");
+        assert_ne!(lock_hash(&other("0.36.1")), lock_hash(&other("0.36.2")));
     }
 
     #[test]
