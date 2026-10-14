@@ -17,8 +17,8 @@ use crate::i18n::LangChoice;
 use crate::input::Cmd;
 use crate::keymap::{Action, Chord, Group, Keymap, shortcut};
 use crate::settings::{
-    Interface, MAX_STEP, MAX_TRANSPARENCY, MIN_STEP, MediaKeys, OSD_SCALE_RANGE, OnTop, Settings,
-    WindowOnOpen,
+    FrameFormat, Interface, MAX_STEP, MAX_TRANSPARENCY, MIN_STEP, MediaKeys, OSD_SCALE_RANGE,
+    OnTop, Settings, WindowOnOpen,
 };
 use crate::update::{Status, Updates, release_url, version_of};
 
@@ -81,8 +81,8 @@ impl Page {
                 "С каким звуком и субтитрами начинается файл и какие файлы субтитров подхватываются."
             ),
             Page::Video => tr!(
-                "How video is decoded; the panels in fullscreen.",
-                "Как декодируется видео; панели в полноэкранном режиме."
+                "How video is decoded; the panels in fullscreen; where and how a frame is saved.",
+                "Как декодируется видео; панели в полноэкранном режиме; куда и как сохраняется кадр."
             ),
             Page::Files => tr!(
                 "Registering MetalMPV with Windows for video and audio files.",
@@ -1134,7 +1134,64 @@ fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>) -> b
             );
         },
     );
+    frames_section(ui, settings);
     changed
+}
+
+/// Where Save the frame writes, and in which format.
+fn frames_section(ui: &mut Ui, settings: &mut Settings) {
+    section(
+        ui,
+        tr!("Saving a frame", "Сохранение кадра"),
+        |ui| {
+            let folder = settings
+                .frames_dir()
+                .map(|d| d.display().to_string())
+                .unwrap_or_default();
+            row(ui, tr!("Folder", "Папка"), Some(&folder), 230.0, |ui| {
+                ui.horizontal(|ui| {
+                    let own = settings.frames_folder.is_some();
+                    if ui
+                        .add_enabled(own, egui::Button::new(tr!("Default", "По умолчанию")))
+                        .on_hover_text(tr!("Pictures\\MetalMPV", "Изображения\\MetalMPV"))
+                        .clicked()
+                    {
+                        settings.frames_folder = None;
+                    }
+                    if ui.button(tr!("Choose…", "Выбрать…")).clicked() {
+                        let mut dialog = rfd::FileDialog::new()
+                            .set_title(tr!("The folder for frames", "Папка для кадров"));
+                        if let Some(dir) = settings.frames_dir() {
+                            dialog = dialog.set_directory(dir);
+                        }
+                        if let Some(dir) = dialog.pick_folder() {
+                            settings.frames_folder = Some(dir);
+                        }
+                    }
+                });
+            });
+            divider(ui);
+            row(
+                ui,
+                tr!("Format", "Формат"),
+                Some(tr!(
+                    "A JPG file is several times smaller, at a little loss.",
+                    "Файл JPG в несколько раз меньше, с небольшой потерей качества."
+                )),
+                230.0,
+                |ui| {
+                    egui::ComboBox::from_id_salt("settings_frames_format")
+                        .selected_text(settings.frames_format.label())
+                        .width(220.0)
+                        .show_ui(ui, |ui| {
+                            for f in FrameFormat::ALL {
+                                ui.selectable_value(&mut settings.frames_format, f, f.label());
+                            }
+                        });
+                },
+            );
+        },
+    );
 }
 
 /// Whether the chosen output device (empty: Windows' default) is there.
@@ -1777,6 +1834,8 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.snap_to_centre = d.snap_to_centre;
     settings.on_top = d.on_top;
     settings.window_on_open = d.window_on_open;
+    settings.frames_folder = d.frames_folder;
+    settings.frames_format = d.frames_format;
     settings.media_keys = d.media_keys;
     settings.interface = d.interface;
     changed.accent |= settings.accent != d.accent;

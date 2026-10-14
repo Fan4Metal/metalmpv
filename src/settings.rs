@@ -44,6 +44,8 @@ const SNAP_TO_CENTRE: &str = "snap_to_centre";
 const REPEAT: &str = "repeat";
 const ON_TOP: &str = "on_top";
 const WINDOW_ON_OPEN: &str = "window_on_open";
+const FRAMES_FOLDER: &str = "frames_folder";
+const FRAMES_FORMAT: &str = "frames_format";
 const INTERFACE: &str = "interface";
 const MEDIA_KEYS: &str = "media_keys";
 const AUDIO_LANGUAGES: &str = "audio_languages";
@@ -158,6 +160,38 @@ impl MediaKeys {
             MediaKeys::Always => tr!("Always", "Всегда"),
             MediaKeys::Window => tr!("While the player is active", "Когда активно окно плеера"),
             MediaKeys::Off => tr!("Off", "Выключены"),
+        }
+    }
+}
+
+/// The format of a frame saved.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FrameFormat {
+    #[default]
+    Png,
+    Jpg,
+}
+
+impl FrameFormat {
+    pub const ALL: [FrameFormat; 2] = [FrameFormat::Png, FrameFormat::Jpg];
+
+    /// The stored name, the file's extension too (mpv writes the format
+    /// the extension names).
+    pub fn name(self) -> &'static str {
+        match self {
+            FrameFormat::Png => "png",
+            FrameFormat::Jpg => "jpg",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|f| f.name() == name)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            FrameFormat::Png => tr!("PNG, every pixel kept", "PNG, без потерь"),
+            FrameFormat::Jpg => tr!("JPG, smaller", "JPG, меньше по размеру"),
         }
     }
 }
@@ -449,6 +483,9 @@ pub struct Settings {
     pub on_top: OnTop,
     /// The window's size when a file is loaded.
     pub window_on_open: WindowOnOpen,
+    /// Where frames are saved; `None`: Pictures\MetalMPV.
+    pub frames_folder: Option<PathBuf>,
+    pub frames_format: FrameFormat,
     /// What the window shows around the picture (`8`; only the picture, `7`).
     pub interface: Interface,
     /// Which media keys the player takes.
@@ -544,6 +581,8 @@ impl Default for Settings {
             repeat: Repeat::Off,
             on_top: OnTop::Never,
             window_on_open: WindowOnOpen::Keep,
+            frames_folder: None,
+            frames_format: FrameFormat::Png,
             interface: Interface::Full,
             media_keys: MediaKeys::Always,
             keys: Keymap::default(),
@@ -591,6 +630,14 @@ fn rect(text: &str) -> Option<[i32; 4]> {
 }
 
 impl Settings {
+    /// Where frames are saved: the folder chosen, else Pictures\MetalMPV.
+    pub fn frames_dir(&self) -> Option<PathBuf> {
+        match &self.frames_folder {
+            Some(folder) => Some(folder.clone()),
+            None => Some(crate::win::pictures_dir()?.join(crate::APP_NAME)),
+        }
+    }
+
     /// What the player starts with.
     pub fn audio_setup(&self) -> audio::Setup {
         audio::Setup {
@@ -669,6 +716,13 @@ impl Settings {
                 .as_deref()
                 .and_then(WindowOnOpen::from_name)
                 .unwrap_or(d.window_on_open),
+            frames_folder: get(FRAMES_FOLDER)
+                .filter(|f| !f.is_empty())
+                .map(PathBuf::from),
+            frames_format: get(FRAMES_FORMAT)
+                .as_deref()
+                .and_then(FrameFormat::from_name)
+                .unwrap_or(d.frames_format),
             interface: get(INTERFACE)
                 .as_deref()
                 .and_then(Interface::from_name)
@@ -832,6 +886,14 @@ impl Settings {
         storage.set_string(REPEAT, self.repeat.name().into());
         storage.set_string(ON_TOP, self.on_top.name().into());
         storage.set_string(WINDOW_ON_OPEN, self.window_on_open.name().into());
+        storage.set_string(
+            FRAMES_FOLDER,
+            self.frames_folder
+                .as_ref()
+                .map(|f| f.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        );
+        storage.set_string(FRAMES_FORMAT, self.frames_format.name().into());
         storage.set_string(INTERFACE, self.interface.name().into());
         storage.set_string(MEDIA_KEYS, self.media_keys.name().into());
         let prefs = &self.track_prefs;
@@ -958,6 +1020,8 @@ mod tests {
             repeat: Repeat::All,
             on_top: OnTop::Playing,
             window_on_open: WindowOnOpen::Fit,
+            frames_folder: Some(PathBuf::from(r"D:\Кадры")),
+            frames_format: FrameFormat::Jpg,
             interface: Interface::Compact,
             media_keys: MediaKeys::Window,
             keys: Keymap::from_setting("pause\tF\nstop\tSpace Ctrl+MouseBack\nmute\t"),

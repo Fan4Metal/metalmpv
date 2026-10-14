@@ -69,7 +69,7 @@ The button at the right end of the playlist's buttons (a window with an arrow), 
 
 ### Video, sound and subtitles panel
 
-`U` (also `F7`), the sliders button left of the tracks button in the control bar, or **Video, sound and subtitles…** in the picture's context menu opens a panel over that button, as the tracks button does (at the bottom right corner when only the picture is shown), as tall whichever tab is shown; in a window too low for it, it takes the height there is above the button and its tabs scroll under the head. Playback and the keys go on while it is open; a click outside it, the button again, `U`, `F7` or `Esc` closes it. Its head holds the tabs **Video**, **Sound** and **Subtitles**, the tab shown underlined, and the camera, **Save the frame** (`Ctrl+E`, also in the context menu), which saves the frame on screen as decoded, without subtitles, as a PNG named after the file and the position into `Pictures\MetalMPV`; a right click on it offers **Open the folder**.
+`U` (also `F7`), the sliders button left of the tracks button in the control bar, or **Video, sound and subtitles…** in the picture's context menu opens a panel over that button, as the tracks button does (at the bottom right corner when only the picture is shown), as tall whichever tab is shown; in a window too low for it, it takes the height there is above the button and its tabs scroll under the head. Playback and the keys go on while it is open; a click outside it, the button again, `U`, `F7` or `Esc` closes it. Its head holds the tabs **Video**, **Sound** and **Subtitles**, the tab shown underlined, and the camera, **Save the frame** (`Ctrl+E`, also in the context menu), which saves the frame on screen as decoded, without subtitles, as a PNG or a JPG (see Video in the settings) named after the file and the position into `Pictures\MetalMPV` or the folder chosen; a right click on it offers **Open the folder**.
 
 Values are set by sliders whose rail is lit from the starting point to the knob, so that a change shows at once; the value beside each can also be dragged or typed and is shown in the accent colour while it differs from the default, which a double click on the slider or the round arrow beside it brings back. On and off are switches. Each setting's tooltip says how it applies: to which subtitles, on the processor or the graphics card, whether it is kept between runs.
 
@@ -145,6 +145,8 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | Video | Hardware decoding (GPU) | on | Decoding on the graphics card where possible; the decoder in use is shown below |
 | Video | File name at the top | on | A strip with the file's name across the top in fullscreen, shown while the pointer is near the top edge |
 | Video | Panel transparency | 12 % | Transparency of the control bar and the file's name over the picture in fullscreen, 0–80 % |
+| Video | Saving a frame: folder | Pictures\MetalMPV | Where **Save the frame** writes; **Choose…** picks another folder, **Default** goes back |
+| Video | Saving a frame: format | PNG | PNG keeps every pixel; a JPG file is several times smaller, at a little loss |
 | Updates | Check at start-up | off | See [Update check and privacy](#update-check-and-privacy); **Check now** asks at once, and the date of the last check is shown |
 
 The sound and the look of the subtitles are set on the Video, sound and subtitles panel (see above), and kept between runs. The list of fonts has a search field at its top. The **Keyboard shortcuts** category lists every action with its keys, which can be changed (see [Keyboard shortcuts](#keyboard-shortcuts)). The volume, the window and the playlist's visibility and width are remembered between runs.
@@ -166,7 +168,7 @@ The keys below are the defaults. In the settings, the **Keyboard shortcuts** cat
 | `T` | The audio and subtitles window |
 | `I` | The file information window |
 | `U`, `F7` | The Video, sound and subtitles panel |
-| `Ctrl+E` | Save the frame into Pictures\MetalMPV |
+| `Ctrl+E` | Save the frame (into Pictures\MetalMPV unless another folder is chosen) |
 | `O` | Shows the position, the duration and the chapter playing on the screen |
 | `Ctrl+G` | Go to time: a window for a time in the file |
 | `A` | Next audio track |

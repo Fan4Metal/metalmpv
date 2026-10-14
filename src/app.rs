@@ -649,7 +649,8 @@ impl App {
     /// Save the frame on screen into Pictures\MetalMPV as
     /// `<file> <position>.png`, never over another.
     fn save_frame(&mut self, state: &State) {
-        let (Some(player), Some(dir)) = (&mut self.player, frames_dir()) else {
+        let ext = self.settings.frames_format.name();
+        let (Some(player), Some(dir)) = (&mut self.player, self.settings.frames_dir()) else {
             return;
         };
         if video_size(state).is_none() {
@@ -672,12 +673,12 @@ impl App {
             .map(|s| s.replace(['\\', '/', ':', '*', '?', '"', '<', '>', '|'], "_"))
             .unwrap_or_else(|| "frame".into());
         let time = crate::format::time(state.time, true).replace(':', "-");
-        let mut path = dir.join(format!("{stem} {time}.png"));
+        let mut path = dir.join(format!("{stem} {time}.{ext}"));
         for n in 2.. {
             if !path.exists() && !self.frames_saving.contains(&path) {
                 break;
             }
-            path = dir.join(format!("{stem} {time} ({n}).png"));
+            path = dir.join(format!("{stem} {time} ({n}).{ext}"));
         }
         player.save_frame(&path);
         self.frames_saving.push_back(path);
@@ -1155,7 +1156,7 @@ impl App {
             }
             Cmd::ClearRecent => self.settings.recent.clear(),
             Cmd::ShowFrames => {
-                if let Some(dir) = frames_dir() {
+                if let Some(dir) = self.settings.frames_dir() {
                     let _ = std::fs::create_dir_all(&dir);
                     win::shell_open(&dir);
                 }
@@ -2663,13 +2664,6 @@ struct Panels {
     bottom: bool,
 }
 
-/// The icon of the start screen in points: 112 as in qview, 64 in a low
-/// window (both embedded at 100–200 %).
-/// Where saved frames go: Pictures\MetalMPV.
-fn frames_dir() -> Option<PathBuf> {
-    Some(win::pictures_dir()?.join(crate::APP_NAME))
-}
-
 /// The video's display size in pixels, `None` without a picture.
 fn video_size(state: &State) -> Option<[f64; 2]> {
     match (state.width, state.height) {
@@ -2678,6 +2672,8 @@ fn video_size(state: &State) -> Option<[f64; 2]> {
     }
 }
 
+/// The icon of the start screen in points: 112 as in qview, 64 in a low
+/// window (both embedded at 100–200 %).
 fn start_icon_size(rect: Rect) -> f32 {
     if rect.height() >= 340.0 { 112.0 } else { 64.0 }
 }
