@@ -49,6 +49,14 @@ const GAP: f32 = 6.0;
 const CORNER: f32 = 12.0;
 /// The delays' sliders reach this far either way; the keys go further.
 const DELAY_RANGE: f64 = 5.0;
+/// The gutter of the scroll bar while the tabs scroll.
+const SCROLL_GUTTER: f32 = 14.0;
+/// The room kept between the panel and the window's top edge.
+const EDGE: f32 = 8.0;
+/// The least height the tabs are given, however low the window.
+const MIN_ROOM: f32 = 120.0;
+/// The height of the row where a name is typed.
+const NAME_ROW: f32 = 28.0;
 /// A slider's knob, its radius.
 const KNOB: f32 = 6.0;
 
@@ -82,6 +90,8 @@ pub struct VideoPanel {
     naming: Option<String>,
     /// Where the panel was drawn last, for the presses outside it.
     rect: Option<egui::Rect>,
+    /// The tabs scroll: the window is too low for the tallest.
+    scrolls: bool,
 }
 
 /// What the Sound and Subtitles tabs edit: settings, kept between runs.
@@ -143,8 +153,10 @@ impl VideoPanel {
     /// Draw the panel while it is open, editing `adjust` and `kept` in
     /// place; the commands of its buttons. It stands over `button` (the
     /// control bar's, where it was drawn this frame), its right edge on the
-    /// button's, else at the window's bottom right corner; shown whole,
-    /// kept on the window when the room above is short. A press outside it
+    /// button's, else at the window's bottom right corner; as tall as its
+    /// tallest tab whichever is shown, and when the window is too low for
+    /// that, as tall as there is room above the button, the tabs scrolling
+    /// under the head. A press outside it
     /// and its button closes it, unless a popup of its own is open (a
     /// list, the colour picker, the camera's menu): the press is that one's.
     pub fn show(
@@ -181,15 +193,21 @@ impl VideoPanel {
         let frame = egui::Frame::popup(&ctx.style_of(egui::Theme::Dark))
             .fill(style::PANEL_BG)
             .inner_margin(12);
+        // A gutter for the scroll bar while the tabs scroll, so that it
+        // does not run over the values (decided last frame: the width
+        // places the panel).
+        let content = WIDTH + if self.scrolls { SCROLL_GUTTER } else { 0.0 };
         // The left edge from the width the panel is meant to have, not the
         // one measured last frame: content a little wider moved the panel,
         // and it shook as it was laid out again.
-        let outer = WIDTH + frame.total_margin().sum().x;
+        let outer = content + frame.total_margin().sum().x;
         let right_bottom = match button {
             Some(b) => b.right_top() - vec2(0.0, GAP),
             None => screen.right_bottom() - vec2(CORNER, CORNER),
         };
         let at = right_bottom - vec2(outer, 0.0);
+        // The height there is for the head and a tab, over the button.
+        let limit = right_bottom.y - screen.top() - EDGE - frame.total_margin().sum().y;
         let shown = egui::Area::new(egui::Id::new("video_panel"))
             .order(egui::Order::Foreground)
             .pivot(Align2::LEFT_BOTTOM)
@@ -197,19 +215,21 @@ impl VideoPanel {
             .constrain_to(screen)
             .show(ctx, |ui| {
                 frame.show(ui, |ui| {
-                    ui.set_width(WIDTH);
+                    ui.set_width(content);
+                    let top = ui.cursor().top();
                     self.head(ui, now.has_video, &mut out);
                     ui.add_space(4.0);
-                    // The other tabs laid out unseen (an invisible Ui paints
+                    let room = (limit - (ui.cursor().top() - top)).max(MIN_ROOM);
+                    // Every tab laid out unseen (an invisible Ui paints
                     // nothing and takes no input) for the tallest: the
                     // panel keeps that height whichever is shown, as one
                     // held by its bottom edge jumped when they changed.
                     let mut kept = kept;
                     let mut tallest = 0.0_f32;
-                    for tab in Tab::ALL.into_iter().filter(|t| *t != self.tab) {
-                        let room = ui.available_rect_before_wrap();
+                    for tab in Tab::ALL {
+                        let rect = ui.available_rect_before_wrap();
                         let mut unseen =
-                            ui.new_child(egui::UiBuilder::new().max_rect(room).invisible());
+                            ui.new_child(egui::UiBuilder::new().max_rect(rect).invisible());
                         let (mut no_name, mut no_cmds) = (None, Vec::new());
                         tab_contents(
                             &mut unseen,
@@ -222,21 +242,48 @@ impl VideoPanel {
                         );
                         tallest = tallest.max(unseen.min_rect().height());
                     }
-                    // The room as a least height, not space added after:
-                    // that came with the spacing between items, and the
-                    // shorter tabs were taller by it.
-                    ui.scope(|ui| {
-                        ui.set_min_height(tallest);
-                        tab_contents(
-                            ui,
-                            self.tab,
-                            adjust,
-                            &mut kept,
-                            now,
-                            &mut self.naming,
-                            &mut out,
-                        );
-                    });
+                    // The row where a name is typed, while it is.
+                    if self.naming.is_some() {
+                        tallest += NAME_ROW;
+                    }
+                    self.scrolls = tallest > room;
+                    if self.scrolls {
+                        // Too low a window: the tabs scroll under the head,
+                        // the panel as high as there is room over the
+                        // button.
+                        egui::ScrollArea::vertical()
+                            .id_salt(("video_panel", self.tab as u8))
+                            .max_height(room)
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.set_width(WIDTH);
+                                tab_contents(
+                                    ui,
+                                    self.tab,
+                                    adjust,
+                                    &mut kept,
+                                    now,
+                                    &mut self.naming,
+                                    &mut out,
+                                );
+                            });
+                    } else {
+                        // The room as a least height, not space added
+                        // after: that came with the spacing between items,
+                        // and the shorter tabs were taller by it.
+                        ui.scope(|ui| {
+                            ui.set_min_height(tallest);
+                            tab_contents(
+                                ui,
+                                self.tab,
+                                adjust,
+                                &mut kept,
+                                now,
+                                &mut self.naming,
+                                &mut out,
+                            );
+                        });
+                    }
                 });
             });
         self.rect = Some(shown.response.rect);
