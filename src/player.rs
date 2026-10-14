@@ -237,6 +237,8 @@ const FRAME_INFO: u64 = 100;
 const LOAD: u64 = 101;
 /// mpv's `playlist`, asked for when a file turned out to be a list.
 const PLAYLIST: u64 = 102;
+/// The reply to [`Player::save_frame`]'s `screenshot-to-file`.
+const SCREENSHOT: u64 = 103;
 /// The figures of the playback, asked for while the information window is
 /// open ([`Player::ask_live`]): the replies' numbers from [`LIVE_FIRST`].
 const LIVE_FIRST: u64 = 110;
@@ -641,6 +643,9 @@ pub enum Happened {
     },
     /// A seek finished: the position is the new one.
     Restarted,
+    /// A frame asked for by [`Player::save_frame`] was written, or why
+    /// not; in the order asked.
+    FrameSaved(Option<String>),
     Shutdown,
 }
 
@@ -945,6 +950,10 @@ impl Player {
                     self.starts_due = self.starts_due.saturating_sub(1);
                     out.push(Happened::Failed(e));
                 }
+                Event::CommandReply {
+                    id: SCREENSHOT,
+                    error,
+                } => out.push(Happened::FrameSaved(error)),
                 Event::CommandReply { error: Some(e), .. } => log::warn!("mpv command failed: {e}"),
                 Event::Shutdown => out.push(Happened::Shutdown),
                 _ => {}
@@ -1260,7 +1269,7 @@ impl Player {
     pub fn save_frame(&mut self, path: &Path) {
         let path = path.to_string_lossy();
         self.mpv
-            .command(0, &["screenshot-to-file", path.as_ref(), "video"]);
+            .command(SCREENSHOT, &["screenshot-to-file", path.as_ref(), "video"]);
     }
 
     /// Compressed sound to a receiver as it is, or decoded here.
@@ -1895,6 +1904,17 @@ mod tests {
         }
         assert!(failed, "a missing file did not fail");
         assert_eq!(player.starts_due, 0);
+        // A value refused is answered (and logged) like one taken.
+        player
+            .mpv
+            .set("video-rotate", &Value::Str("sideways".into()));
+        player.mpv.set("volume", &Value::Double(50.0));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while player.mpv.sets_waiting() > 0 && std::time::Instant::now() < deadline {
+            player.poll();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert_eq!(player.mpv.sets_waiting(), 0);
     }
 
     /// The playback's figures and the tracks' ids on a real file without a

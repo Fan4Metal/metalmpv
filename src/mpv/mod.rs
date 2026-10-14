@@ -131,6 +131,15 @@ pub struct Mpv {
     /// twice: mpv holds a pointer to the inner box, which must not move.
     #[allow(clippy::vec_box)]
     wakeup: Vec<Box<Box<dyn Fn() + Send + Sync>>>,
+    /// The properties set and not answered yet, by their reply's number:
+    /// a value refused comes back as an event, logged by the name.
+    sets: std::sync::Mutex<Sets>,
+}
+
+#[derive(Default)]
+struct Sets {
+    next: u64,
+    names: std::collections::HashMap<u64, String>,
 }
 
 // SAFETY: the client API is thread-safe; the handle is a pointer to a
@@ -152,6 +161,7 @@ impl Mpv {
             api,
             handle,
             wakeup: Vec::new(),
+            sets: std::sync::Mutex::default(),
         };
         for (name, value) in options {
             let (n, v) = (cstring(name), cstring(value));
@@ -202,12 +212,21 @@ impl Mpv {
     /// Set a property without waiting; the value is copied at once. Lists
     /// and maps are not set.
     pub fn set(&self, name: &str, value: &Value) {
+        // Nodes are only read (track-list), never set.
+        if matches!(value, Value::None | Value::List(_) | Value::Map(_)) {
+            return;
+        }
         let n = cstring(name);
+        let id = self.sets.lock().map_or(0, |mut sets| {
+            sets.next += 1;
+            let id = sets.next;
+            sets.names.insert(id, name.to_owned());
+            id
+        });
         let set = |format: sys::mpv_format, data: *mut c_void| unsafe {
-            (self.api.mpv_set_property_async)(self.handle, 0, n.as_ptr(), format, data)
+            (self.api.mpv_set_property_async)(self.handle, id, n.as_ptr(), format, data)
         };
         let code = match value {
-            // Nodes are only read (track-list), never set.
             Value::None | Value::List(_) | Value::Map(_) => return,
             Value::Flag(v) => {
                 let mut flag = c_int::from(*v);
@@ -229,7 +248,19 @@ impl Mpv {
         };
         if code < 0 {
             log::warn!("mpv set {name}: {}", self.error_string(code));
+            self.set_answered(id);
         }
+    }
+
+    /// Properties set and not answered yet.
+    #[cfg(test)]
+    pub fn sets_waiting(&self) -> usize {
+        self.sets.lock().map_or(0, |sets| sets.names.len())
+    }
+
+    /// The name of the property set with reply `id`, forgotten.
+    fn set_answered(&self, id: u64) -> Option<String> {
+        self.sets.lock().ok()?.names.remove(&id)
     }
 
     /// Ask for a property; the answer comes as [`Event::Property`] with `id`.
@@ -289,6 +320,13 @@ impl Mpv {
                     id: event.reply_userdata,
                     value,
                 }
+            }
+            sys::MPV_EVENT_SET_PROPERTY_REPLY => {
+                let name = self.set_answered(event.reply_userdata);
+                if let Some(e) = &error {
+                    log::warn!("mpv set {}: {e}", name.as_deref().unwrap_or("?"));
+                }
+                Event::Other(event.event_id)
             }
             sys::MPV_EVENT_COMMAND_REPLY => Event::CommandReply {
                 id: event.reply_userdata,

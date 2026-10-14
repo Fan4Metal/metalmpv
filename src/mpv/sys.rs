@@ -36,6 +36,7 @@ pub const MPV_EVENT_NONE: mpv_event_id = 0;
 pub const MPV_EVENT_SHUTDOWN: mpv_event_id = 1;
 pub const MPV_EVENT_LOG_MESSAGE: mpv_event_id = 2;
 pub const MPV_EVENT_GET_PROPERTY_REPLY: mpv_event_id = 3;
+pub const MPV_EVENT_SET_PROPERTY_REPLY: mpv_event_id = 4;
 pub const MPV_EVENT_COMMAND_REPLY: mpv_event_id = 5;
 pub const MPV_EVENT_START_FILE: mpv_event_id = 6;
 pub const MPV_EVENT_END_FILE: mpv_event_id = 7;

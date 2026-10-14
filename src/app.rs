@@ -66,6 +66,9 @@ pub struct App {
     engine_error: Option<crate::player::EngineError>,
     /// Why the last file could not be played.
     file_error: Option<String>,
+    /// Frames asked for and not written yet, in order: their names are
+    /// taken, and the OSD names each once written.
+    frames_saving: std::collections::VecDeque<PathBuf>,
     playlist: Playlist,
     about: AboutDialog,
     settings_dialog: SettingsDialog,
@@ -301,6 +304,7 @@ impl App {
             video,
             engine_error,
             file_error: None,
+            frames_saving: std::collections::VecDeque::new(),
             playlist: Playlist::default(),
             about: AboutDialog::default(),
             info: InfoWindow::default(),
@@ -632,17 +636,36 @@ impl App {
         let time = crate::format::time(state.time, true).replace(':', "-");
         let mut path = dir.join(format!("{stem} {time}.png"));
         for n in 2.. {
-            if !path.exists() {
+            if !path.exists() && !self.frames_saving.contains(&path) {
                 break;
             }
             path = dir.join(format!("{stem} {time} ({n}).png"));
         }
         player.save_frame(&path);
-        let name = path.file_name().map(|n| n.to_string_lossy().into_owned());
-        self.osd.show(Osd::Text(tr!(
-            format!("[ Frame saved: {} ]", name.unwrap_or_default()),
-            format!("[ Кадр сохранён: {} ]", name.unwrap_or_default())
-        )));
+        self.frames_saving.push_back(path);
+    }
+
+    /// mpv wrote the frame asked for first, or could not (`error`).
+    fn frame_saved(&mut self, error: Option<String>) {
+        let path = self.frames_saving.pop_front();
+        let name = path
+            .as_deref()
+            .and_then(Path::file_name)
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self.osd.show(Osd::Text(match error {
+            None => tr!(
+                format!("[ Frame saved: {name} ]"),
+                format!("[ Кадр сохранён: {name} ]")
+            ),
+            Some(e) => {
+                log::warn!("cannot save the frame {name}: {e}");
+                tr!(
+                    format!("Cannot save the frame: {e}"),
+                    format!("Не удалось сохранить кадр: {e}")
+                )
+            }
+        }));
     }
 
     /// Write the playlist to an M3U8 file the user names.
@@ -1910,6 +1933,7 @@ impl App {
                     }
                 }
                 Happened::Restarted => {}
+                Happened::FrameSaved(error) => self.frame_saved(error),
                 Happened::Shutdown => {
                     self.engine_error = Some(crate::player::EngineError::Failed(
                         "mpv has shut down".into(),
