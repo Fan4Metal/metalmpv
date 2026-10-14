@@ -6,7 +6,7 @@
 //! can be changed in one go; `T` or `Esc` closes it too. The same lists are
 //! submenus of the picture's context menu.
 
-use egui::{Align2, Color32, FontId, Rect, Response, RichText, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Align2, Color32, FontId, Rect, Response, Sense, Stroke, Ui, pos2, vec2};
 
 use super::{icons, popover, style};
 use crate::i18n::lang;
@@ -91,14 +91,8 @@ fn column(ui: &mut Ui, all: &[Track], kind: Kind, out: &mut Vec<Cmd>) {
     } else {
         tr!("Subtitles", "Субтитры")
     };
-    // As the panel's groups: small and muted.
-    ui.label(
-        RichText::new(title)
-            .small()
-            .strong()
-            .color(style::TEXT_WEAK),
-    );
-    ui.add_space(4.0);
+    title_as_tab(ui, title);
+    ui.add_space(6.0);
     let list = tracks::of_kind(all, kind);
     egui::ScrollArea::vertical()
         .id_salt(("tracks", audio))
@@ -149,6 +143,34 @@ fn column(ui: &mut Ui, all: &[Track], kind: Kind, out: &mut Vec<Cmd>) {
             out.push(Cmd::LoadSubtitles);
         }
     }
+}
+
+/// A column's title drawn as the panel's tab shown: centred over a line,
+/// underlined in the accent colour.
+fn title_as_tab(ui: &mut Ui, title: &str) {
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
+    let painter = ui.painter();
+    painter.hline(
+        rect.x_range(),
+        rect.bottom() - 0.5,
+        Stroke::new(1.0, style::LINE),
+    );
+    painter.text(
+        rect.center() - vec2(0.0, 1.0),
+        Align2::CENTER_CENTER,
+        title,
+        FontId::proportional(14.0),
+        style::TEXT_BRIGHT,
+    );
+    let half = rect.width() * 0.15;
+    let y = rect.bottom() - 1.0;
+    painter.line_segment(
+        [
+            pos2(rect.center().x - half, y),
+            pos2(rect.center().x + half, y),
+        ],
+        Stroke::new(2.0, style::accent()),
+    );
 }
 
 /// A row: a radio mark, the name (the language first) and under it the
