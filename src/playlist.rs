@@ -444,11 +444,17 @@ impl Playlist {
             .collect();
         keyed.sort_by(|(ka, a), (kb, b)| natural_cmp(ka, kb).then_with(|| a.cmp(b)));
         self.items = keyed.into_iter().map(|(_, p)| p).collect();
-        let find = |p: Option<PathBuf>| p.and_then(|p| self.items.iter().position(|i| *i == p));
-        self.current = find(current);
+        let find = |items: &[PathBuf], p: Option<PathBuf>| {
+            p.and_then(|p| items.iter().position(|i| *i == p))
+        };
+        // Left where it fell, the entries before it would not play.
+        if let Some(i) = find(&self.items, current) {
+            self.items[..=i].rotate_right(1);
+            self.current = Some(0);
+        }
         // The place of a playing entry taken out means nothing now.
         self.after_gone = None;
-        self.selected = find(selected);
+        self.selected = find(&self.items, selected);
     }
 
     /// The entry after the current one (after the place of the playing
@@ -484,8 +490,9 @@ impl Playlist {
         })
     }
 
-    /// Put the entries in a random order (`seed` picks it); the current and
-    /// the selected entries follow their files.
+    /// Put the entries in a random order (`seed` picks it); the current
+    /// entry goes first, so that all the others play after it, and the
+    /// selected one follows its file.
     pub fn shuffle(&mut self, seed: u64) {
         let current = self.current_path().map(Path::to_path_buf);
         let selected = self.selected.and_then(|i| self.items.get(i)).cloned();
@@ -501,11 +508,17 @@ impl Playlist {
             let j = (random() % (i as u64 + 1)) as usize;
             self.items.swap(i, j);
         }
-        let find = |p: Option<PathBuf>| p.and_then(|p| self.items.iter().position(|i| *i == p));
-        self.current = find(current);
+        let find = |items: &[PathBuf], p: Option<PathBuf>| {
+            p.and_then(|p| items.iter().position(|i| *i == p))
+        };
+        // Left where it fell, the entries before it would not play.
+        if let Some(i) = find(&self.items, current) {
+            self.items[..=i].rotate_right(1);
+            self.current = Some(0);
+        }
         // The place of a playing entry taken out means nothing now.
         self.after_gone = None;
-        self.selected = find(selected);
+        self.selected = find(&self.items, selected);
     }
 }
 
@@ -739,6 +752,7 @@ mod tests {
         let mut items: Vec<String> = p.items().iter().map(|i| i.display().to_string()).collect();
         assert_ne!(items, names);
         assert_eq!(p.current_path(), Some(Path::new("f5")));
+        assert_eq!(p.current(), Some(0));
         items.sort();
         let mut sorted = names.clone();
         sorted.sort();
