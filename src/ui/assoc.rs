@@ -1,8 +1,8 @@
 //! The File types page of the settings, after qview's associations
 //! dialog: whether MetalMPV is registered with Windows, the buttons that
 //! register, open Windows' Default apps and remove the registration
-//! (`assoc.rs`), and the types with their icons, extensions and whether
-//! MetalMPV opens them by default.
+//! (`assoc.rs`), and the types with their icons, extensions (those
+//! MetalMPV opens bright) and whether MetalMPV opens them by default.
 
 use egui::{RichText, TextureHandle, Ui};
 
@@ -21,7 +21,7 @@ const BUTTON: f32 = 150.0;
 pub struct FileTypesPage {
     /// The registration and who opens each type, with when they were
     /// read: once a second (a hundred registry reads), and after a button.
-    read: Option<(std::time::Instant, Status, Vec<Opener>)>,
+    read: Option<(std::time::Instant, Status, Vec<Vec<Opener>>)>,
     /// The types' icons for a pixel size, drawn when the page is first
     /// shown.
     icons: Option<(u32, Vec<TextureHandle>)>,
@@ -61,11 +61,16 @@ impl FileTypesPage {
         let mut action = None;
         section(ui, tr!("Registration", "Регистрация"), |ui| {
             // A row per action, the buttons of one width in a column.
-            let button = |ui: &mut Ui, enabled: bool, text: &str| {
+            let button = |ui: &mut Ui, enabled: bool, text: &str, disabled_tip: Option<&str>| {
                 let size = egui::vec2(BUTTON, ui.spacing().interact_size.y);
-                ui.add_enabled_ui(enabled, |ui| ui.add_sized(size, egui::Button::new(text)))
-                    .inner
-                    .clicked()
+                let response = ui
+                    .add_enabled_ui(enabled, |ui| ui.add_sized(size, egui::Button::new(text)))
+                    .inner;
+                match disabled_tip {
+                    Some(tip) => response.on_disabled_hover_text(tip),
+                    None => response,
+                }
+                .clicked()
             };
             let state = match &status {
                 Status::NotRegistered => tr!(
@@ -90,7 +95,7 @@ impl FileTypesPage {
                 tr!("MetalMPV in Windows", "MetalMPV в Windows"),
                 Some(&state),
                 BUTTON,
-                |ui| button(ui, true, register),
+                |ui| button(ui, true, register, None),
             ) {
                 action = Some(Action::Register);
             }
@@ -103,7 +108,17 @@ impl FileTypesPage {
                     "Открывает приложения по умолчанию в параметрах Windows."
                 )),
                 BUTTON,
-                |ui| button(ui, status == Status::Registered, tr!("Choose…", "Выбрать…")),
+                |ui| {
+                    button(
+                        ui,
+                        status == Status::Registered,
+                        tr!("Choose…", "Выбрать…"),
+                        Some(tr!(
+                            "Windows offers MetalMPV once it is registered.",
+                            "Windows предложит MetalMPV после регистрации."
+                        )),
+                    )
+                },
             ) {
                 action = Some(Action::Choose);
             }
@@ -121,6 +136,7 @@ impl FileTypesPage {
                         ui,
                         status != Status::NotRegistered,
                         tr!("Unregister", "Удалить"),
+                        None,
                     )
                 },
             ) {
@@ -161,21 +177,32 @@ impl FileTypesPage {
                             ui.image((icon.id(), egui::vec2(ICON, ICON)));
                         }
                         ui.label(if ru { t.name_ru } else { t.name_en });
-                        let extensions: Vec<String> =
-                            t.extensions.iter().map(|e| format!(".{e}")).collect();
-                        ui.label(extensions.join(" "));
-                        match defaults.get(i) {
-                            Some(Opener::Us) => ui.label("✔"),
-                            Some(Opener::UsElsewhere) => ui.label("✔").on_hover_text(tr!(
+                        let openers = defaults.get(i).map(Vec::as_slice).unwrap_or_default();
+                        extensions(ui, t.extensions, openers);
+                        let ours = |o: &&Opener| **o != Opener::Other;
+                        let count = openers.iter().filter(ours).count();
+                        if count == 0 {
+                            ui.label("—");
+                        } else if count < t.extensions.len() {
+                            ui.label(format!("{count}/{}", t.extensions.len()))
+                                .on_hover_text(tr!(
+                                    "MetalMPV opens the extensions in bright letters; the others \
+                                     are chosen for it in Settings, each on its own.",
+                                    "MetalMPV открывает расширения, выделенные ярким; остальные \
+                                     выбираются для него в параметрах Windows по отдельности."
+                                ));
+                        } else if openers.contains(&Opener::UsElsewhere) {
+                            ui.label("✔").on_hover_text(tr!(
                                 "MetalMPV opens these files, as picked in \"Open with\". \
                                  Choosing MetalMPV for this type in Settings gives the files \
                                  its icon and name.",
                                 "Эти файлы открывает MetalMPV, выбранный через «Открыть с \
                                  помощью». Если выбрать MetalMPV для этого типа в параметрах \
                                  Windows, файлы получат его значок и название."
-                            )),
-                            _ => ui.label("—"),
-                        };
+                            ));
+                        } else {
+                            ui.label("✔");
+                        }
                         ui.end_row();
                     }
                 });
@@ -257,4 +284,27 @@ impl FileTypesPage {
             .map(|(_, i)| i.clone())
             .unwrap_or_default()
     }
+}
+
+/// A type's extensions, those MetalMPV opens bright, the others faint,
+/// each with who opens it in its tooltip.
+fn extensions(ui: &mut Ui, extensions: &[&str], openers: &[Opener]) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 5.0;
+        for (i, ext) in extensions.iter().enumerate() {
+            let opener = openers.get(i).copied().unwrap_or(Opener::Other);
+            let (color, tip) = match opener {
+                Opener::Other => (
+                    style::TEXT_WEAK,
+                    tr!("Opened by another program", "Открывается другой программой"),
+                ),
+                _ => (
+                    style::TEXT_BRIGHT,
+                    tr!("Opened by MetalMPV", "Открывается MetalMPV"),
+                ),
+            };
+            ui.label(RichText::new(format!(".{ext}")).color(color))
+                .on_hover_text(tip);
+        }
+    });
 }

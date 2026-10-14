@@ -115,30 +115,38 @@ fn effective_prog_id(ext: &str) -> Option<String> {
         .filter(|p| !p.is_empty())
 }
 
-/// For each of `FILE_TYPES`: which program opens its main extension, `exe`
-/// being this MetalMPV.
-pub fn defaults(exe: Option<&Path>) -> Vec<Opener> {
+/// For each of `FILE_TYPES`: which program opens each of its extensions,
+/// `exe` being this MetalMPV.
+pub fn defaults(exe: Option<&Path>) -> Vec<Vec<Opener>> {
     let exe = exe.map(|e| e.display().to_string().to_lowercase());
     FILE_TYPES
         .iter()
-        .map(|t| match effective_prog_id(t.extensions[0]) {
-            Some(p) if p.eq_ignore_ascii_case(&prog_id(t.id)) => Opener::Us,
-            Some(p) => {
-                let command = reg::get_in(
-                    reg::Root::Classes,
-                    &format!(r"{p}\shell\open\command"),
-                    None,
-                );
-                match (command, &exe) {
-                    (Some(c), Some(exe)) if c.to_lowercase().contains(exe.as_str()) => {
-                        Opener::UsElsewhere
-                    }
-                    _ => Opener::Other,
-                }
-            }
-            None => Opener::Other,
+        .map(|t| {
+            t.extensions
+                .iter()
+                .map(|ext| opener(ext, &prog_id(t.id), exe.as_deref()))
+                .collect()
         })
         .collect()
+}
+
+/// Which program opens `.ext`; `ours` is MetalMPV's ProgID for its type.
+fn opener(ext: &str, ours: &str, exe: Option<&str>) -> Opener {
+    match effective_prog_id(ext) {
+        Some(p) if p.eq_ignore_ascii_case(ours) => Opener::Us,
+        Some(p) => {
+            let command = reg::get_in(
+                reg::Root::Classes,
+                &format!(r"{p}\shell\open\command"),
+                None,
+            );
+            match (command, exe) {
+                (Some(c), Some(exe)) if c.to_lowercase().contains(exe) => Opener::UsElsewhere,
+                _ => Opener::Other,
+            }
+        }
+        None => Opener::Other,
+    }
 }
 
 /// ProgIDs other than MetalMPV's that `.ext` may open with: its default,
