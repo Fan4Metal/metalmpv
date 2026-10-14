@@ -824,7 +824,7 @@ pub fn live_rows_in(lang: Lang, s: &Subject) -> Vec<(String, String)> {
 
 /// What the sound device gets: "48 kHz · 5.1 · float"; compressed sound
 /// passed through: "bitstream (E-AC3)".
-fn audio_out_in(lang: Lang, out: &AudioOut) -> Option<String> {
+pub fn audio_out_in(lang: Lang, out: &AudioOut) -> Option<String> {
     let ru = lang == Lang::Ru;
     if let Some(codec) = out.format.as_deref().and_then(|f| f.strip_prefix("spdif-")) {
         let codec = tracks::codec_name(codec);

@@ -2870,13 +2870,16 @@ impl eframe::App for App {
             .as_ref()
             .and_then(|c| c.loaded.as_ref())
             .map(|(cover, texture)| CoverView { cover, texture });
-        if self.info.open
-            && let Some(player) = &mut self.player
-        {
-            player.ask_scan();
-            player.ask_live();
-            // The figures come every second, paused or not.
-            ctx.request_repaint_after(std::time::Duration::from_secs(1));
+        if let Some(player) = &mut self.player {
+            if self.info.open {
+                player.ask_scan();
+            }
+            // The figures of the moment, for the information window and
+            // the panel's Sound tab; they come every second, paused or not.
+            if self.info.open || self.video_panel.open {
+                player.ask_live();
+                ctx.request_repaint_after(std::time::Duration::from_secs(1));
+            }
         }
         let channel = self
             .playlist
@@ -2938,6 +2941,9 @@ impl eframe::App for App {
                 has_video: video_size(&state).is_some(),
                 audio_delay: state.audio_delay,
                 sub_delay: state.sub_delay,
+                audio: tracks::selected(&state.tracks, Kind::Audio),
+                audio_out: state.live.audio_out.as_ref(),
+                audio_bitrate: state.live.audio_bitrate,
             },
         );
         cmds.extend(panel_cmds);

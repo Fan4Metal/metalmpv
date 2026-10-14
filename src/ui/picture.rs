@@ -108,12 +108,17 @@ pub struct Kept<'a> {
 
 /// What the panel shows of the playback now.
 #[derive(Clone, Copy, Debug)]
-pub struct Now {
+pub struct Now<'a> {
     /// A frame can be saved.
     pub has_video: bool,
     /// The sound's and the subtitles' delays, in seconds.
     pub audio_delay: f64,
     pub sub_delay: f64,
+    /// The audio track playing, what the device gets of it and its bitrate
+    /// of the moment (asked for every second while the panel is open).
+    pub audio: Option<&'a crate::tracks::Track>,
+    pub audio_out: Option<&'a crate::player::AudioOut>,
+    pub audio_bitrate: Option<f64>,
 }
 
 impl VideoPanel {
@@ -148,7 +153,7 @@ impl VideoPanel {
         button: Option<egui::Rect>,
         adjust: &mut Adjust,
         kept: Kept<'_>,
-        now: Now,
+        now: Now<'_>,
     ) -> Vec<Cmd> {
         let mut out = Vec::new();
         if !self.open {
@@ -329,7 +334,7 @@ fn tab_contents(
     tab: Tab,
     adjust: &mut Adjust,
     kept: &mut Kept<'_>,
-    now: Now,
+    now: Now<'_>,
     naming: &mut Option<String>,
     out: &mut Vec<Cmd>,
 ) {
@@ -525,10 +530,13 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, keep: &mut bool) {
 fn sound_tab(
     ui: &mut Ui,
     kept: &mut Kept<'_>,
-    now: Now,
+    now: Now<'_>,
     naming: &mut Option<String>,
     out: &mut Vec<Cmd>,
 ) {
+    heading(ui, tr!("Now playing", "Сейчас играет"));
+    now_playing(ui, &now);
+
     heading(ui, tr!("Output", "Вывод"));
     let same = tr!(
         "As on the settings' Sound page",
@@ -619,6 +627,147 @@ fn sound_tab(
     heading(ui, tr!("Equalizer", "Эквалайзер"));
     eq_head(ui, kept.equalizer, kept.eq_presets, naming);
     bands(ui, kept.equalizer);
+}
+
+/// The audio track playing: its channels drawn as speakers round the
+/// listener, beside them its format as the decoder names it (the codec's
+/// full name in the tooltip), its channels, rate and bitrate, and what the
+/// device gets of it.
+fn now_playing(ui: &mut Ui, now: &Now<'_>) {
+    let lang = crate::i18n::lang();
+    let Some(track) = now.audio else {
+        note(ui, tr!("No sound is playing.", "Звук не играет."));
+        return;
+    };
+    ui.horizontal_top(|ui| {
+        let channels = track.channels.unwrap_or(2);
+        let icon = speakers(ui, channels, track.layout.as_deref());
+        icon.on_hover_text(match &track.layout {
+            Some(layout) => tr!(format!("Channels: {layout}"), format!("Каналы: {layout}")),
+            None => tr!(
+                format!("Channels: {channels}"),
+                format!("Каналов: {channels}")
+            ),
+        });
+        ui.add_space(8.0);
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 2.0;
+            let format = track
+                .format_name()
+                .unwrap_or_else(|| tr!("Unknown", "Неизвестный").to_owned());
+            let title = ui.label(RichText::new(format).size(15.0).color(style::TEXT_BRIGHT));
+            if let Some(desc) = &track.codec_desc {
+                title.on_hover_text(desc);
+            }
+            let mut parts = vec![crate::tracks::channels_in(lang, channels)];
+            if let Some(rate) = track.samplerate.filter(|r| *r > 0) {
+                let khz = rate as f64 / 1000.0;
+                let khz = if rate % 1000 == 0 {
+                    format!("{khz:.0}")
+                } else {
+                    format!("{khz:.1}")
+                };
+                parts.push(tr!(
+                    format!("{khz} kHz"),
+                    format!("{} кГц", khz.replace('.', ","))
+                ));
+            }
+            let bitrate = now
+                .audio_bitrate
+                .or(track.bitrate.filter(|b| *b > 0).map(|b| b as f64));
+            if let Some(b) = bitrate {
+                parts.push(crate::info::bitrate_in(lang, b));
+            }
+            ui.label(RichText::new(parts.join(" · ")).color(style::TEXT));
+            if let Some(out) = now
+                .audio_out
+                .and_then(|o| crate::info::audio_out_in(lang, o))
+            {
+                ui.label(
+                    RichText::new(tr!(
+                        format!("To the device: {out}"),
+                        format!("На устройство: {out}")
+                    ))
+                    .color(style::TEXT_WEAK),
+                );
+            }
+        });
+    });
+}
+
+/// A track's channels as speakers round the listener (a ring in the
+/// middle): those it has lit in the accent colour, the rest of 7.1's
+/// places faint; the low frequencies a wider block at the front right.
+fn speakers(ui: &mut Ui, channels: i64, layout: Option<&str>) -> egui::Response {
+    #[derive(Clone, Copy, PartialEq)]
+    enum At {
+        FrontLeft,
+        FrontRight,
+        Centre,
+        Low,
+        SideLeft,
+        SideRight,
+        BackLeft,
+        BackRight,
+        BackCentre,
+    }
+    use At::*;
+    let lfe = layout.is_some_and(|l| l.contains(".1"));
+    let lit: &[At] = match channels {
+        1 => &[Centre],
+        2 => &[FrontLeft, FrontRight],
+        3 if lfe => &[FrontLeft, FrontRight, Low],
+        3 => &[FrontLeft, FrontRight, Centre],
+        4 if lfe => &[FrontLeft, FrontRight, Centre, Low],
+        4 => &[FrontLeft, FrontRight, BackLeft, BackRight],
+        5 if lfe => &[FrontLeft, FrontRight, Low, SideLeft, SideRight],
+        5 => &[FrontLeft, FrontRight, Centre, SideLeft, SideRight],
+        6 => &[FrontLeft, FrontRight, Centre, Low, SideLeft, SideRight],
+        7 => &[
+            FrontLeft, FrontRight, Centre, Low, SideLeft, SideRight, BackCentre,
+        ],
+        _ => &[
+            FrontLeft, FrontRight, Centre, Low, SideLeft, SideRight, BackLeft, BackRight,
+        ],
+    };
+    let (rect, response) = ui.allocate_exact_size(vec2(60.0, 50.0), Sense::hover());
+    let painter = ui.painter();
+    let o = rect.center();
+    let at = |x: f32, y: f32| o + vec2(x * 26.0, y * 21.0);
+    let places = [
+        (FrontLeft, at(-0.75, -0.8)),
+        (FrontRight, at(0.75, -0.8)),
+        (Centre, at(0.0, -0.95)),
+        (SideLeft, at(-1.0, 0.15)),
+        (SideRight, at(1.0, 0.15)),
+        (BackLeft, at(-0.6, 0.9)),
+        (BackRight, at(0.6, 0.9)),
+        (BackCentre, at(0.0, 0.95)),
+    ];
+    let color = |place: At| {
+        if lit.contains(&place) {
+            style::accent()
+        } else {
+            style::TRACK
+        }
+    };
+    for (place, p) in places {
+        // The back centre only where there is one: it would sit on the
+        // back pair's way.
+        if place == BackCentre && !lit.contains(&BackCentre) {
+            continue;
+        }
+        painter.rect_filled(Rect::from_center_size(p, vec2(7.0, 7.0)), 2.0, color(place));
+    }
+    if lit.contains(&Low) {
+        painter.rect_filled(
+            Rect::from_center_size(at(0.42, -0.35), vec2(9.0, 5.0)),
+            1.5,
+            color(Low),
+        );
+    }
+    painter.circle_stroke(at(0.0, 0.15), 4.0, Stroke::new(1.3, style::TEXT_WEAK));
+    response
 }
 
 /// The equalizer's switch, its presets and the user's own in one list, and
@@ -818,7 +967,7 @@ fn smooth(points: &[egui::Pos2]) -> Vec<egui::Pos2> {
 fn subtitles_tab(
     ui: &mut Ui,
     kept: &mut Kept<'_>,
-    now: Now,
+    now: Now<'_>,
     naming: &mut Option<String>,
     out: &mut Vec<Cmd>,
 ) {
@@ -1263,14 +1412,7 @@ fn combo_row(
     items: impl FnOnce(&mut Ui),
 ) {
     ui.horizontal(|ui| {
-        let mut response = ui.add_sized(
-            vec2(LABEL, ui.spacing().interact_size.y),
-            egui::Label::new(label),
-        );
-        if let Some(tip) = tip {
-            response = response.on_hover_text(tip);
-        }
-        let _ = response;
+        row_label(ui, label, tip);
         egui::ComboBox::from_id_salt(id)
             .selected_text(selected)
             .width(ui.available_width())
@@ -1460,13 +1602,20 @@ fn labelled(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui)) {
 /// [`labelled`] with `tip` on the label.
 fn labelled_tip(ui: &mut Ui, label: &str, tip: Option<&str>, add: impl FnOnce(&mut Ui)) {
     ui.horizontal(|ui| {
-        let response = ui.add_sized(
-            vec2(LABEL, ui.spacing().interact_size.y),
-            egui::Label::new(label),
-        );
+        row_label(ui, label, tip);
+        add(ui);
+    });
+}
+
+/// A row's label: at the left of a column [`LABEL`] wide, `tip` on it.
+fn row_label(ui: &mut Ui, label: &str, tip: Option<&str>) {
+    let size = vec2(LABEL, ui.spacing().interact_size.y);
+    let left = Layout::left_to_right(Align::Center);
+    ui.allocate_ui_with_layout(size, left, |ui| {
+        ui.set_min_size(size);
+        let response = ui.add(egui::Label::new(label).truncate());
         if let Some(tip) = tip {
             response.on_hover_text(tip);
         }
-        add(ui);
     });
 }
