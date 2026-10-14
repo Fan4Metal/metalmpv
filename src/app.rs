@@ -19,6 +19,7 @@ use egui::{Align2, Color32, CursorIcon, FontId, Rect, Sense, TextureHandle};
 
 use crate::adjust::Adjust;
 use crate::cover::Cover;
+use crate::dialog::{self, Ask, Dialogs};
 use crate::format::Osd;
 use crate::frameless;
 use crate::input::{self, Cmd};
@@ -100,6 +101,8 @@ pub struct App {
     updates: Updates,
     osd: OsdLine,
     hwnd: Option<isize>,
+    /// The file dialog open, on a thread of its own.
+    dialogs: Dialogs,
     /// The app icon of the title row and of the start screen, each at its
     /// size.
     icon: ui::IconCache,
@@ -340,6 +343,7 @@ impl App {
             updates,
             osd: OsdLine::default(),
             hwnd,
+            dialogs: Dialogs::default(),
             icon: None,
             start_icon: None,
             window_icon: style::Accent::Blue,
@@ -708,36 +712,47 @@ impl App {
         }));
     }
 
-    /// Write the playlist to an M3U8 file the user names.
-    fn save_playlist(&mut self, frame: &eframe::Frame) {
-        if self.playlist.is_empty() {
-            return;
-        }
-        let mut dialog = rfd::FileDialog::new()
-            .set_parent(frame)
-            .set_title(tr!("Save the playlist", "Сохранить плейлист"))
-            .set_file_name(tr!("Playlist.m3u8", "Плейлист.m3u8"))
-            .add_filter(tr!("M3U8 playlist", "Плейлист M3U8"), &["m3u8"]);
-        if let Some(dir) = self
-            .playlist
+    /// The folder of the entry playing, for a dialog to start in.
+    fn current_folder(&self) -> Option<PathBuf> {
+        self.playlist
             .current_path()
             .filter(|p| !playlist::is_url(p))
             .and_then(Path::parent)
-        {
-            dialog = dialog.set_directory(dir);
-        }
-        if let Some(target) = dialog.save_file()
-            && let Err(e) = std::fs::write(&target, playlist::m3u_text(&self.playlist))
-        {
-            log::warn!("cannot save the playlist to {}: {e}", target.display());
-            self.osd.show(Osd::Text(tr!(
-                format!("Cannot save the playlist: {e}"),
-                format!("Не удалось сохранить плейлист: {e}")
-            )));
-        }
+            .map(Path::to_path_buf)
     }
 
-    fn save_cover(&mut self, frame: &eframe::Frame) {
+    /// Show a file dialog (`dialog.rs`); its answer comes to
+    /// [`Self::answer`].
+    fn ask(
+        &mut self,
+        ctx: &egui::Context,
+        ask: Ask,
+        make: impl FnOnce() -> rfd::FileDialog + Send + 'static,
+        run: fn(rfd::FileDialog) -> Vec<PathBuf>,
+    ) {
+        self.dialogs.start(ctx, self.hwnd, ask, make, run);
+    }
+
+    /// Write the playlist to an M3U8 file the user names.
+    fn save_playlist(&mut self, ctx: &egui::Context) {
+        if self.playlist.is_empty() {
+            return;
+        }
+        let dir = self.current_folder();
+        let make = move || {
+            let dialog = rfd::FileDialog::new()
+                .set_title(tr!("Save the playlist", "Сохранить плейлист"))
+                .set_file_name(tr!("Playlist.m3u8", "Плейлист.m3u8"))
+                .add_filter(tr!("M3U8 playlist", "Плейлист M3U8"), &["m3u8"]);
+            match dir {
+                Some(dir) => dialog.set_directory(dir),
+                None => dialog,
+            }
+        };
+        self.ask(ctx, Ask::SavePlaylist, make, dialog::save_file);
+    }
+
+    fn save_cover(&mut self, ctx: &egui::Context) {
         let Some((cover, _)) = self.cover.as_ref().and_then(|c| c.loaded.as_ref()) else {
             return;
         };
@@ -746,18 +761,46 @@ impl App {
             .and_then(Path::file_stem)
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "cover".into());
-        let mut dialog = rfd::FileDialog::new()
-            .set_parent(frame)
-            .set_title(tr!("Save the cover", "Сохранить обложку"))
-            .set_file_name(format!("{stem}.{}", cover.extension))
-            .add_filter(cover.extension.to_uppercase(), &[cover.extension]);
-        if let Some(dir) = path.and_then(Path::parent) {
-            dialog = dialog.set_directory(dir);
-        }
-        if let Some(target) = dialog.save_file()
-            && let Err(e) = std::fs::write(&target, &cover.bytes)
-        {
-            log::warn!("cannot save the cover to {}: {e}", target.display());
+        let extension = cover.extension;
+        let bytes = cover.bytes.clone();
+        let dir = self.current_folder();
+        let make = move || {
+            let dialog = rfd::FileDialog::new()
+                .set_title(tr!("Save the cover", "Сохранить обложку"))
+                .set_file_name(format!("{stem}.{extension}"))
+                .add_filter(extension.to_uppercase(), &[extension]);
+            match dir {
+                Some(dir) => dialog.set_directory(dir),
+                None => dialog,
+            }
+        };
+        self.ask(ctx, Ask::SaveCover(bytes), make, dialog::save_file);
+    }
+
+    /// Do what a file dialog was opened for with the paths chosen.
+    fn answer(&mut self, answer: dialog::Answer) {
+        let Some(path) = answer.paths.first().cloned() else {
+            return;
+        };
+        match answer.ask {
+            Ask::Open { add: true } => self.add(answer.paths),
+            Ask::Open { add: false } => self.open(answer.paths),
+            Ask::Subtitles => self.add_subtitles(&path),
+            Ask::SavePlaylist => {
+                if let Err(e) = std::fs::write(&path, playlist::m3u_text(&self.playlist)) {
+                    log::warn!("cannot save the playlist to {}: {e}", path.display());
+                    self.osd.show(Osd::Text(tr!(
+                        format!("Cannot save the playlist: {e}"),
+                        format!("Не удалось сохранить плейлист: {e}")
+                    )));
+                }
+            }
+            Ask::SaveCover(bytes) => {
+                if let Err(e) = std::fs::write(&path, bytes) {
+                    log::warn!("cannot save the cover to {}: {e}", path.display());
+                }
+            }
+            Ask::FramesFolder => self.settings.frames_folder = Some(path),
         }
     }
 
@@ -833,30 +876,26 @@ impl App {
     }
 
     /// Ask for media files to play (`add`: append them to the playlist).
-    fn pick_files(&mut self, frame: &eframe::Frame, add: bool) {
-        let mut dialog = rfd::FileDialog::new()
-            .set_parent(frame)
-            .set_title(if add {
-                tr!("Add to the playlist", "Добавить в плейлист")
-            } else {
-                tr!("Open", "Открыть")
-            })
-            .add_filter(
-                tr!("Media files and playlists", "Медиафайлы и плейлисты"),
-                &[playlist::MEDIA_EXTENSIONS, playlist::PLAYLIST_EXTENSIONS].concat(),
-            )
-            .add_filter(tr!("All files", "Все файлы"), &["*"]);
-        if let Some(dir) = self.playlist.current_path().and_then(Path::parent) {
-            dialog = dialog.set_directory(dir);
-        }
-        let Some(files) = dialog.pick_files() else {
-            return;
+    fn pick_files(&mut self, ctx: &egui::Context, add: bool) {
+        let dir = self.current_folder();
+        let make = move || {
+            let dialog = rfd::FileDialog::new()
+                .set_title(if add {
+                    tr!("Add to the playlist", "Добавить в плейлист")
+                } else {
+                    tr!("Open", "Открыть")
+                })
+                .add_filter(
+                    tr!("Media files and playlists", "Медиафайлы и плейлисты"),
+                    &[playlist::MEDIA_EXTENSIONS, playlist::PLAYLIST_EXTENSIONS].concat(),
+                )
+                .add_filter(tr!("All files", "Все файлы"), &["*"]);
+            match dir {
+                Some(dir) => dialog.set_directory(dir),
+                None => dialog,
+            }
         };
-        if add {
-            self.add(files);
-        } else {
-            self.open(files);
-        }
+        self.ask(ctx, Ask::Open { add }, make, dialog::pick_files);
     }
 
     /// Play audio track or show subtitle track `id` (`None`: no subtitles)
@@ -901,21 +940,36 @@ impl App {
     }
 
     /// Ask for a subtitle file for the playing video.
-    fn pick_subtitles(&mut self, frame: &eframe::Frame) {
+    fn pick_subtitles(&mut self, ctx: &egui::Context) {
         if self.state().idle {
             return;
         }
-        let mut dialog = rfd::FileDialog::new()
-            .set_parent(frame)
-            .set_title(tr!("Load subtitles", "Загрузить субтитры"))
-            .add_filter(tr!("Subtitles", "Субтитры"), tracks::SUBTITLE_EXTENSIONS)
-            .add_filter(tr!("All files", "Все файлы"), &["*"]);
-        if let Some(dir) = self.playlist.current_path().and_then(Path::parent) {
-            dialog = dialog.set_directory(dir);
-        }
-        if let Some(path) = dialog.pick_file() {
-            self.add_subtitles(&path);
-        }
+        let dir = self.current_folder();
+        let make = move || {
+            let dialog = rfd::FileDialog::new()
+                .set_title(tr!("Load subtitles", "Загрузить субтитры"))
+                .add_filter(tr!("Subtitles", "Субтитры"), tracks::SUBTITLE_EXTENSIONS)
+                .add_filter(tr!("All files", "Все файлы"), &["*"]);
+            match dir {
+                Some(dir) => dialog.set_directory(dir),
+                None => dialog,
+            }
+        };
+        self.ask(ctx, Ask::Subtitles, make, dialog::pick_file);
+    }
+
+    /// Ask for the folder Save the frame writes to.
+    fn pick_frames_folder(&mut self, ctx: &egui::Context) {
+        let dir = self.settings.frames_dir();
+        let make = move || {
+            let dialog =
+                rfd::FileDialog::new().set_title(tr!("The folder for frames", "Папка для кадров"));
+            match dir {
+                Some(dir) => dialog.set_directory(dir),
+                None => dialog,
+            }
+        };
+        self.ask(ctx, Ask::FramesFolder, make, dialog::pick_folder);
     }
 
     fn add_subtitles(&mut self, path: &Path) {
@@ -988,7 +1042,7 @@ impl App {
                     {
                         self.play(i);
                     } else {
-                        self.pick_files(frame, false);
+                        self.pick_files(ctx, false);
                     }
                 } else if let Some(player) = &mut self.player {
                     player.toggle_pause();
@@ -1162,7 +1216,7 @@ impl App {
                     win::shell_open(&dir);
                 }
             }
-            Cmd::SaveCover => self.save_cover(frame),
+            Cmd::SaveCover => self.save_cover(ctx),
             Cmd::ShowInFolder => {
                 if let Some(path) = self
                     .playlist
@@ -1182,7 +1236,7 @@ impl App {
                     self.play(i);
                 }
             }
-            Cmd::Open => self.pick_files(frame, false),
+            Cmd::Open => self.pick_files(ctx, false),
             Cmd::OpenUrl => self.url_dialog.open(),
             Cmd::GoToTime => {
                 if !state.idle {
@@ -1221,11 +1275,11 @@ impl App {
                 }
             }
             Cmd::PlayIndex(i) => self.play(i),
-            Cmd::PlaylistAdd => self.pick_files(frame, true),
+            Cmd::PlaylistAdd => self.pick_files(ctx, true),
             Cmd::PlaylistRemove(i) => self.playlist.remove(i),
             Cmd::PlaylistSort => self.playlist.sort(),
             Cmd::PlaylistClear => self.playlist.clear(),
-            Cmd::PlaylistSave => self.save_playlist(frame),
+            Cmd::PlaylistSave => self.save_playlist(ctx),
             Cmd::PlaylistShuffle => {
                 let seed = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -1276,7 +1330,7 @@ impl App {
             }
             Cmd::SelectAudio(id) => self.select_track(Kind::Audio, Some(id)),
             Cmd::SelectSub(id) => self.select_track(Kind::Sub, id),
-            Cmd::LoadSubtitles => self.pick_subtitles(frame),
+            Cmd::LoadSubtitles => self.pick_subtitles(ctx),
             Cmd::Minimize => ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)),
             Cmd::ToggleMaximize => {
                 if !frameless::is_fullscreen(ctx) {
@@ -3133,6 +3187,9 @@ impl eframe::App for App {
         self.updates.poll();
         self.take_events();
         self.take_hooked();
+        if let Some(answer) = self.dialogs.take() {
+            self.answer(answer);
+        }
         if let Some(why) = self.save_now.take()
             && let Some(storage) = frame.storage_mut()
         {
@@ -3355,6 +3412,9 @@ impl eframe::App for App {
             if !self.settings.remember_recent {
                 self.settings.recent.clear();
             }
+        }
+        if changed.frames_folder {
+            self.pick_frames_folder(&ctx);
         }
         if changed.forget_positions {
             self.positions.clear();

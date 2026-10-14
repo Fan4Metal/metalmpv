@@ -133,6 +133,9 @@ pub struct Changed {
     pub keys: bool,
     /// The accent colour (`style::set_accent`, the window icon).
     pub accent: bool,
+    /// Choose… of the frames' folder: the app shows the dialog
+    /// (`dialog.rs`).
+    pub frames_folder: bool,
 }
 
 impl SettingsDialog {
@@ -269,7 +272,7 @@ impl SettingsDialog {
                                 Page::Updates => updates_page(ui, updates),
                                 Page::Playback => playback(ui, settings, &mut changed),
                                 Page::Tracks => tracks_page(ui, settings),
-                                Page::Video => changed.hwdec |= video(ui, settings, hwdec_current),
+                                Page::Video => video(ui, settings, hwdec_current, &mut changed),
                                 Page::Files => self.file_types.show(ui),
                                 Page::Keys => self.keys_page(ui, &mut settings.keys, &mut changed),
                             });
@@ -1070,10 +1073,9 @@ fn language_list(ui: &mut Ui, id: &str, list: &mut Vec<String>) {
 }
 
 /// The video page; whether hardware decoding was switched.
-fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>) -> bool {
-    let mut changed = false;
+fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>, changed: &mut Changed) {
     section(ui, tr!("Decoding", "Декодирование"), |ui| {
-        changed = row(
+        changed.hwdec |= row(
             ui,
             tr!("Hardware decoding (GPU)", "Аппаратное декодирование (GPU)"),
             Some(tr!(
@@ -1135,12 +1137,13 @@ fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>) -> b
             );
         },
     );
-    frames_section(ui, settings);
-    changed
+    changed.frames_folder |= frames_section(ui, settings);
 }
 
-/// Where Save the frame writes, and in which format.
-fn frames_section(ui: &mut Ui, settings: &mut Settings) {
+/// Where Save the frame writes, and in which format; whether Choose… was
+/// clicked.
+fn frames_section(ui: &mut Ui, settings: &mut Settings) -> bool {
+    let mut choose = false;
     section(
         ui,
         tr!("Saving a frame", "Сохранение кадра"),
@@ -1159,16 +1162,7 @@ fn frames_section(ui: &mut Ui, settings: &mut Settings) {
                     {
                         settings.frames_folder = None;
                     }
-                    if ui.button(tr!("Choose…", "Выбрать…")).clicked() {
-                        let mut dialog = rfd::FileDialog::new()
-                            .set_title(tr!("The folder for frames", "Папка для кадров"));
-                        if let Some(dir) = settings.frames_dir() {
-                            dialog = dialog.set_directory(dir);
-                        }
-                        if let Some(dir) = dialog.pick_folder() {
-                            settings.frames_folder = Some(dir);
-                        }
-                    }
+                    choose |= ui.button(tr!("Choose…", "Выбрать…")).clicked();
                 });
             });
             divider(ui);
@@ -1193,6 +1187,7 @@ fn frames_section(ui: &mut Ui, settings: &mut Settings) {
             );
         },
     );
+    choose
 }
 
 /// Whether the chosen output device (empty: Windows' default) is there.
