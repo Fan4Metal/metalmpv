@@ -485,6 +485,26 @@ pub fn hook_window(hwnd: isize, wake: impl Fn() + Send + Sync + 'static) {
         let message = unsafe { RegisterWindowMessageW(name.as_ptr()) };
         TASKBAR_CREATED.store(message, std::sync::atomic::Ordering::Relaxed);
         let _ = WAKE.set(Box::new(wake));
+        // A copy running elevated still hears Explorer (UIPI): the taskbar
+        // button made and the thumbnail buttons' clicks.
+        #[link(name = "user32")]
+        unsafe extern "system" {
+            fn ChangeWindowMessageFilterEx(
+                hwnd: windows_sys::Win32::Foundation::HWND,
+                message: u32,
+                action: u32,
+                filter: *mut core::ffi::c_void,
+            ) -> i32;
+        }
+        const MSGFLT_ALLOW: u32 = 1;
+        for message in [
+            message,
+            windows_sys::Win32::UI::WindowsAndMessaging::WM_COMMAND,
+        ] {
+            unsafe {
+                ChangeWindowMessageFilterEx(hwnd as _, message, MSGFLT_ALLOW, std::ptr::null_mut())
+            };
+        }
         unsafe { SetWindowSubclass(hwnd as _, Some(window_proc), 1, 0) };
     });
 }

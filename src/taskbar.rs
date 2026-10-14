@@ -80,6 +80,9 @@ pub struct Taskbar {
     hwnd: isize,
     /// Play, pause, previous, next.
     icons: [isize; 4],
+    /// The side the icons were drawn for and the language of the tooltips:
+    /// another monitor's scale or another language makes them anew.
+    made_for: (i32, crate::i18n::Lang),
     /// Windows said the taskbar button exists; before that the calls fail.
     ready: bool,
     buttons_added: bool,
@@ -117,6 +120,7 @@ impl Taskbar {
             list,
             hwnd,
             icons: [0; 4],
+            made_for: (0, crate::i18n::Lang::En),
             ready: false,
             buttons_added: false,
             shown: None,
@@ -139,8 +143,17 @@ impl Taskbar {
 
     /// Show `shown`, doing only what changed.
     pub fn show(&mut self, shown: Shown) {
-        if !self.ready || (self.shown == Some(shown) && self.buttons_added) {
+        if !self.ready {
             return;
+        }
+        let made_for = (small_icon_size(self.hwnd), crate::i18n::lang());
+        let remake = made_for != self.made_for;
+        if self.shown == Some(shown) && self.buttons_added && !remake {
+            return;
+        }
+        if remake {
+            self.made_for = made_for;
+            self.destroy_icons();
         }
         let vtbl = self.vtbl();
         let old = self.shown;
@@ -169,15 +182,25 @@ impl Taskbar {
             (o.paused, o.has_previous, o.has_next)
                 != (shown.paused, shown.has_previous, shown.has_next)
         });
-        if !self.buttons_added || buttons_changed {
+        if !self.buttons_added || buttons_changed || remake {
             self.set_buttons(&shown);
         }
         self.shown = Some(shown);
     }
 
+    fn destroy_icons(&mut self) {
+        use windows_sys::Win32::UI::WindowsAndMessaging::DestroyIcon;
+        for icon in std::mem::take(&mut self.icons)
+            .into_iter()
+            .filter(|i| *i != 0)
+        {
+            unsafe { DestroyIcon(icon as _) };
+        }
+    }
+
     fn set_buttons(&mut self, shown: &Shown) {
         if self.icons[0] == 0 {
-            let size = small_icon_size(self.hwnd);
+            let size = self.made_for.0;
             self.icons = [Glyph::Play, Glyph::Pause, Glyph::Previous, Glyph::Next]
                 .map(|g| make_icon(g, size));
         }
@@ -238,10 +261,7 @@ impl Taskbar {
 
 impl Drop for Taskbar {
     fn drop(&mut self) {
-        use windows_sys::Win32::UI::WindowsAndMessaging::DestroyIcon;
-        for icon in self.icons.into_iter().filter(|i| *i != 0) {
-            unsafe { DestroyIcon(icon as _) };
-        }
+        self.destroy_icons();
         unsafe { (self.vtbl().release)(self.list) };
     }
 }
