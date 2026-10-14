@@ -111,6 +111,20 @@ impl Accent {
         Self::ALL.into_iter().find(|a| a.name() == name)
     }
 
+    /// A colour typed or pasted: six or three hex digits (`#abc` is
+    /// `#aabbcc`), with `#` or without, spaces round them allowed.
+    pub fn typed(text: &str) -> Option<Self> {
+        let digits = text.trim();
+        let digits = digits.strip_prefix('#').unwrap_or(digits);
+        let six = match digits.len() {
+            3 => digits.chars().flat_map(|c| [c, c]).collect(),
+            6 => digits.to_owned(),
+            _ => return None,
+        };
+        let [r, g, b] = crate::sub_style::parse_hex(&format!("#{six}"))?;
+        Some(Accent::Custom(u32::from_be_bytes([0, r, g, b])))
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Accent::Blue => tr!("Blue", "Синий"),
@@ -305,6 +319,19 @@ mod tests {
         let own = Accent::Custom(0x12ab9f);
         assert_eq!(own.name(), "#12AB9F");
         assert_eq!(Accent::from_name("#12AB9F"), Some(own));
+        assert_eq!(Accent::typed("12ab9f"), Some(own));
+        assert_eq!(
+            Accent::typed(
+                " #12AB9F
+"
+            ),
+            Some(own)
+        );
+        assert_eq!(Accent::typed("#1a9"), Some(Accent::Custom(0x11aa99)));
+        assert_eq!(Accent::typed("1a9"), Some(Accent::Custom(0x11aa99)));
+        assert_eq!(Accent::typed("#12ab9"), None);
+        assert_eq!(Accent::typed("#ggg"), None);
+        assert_eq!(Accent::typed("#ЖЖЖ"), None);
         assert_eq!(own.palette().accent, rgb(0x12, 0xab, 0x9f));
         set_accent(own);
         assert_eq!(accent_choice(), own);

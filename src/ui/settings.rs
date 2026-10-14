@@ -544,17 +544,13 @@ fn own_accent(ui: &mut Ui, accent: &mut Accent) -> bool {
                 let mut text = ui
                     .data_mut(|d| d.get_temp::<String>(id))
                     .unwrap_or_else(|| format!("#{:06X}", accent.base()));
-                let field = ui.add(
-                    egui::TextEdit::singleline(&mut text)
-                        .desired_width(80.0)
-                        .char_limit(7),
-                );
-                if field.changed() {
-                    let typed = text.trim().trim_start_matches('#');
-                    if let Some(rgb) = crate::sub_style::parse_hex(&format!("#{typed}")) {
-                        *accent = custom(rgb);
-                        chosen = true;
-                    }
+                // No limit: a pasted colour may come with spaces.
+                let field = ui.add(egui::TextEdit::singleline(&mut text).desired_width(80.0));
+                if field.changed()
+                    && let Some(typed) = Accent::typed(&text)
+                {
+                    *accent = typed;
+                    chosen = true;
                 }
                 if field.has_focus() {
                     ui.data_mut(|d| d.insert_temp(id, text));
