@@ -374,6 +374,7 @@ pub struct AudioOut {
     pub samplerate: Option<i64>,
     /// `5.1`, `stereo`.
     pub channels: Option<String>,
+    pub channel_count: Option<i64>,
 }
 
 impl Live {
@@ -391,6 +392,7 @@ impl Live {
                     format: text("format"),
                     samplerate: value.get("samplerate").and_then(Value::int),
                     channels: text("channels"),
+                    channel_count: value.get("channel-count").and_then(Value::int),
                 });
             }
             7 => self.cache = value.double().filter(|c| *c >= 0.0),

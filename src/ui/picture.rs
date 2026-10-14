@@ -686,9 +686,19 @@ fn now_playing(ui: &mut Ui, now: &Now<'_>) {
         note(ui, tr!("No sound is playing.", "Звук не играет."));
         return;
     };
+    // What the device gets, when mixed to other channels (passthrough
+    // says 2.0 for a stream of any).
+    let out = now
+        .audio_out
+        .filter(|o| !o.format.as_deref().is_some_and(|f| f.starts_with("spdif")));
+    let channels = track.channels.unwrap_or(2);
+    let mixed = out
+        .and_then(|o| o.channel_count)
+        .filter(|n| *n > 0 && *n != channels);
+    // Two icons and the arrow take less each.
+    let scale = if mixed.is_some() { 0.8 } else { 1.0 };
     ui.horizontal_top(|ui| {
-        let channels = track.channels.unwrap_or(2);
-        let icon = speakers(ui, channels, track.layout.as_deref());
+        let icon = speakers(ui, channels, track.layout.as_deref(), scale);
         icon.on_hover_text(match &track.layout {
             Some(layout) => tr!(format!("Channels: {layout}"), format!("Каналы: {layout}")),
             None => tr!(
@@ -696,6 +706,15 @@ fn now_playing(ui: &mut Ui, now: &Now<'_>) {
                 format!("Каналов: {channels}")
             ),
         });
+        if let Some(n) = mixed {
+            let layout = out.and_then(|o| o.channels.as_deref());
+            arrow(ui, 50.0 * scale);
+            let name = layout.map_or_else(|| n.to_string(), str::to_owned);
+            speakers(ui, n, layout, scale).on_hover_text(tr!(
+                format!("Mixed to {name} for the device (the Channels setting)"),
+                format!("Сводится в {name} для устройства (настройка «Каналы»)")
+            ));
+        }
         ui.add_space(8.0);
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 2.0;
@@ -745,7 +764,7 @@ fn now_playing(ui: &mut Ui, now: &Now<'_>) {
 /// A track's channels as speakers round the listener (a ring in the
 /// middle): those it has lit in the accent colour, the rest of 7.1's
 /// places faint; the low frequencies a wider block at the front right.
-fn speakers(ui: &mut Ui, channels: i64, layout: Option<&str>) -> egui::Response {
+fn speakers(ui: &mut Ui, channels: i64, layout: Option<&str>, scale: f32) -> egui::Response {
     #[derive(Clone, Copy, PartialEq)]
     enum At {
         FrontLeft,
@@ -777,10 +796,10 @@ fn speakers(ui: &mut Ui, channels: i64, layout: Option<&str>) -> egui::Response 
             FrontLeft, FrontRight, Centre, Low, SideLeft, SideRight, BackLeft, BackRight,
         ],
     };
-    let (rect, response) = ui.allocate_exact_size(vec2(60.0, 50.0), Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(vec2(60.0, 50.0) * scale, Sense::hover());
     let painter = ui.painter();
     let o = rect.center();
-    let at = |x: f32, y: f32| o + vec2(x * 26.0, y * 21.0);
+    let at = |x: f32, y: f32| o + vec2(x * 26.0, y * 21.0) * scale;
     let places = [
         (FrontLeft, at(-0.75, -0.8)),
         (FrontRight, at(0.75, -0.8)),
@@ -804,17 +823,37 @@ fn speakers(ui: &mut Ui, channels: i64, layout: Option<&str>) -> egui::Response 
         if place == BackCentre && !lit.contains(&BackCentre) {
             continue;
         }
-        painter.rect_filled(Rect::from_center_size(p, vec2(7.0, 7.0)), 2.0, color(place));
+        painter.rect_filled(
+            Rect::from_center_size(p, vec2(7.0, 7.0) * scale),
+            2.0,
+            color(place),
+        );
     }
     if lit.contains(&Low) {
         painter.rect_filled(
-            Rect::from_center_size(at(0.42, -0.35), vec2(9.0, 5.0)),
+            Rect::from_center_size(at(0.42, -0.35), vec2(9.0, 5.0) * scale),
             1.5,
             color(Low),
         );
     }
-    painter.circle_stroke(at(0.0, 0.15), 4.0, Stroke::new(1.3, style::TEXT_WEAK));
+    painter.circle_stroke(
+        at(0.0, 0.15),
+        4.0 * scale,
+        Stroke::new(1.3, style::TEXT_WEAK),
+    );
     response
+}
+
+/// An arrow to the right, `height` high, between the track's speakers and
+/// the device's.
+fn arrow(ui: &mut Ui, height: f32) {
+    let (rect, _) = ui.allocate_exact_size(vec2(16.0, height), Sense::hover());
+    let stroke = Stroke::new(1.5, style::TEXT_WEAK);
+    let (y, left, right) = (rect.center().y, rect.left() + 2.0, rect.right() - 2.0);
+    let painter = ui.painter();
+    painter.line_segment([pos2(left, y), pos2(right, y)], stroke);
+    painter.line_segment([pos2(right - 4.0, y - 4.0), pos2(right, y)], stroke);
+    painter.line_segment([pos2(right - 4.0, y + 4.0), pos2(right, y)], stroke);
 }
 
 /// The equalizer's switch, its presets and the user's own in one list, and

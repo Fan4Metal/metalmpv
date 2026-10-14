@@ -1481,6 +1481,7 @@ mod tests {
                     format: Some("floatp".into()),
                     samplerate: Some(48000),
                     channels: Some("5.1".into()),
+                    channel_count: Some(6),
                 }),
                 cache: Some(12.4),
                 cache_speed: Some(2_202_009),
@@ -1514,6 +1515,7 @@ mod tests {
             format: Some("s16".into()),
             samplerate: Some(44100),
             channels: Some("stereo".into()),
+            channel_count: Some(2),
         };
         assert_eq!(
             audio_out_in(Lang::En, &out).as_deref(),
