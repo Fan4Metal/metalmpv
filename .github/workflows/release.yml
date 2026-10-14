@@ -42,7 +42,7 @@ jobs:
       # libmpv-2.dll (~30 MB to download) and 7zr.exe, pinned in
       # tools/get_libmpv.py: kept while that script is unchanged.
       - name: Cache libmpv
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: vendor
           key: libmpv-${{ hashFiles('tools/get_libmpv.py') }}
