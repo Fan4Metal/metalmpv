@@ -105,9 +105,77 @@ fn clean(text: &str) -> String {
         .to_owned()
 }
 
+/// Whether an M3U `text` is an HLS stream's (its segments, or its
+/// variants of quality): mpv plays it as one stream, where its lines as
+/// entries were segments of a few seconds each.
+pub fn is_hls(text: &str) -> bool {
+    [
+        "#EXT-X-TARGETDURATION",
+        "#EXT-X-STREAM-INF",
+        "#EXT-X-MEDIA-SEQUENCE",
+    ]
+    .iter()
+    .any(|tag| text.contains(tag))
+}
+
+/// The path a `file:` address names (`file:///C:/My%20Films/a.mkv`,
+/// `file://server/share/a.mkv`), as VLC writes its lists.
+fn file_uri_path(line: &str) -> Option<PathBuf> {
+    let scheme = line.get(..7)?;
+    if !scheme.eq_ignore_ascii_case("file://") {
+        return None;
+    }
+    let rest = &line[7..];
+    // `file:///C:/…` a drive; `file://host/…` a share.
+    let rest = match rest.strip_prefix('/') {
+        Some(local) => local.to_owned(),
+        None => format!("//{rest}"),
+    };
+    let bytes = rest.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = |b: u8| (b as char).to_digit(16);
+        match (bytes[i], bytes.get(i + 1), bytes.get(i + 2)) {
+            (b'%', Some(&h), Some(&l)) if hex(h).is_some() && hex(l).is_some() => {
+                decoded.push((hex(h)? * 16 + hex(l)?) as u8);
+                i += 3;
+            }
+            (b, _, _) => {
+                decoded.push(b);
+                i += 1;
+            }
+        }
+    }
+    Some(PathBuf::from(
+        String::from_utf8_lossy(&decoded).replace('/', "\\"),
+    ))
+}
+
+/// `path` without `.` and `..` (a list's `..\Music\a.mp3`), as the same file
+/// opened directly is named.
+fn lexical(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !matches!(out.components().next_back(), Some(Component::Normal(_))) || !out.pop()
+                {
+                    out.push(part);
+                }
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 /// The entries of an M3U playlist's `text`: every line but blank ones and
-/// `#` comments; a relative path is from `dir`, an address is kept as it
-/// is. An `#EXTINF` line describes the entry after it ([`Channel`]).
+/// `#` comments; a relative path is from `dir`, a `file:` address is a
+/// path, another address is kept as it is. An `#EXTINF` line describes
+/// the entry after it ([`Channel`]).
 pub fn m3u_entries(text: &str, dir: &Path) -> Vec<(PathBuf, Option<Channel>)> {
     let mut entries = Vec::new();
     let mut described = None;
@@ -122,11 +190,16 @@ pub fn m3u_entries(text: &str, dir: &Path) -> Vec<(PathBuf, Option<Channel>)> {
         if line.starts_with('#') {
             continue;
         }
-        let path = PathBuf::from(line);
-        let path = if is_url(&path) || path.is_absolute() {
+        let path = match file_uri_path(line) {
+            Some(path) => path,
+            None => PathBuf::from(line),
+        };
+        let path = if is_url(&path) {
             path
+        } else if path.is_absolute() {
+            lexical(&path)
         } else {
-            dir.join(path)
+            lexical(&dir.join(path))
         };
         entries.push((path, described.take()));
     }
@@ -134,8 +207,9 @@ pub fn m3u_entries(text: &str, dir: &Path) -> Vec<(PathBuf, Option<Channel>)> {
 }
 
 /// `paths` with each playlist file replaced by its entries (UTF-8, else
-/// read as it comes; one that cannot be read is dropped), and what the
-/// lists say about their entries.
+/// an `.m3u` in the system's code page, as Winamp wrote them; one that
+/// cannot be read is dropped; an HLS stream's is kept as a file to play),
+/// and what the lists say about their entries.
 pub fn expand_lists(paths: Vec<PathBuf>) -> (Vec<PathBuf>, HashMap<PathBuf, Channel>) {
     let mut channels = HashMap::new();
     let paths = paths
@@ -146,7 +220,18 @@ pub fn expand_lists(paths: Vec<PathBuf>) -> (Vec<PathBuf>, HashMap<PathBuf, Chan
             }
             match std::fs::read(&p) {
                 Ok(bytes) => {
-                    let text = String::from_utf8_lossy(&bytes);
+                    let utf8 = p
+                        .extension()
+                        .is_some_and(|e| e.eq_ignore_ascii_case("m3u8"));
+                    let text = match String::from_utf8(bytes) {
+                        Ok(text) => text,
+                        Err(e) if utf8 => String::from_utf8_lossy(e.as_bytes()).into_owned(),
+                        Err(e) => crate::win::ansi_text(e.as_bytes())
+                            .unwrap_or_else(|| String::from_utf8_lossy(e.as_bytes()).into_owned()),
+                    };
+                    if is_hls(&text) {
+                        return vec![p];
+                    }
                     m3u_entries(&text, p.parent().unwrap_or(Path::new("")))
                         .into_iter()
                         .map(|(path, channel)| {
@@ -372,8 +457,10 @@ impl Playlist {
             .map(|(_, p)| p.clone())
             .collect();
         let mut new = Vec::new();
+        // A set as well: a list of thousands of channels.
+        let mut seen = std::collections::HashSet::new();
         for (path, title) in entries {
-            if listed.contains(&path) || new.contains(&path) {
+            if listed.contains(&path) || !seen.insert(path.clone()) {
                 continue;
             }
             if let Some(title) = title.map(|t| clean(&t)).filter(|t| !t.is_empty()) {
@@ -654,6 +741,55 @@ mod tests {
         assert!(!is_playlist_file(Path::new(
             "https://example.com/live.m3u8"
         )));
+    }
+
+    #[test]
+    fn m3u_file_addresses_and_dots() {
+        let text = "file:///C:/My%20Films/%D0%A4%D0%B8%D0%BB%D1%8C%D0%BC.mkv\n\
+                    FILE://server/share/a%2Bb.mp3\n\
+                    ..\\Music\\.\\c.mp3\n\
+                    D:\\x\\..\\y.mkv\n";
+        let read: Vec<PathBuf> = m3u_entries(text, Path::new(r"C:\Lists\Old"))
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect();
+        assert_eq!(
+            read,
+            [
+                PathBuf::from(r"C:\My Films\Фильм.mkv"),
+                PathBuf::from(r"\\server\share\a+b.mp3"),
+                PathBuf::from(r"C:\Lists\Music\c.mp3"),
+                PathBuf::from(r"D:\y.mkv"),
+            ]
+        );
+    }
+
+    #[test]
+    fn hls_lists_are_streams() {
+        assert!(is_hls(
+            "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\nseg0.ts\n"
+        ));
+        assert!(is_hls("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nhi.m3u8\n"));
+        assert!(!is_hls("#EXTM3U\n#EXTINF:-1,One\nhttp://a/b\n"));
+        let dir = std::env::temp_dir().join(format!("metalmpv_hls_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let hls = dir.join("index.m3u8");
+        std::fs::write(&hls, "#EXTM3U\n#EXT-X-TARGETDURATION:6\nseg0.ts\nseg1.ts\n").unwrap();
+        // An old list in the system's code page (Windows-1251 here, a
+        // Russian system: "Песня").
+        let old = dir.join("old.m3u");
+        let mut bytes = b"#EXTINF:1,".to_vec();
+        bytes.extend([0xCF, 0xE5, 0xF1, 0xED, 0xFF]);
+        bytes.extend(b"\nsong.mp3\n");
+        std::fs::write(&old, bytes).unwrap();
+        let (paths, channels) = expand_lists(vec![hls.clone(), old]);
+        assert_eq!(paths, [hls, dir.join("song.mp3")]);
+        let title = channels[&dir.join("song.mp3")].title.clone().unwrap();
+        if crate::win::ansi_text(&[0xCF]).as_deref() == Some("П") {
+            assert_eq!(title, "Песня");
+        }
+        assert!(!title.contains('\u{fffd}'));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

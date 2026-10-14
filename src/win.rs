@@ -1099,6 +1099,25 @@ pub fn pictures_dir() -> Option<std::path::PathBuf> {
     path
 }
 
+/// `bytes` in the system's ANSI code page (Windows-1251 on a Russian
+/// system): what an old M3U list is written in.
+pub fn ansi_text(bytes: &[u8]) -> Option<String> {
+    use windows_sys::Win32::Globalization::{CP_ACP, MultiByteToWideChar};
+    let len = i32::try_from(bytes.len()).ok()?;
+    if len == 0 {
+        return Some(String::new());
+    }
+    let count =
+        unsafe { MultiByteToWideChar(CP_ACP, 0, bytes.as_ptr(), len, std::ptr::null_mut(), 0) };
+    if count <= 0 {
+        return None;
+    }
+    let mut wide = vec![0u16; count as usize];
+    let written =
+        unsafe { MultiByteToWideChar(CP_ACP, 0, bytes.as_ptr(), len, wide.as_mut_ptr(), count) };
+    (written > 0).then(|| String::from_utf16_lossy(&wide[..written as usize]))
+}
+
 /// `time` in the local time zone, by the zone's rules of that date: the
 /// year, month, day, hour, minute and second. `None` before 1970.
 pub fn local_time(time: std::time::SystemTime) -> Option<[u16; 6]> {
