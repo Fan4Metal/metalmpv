@@ -448,7 +448,9 @@ pub enum MediaKey {
 /// What the window's messages asked for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hooked {
-    Media(MediaKey),
+    /// A media key, from Windows' media controls (`true`) or the
+    /// window's messages.
+    Media(MediaKey, bool),
     /// The taskbar button exists (`TaskbarButtonCreated`): the thumbnail
     /// buttons can be added (`taskbar.rs`).
     TaskbarButton,
@@ -559,7 +561,7 @@ fn hook(what: Hooked) {
 /// A media key pressed elsewhere (Windows' media controls, `smtc.rs`),
 /// queued as one of the window's.
 pub fn hook_media(key: MediaKey) {
-    hook(Hooked::Media(key));
+    hook(Hooked::Media(key, true));
 }
 
 /// The media key of a virtual key code.
@@ -666,7 +668,7 @@ fn media_message(
             let key = media_vk(wparam as u32)?;
             // Held keys repeat; one press is one command.
             if lparam & (1 << 30) == 0 {
-                hook(Hooked::Media(key));
+                hook(Hooked::Media(key, false));
             }
             Some(0)
         }
@@ -674,7 +676,7 @@ fn media_message(
             // GET_APPCOMMAND_LPARAM: the high word without the device bits.
             let command = ((lparam as u32) >> 16) & !0xF000;
             let key = media_command(command)?;
-            hook(Hooked::Media(key));
+            hook(Hooked::Media(key, false));
             Some(1)
         }
         _ => None,
