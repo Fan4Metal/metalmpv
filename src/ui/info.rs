@@ -19,6 +19,8 @@ use crate::tracks::{Kind, Track};
 
 /// The side of the cover in the header.
 const THUMB: f32 = 120.0;
+/// The width of a button of the header (`ui::tool`).
+const TOOL: f32 = 26.0;
 /// The side of a channel's logo in the header.
 const LOGO: f32 = 64.0;
 /// The window's width (egui's, with the frame).
@@ -141,45 +143,6 @@ impl InfoWindow {
                     look.colours,
                 ));
                 ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 2.0;
-                    let s = 6.0;
-                    let copied = self
-                        .copied
-                        .map(|t| t.elapsed())
-                        .filter(|e| *e < COPIED_TICK);
-                    if let Some(e) = copied {
-                        ui.ctx().request_repaint_after(COPIED_TICK - e);
-                    }
-                    let copy = tool(
-                        ui,
-                        tr!("Copy all", "Копировать всё"),
-                        true,
-                        |p, o, c| {
-                            if copied.is_some() {
-                                icons::check(p, o, s, c);
-                            } else {
-                                icons::copy(p, o, s, c);
-                            }
-                        },
-                    );
-                    if copy.clicked() {
-                        ui.ctx().copy_text(info::report_in(lang(), subject));
-                        self.copied = Some(Instant::now());
-                    }
-                    if cover.is_some()
-                        && tool(
-                            ui,
-                            tr!("Save the cover…", "Сохранить обложку…"),
-                            true,
-                            |p, o, c| icons::save(p, o, s, c),
-                        )
-                        .clicked()
-                    {
-                        out.push(Cmd::SaveCover);
-                    }
-                });
-                ui.add_space(6.0);
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| body(ui, subject, &title, cover.as_ref(), &mut out));
@@ -254,10 +217,30 @@ impl InfoWindow {
                 ui.add_space(10.0);
             }
             ui.with_layout(Layout::top_down(Align::Min), |ui| {
-                ui.add(
-                    egui::Label::new(RichText::new(title).size(17.0).color(style::TEXT_BRIGHT))
-                        .wrap(),
-                );
+                ui.horizontal_top(|ui| {
+                    let buttons = if cover.is_some() { 2.0 } else { 1.0 };
+                    let room = (ui.available_width() - buttons * TOOL - 8.0).max(60.0);
+                    ui.allocate_ui_with_layout(
+                        vec2(room, 0.0),
+                        Layout::top_down(Align::Min),
+                        |ui| {
+                            ui.set_width(room);
+                            // Down a little: the title's first line is
+                            // centred on the buttons.
+                            ui.add_space(1.0);
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(title).size(17.0).color(style::TEXT_BRIGHT),
+                                )
+                                .wrap(),
+                            );
+                        },
+                    );
+                    ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                        ui.spacing_mut().item_spacing.x = 2.0;
+                        self.tools(ui, subject, cover.is_some(), &mut out);
+                    });
+                });
                 if let Some(artist) = artist {
                     ui.add(egui::Label::new(RichText::new(artist).size(14.0)).wrap());
                 }
@@ -284,6 +267,46 @@ impl InfoWindow {
             });
         });
         out
+    }
+
+    /// The window's buttons, from the right: Copy all (a tick for a moment
+    /// after a click), then Save the cover… when there is one.
+    fn tools(&mut self, ui: &mut Ui, subject: &Subject, cover: bool, out: &mut Vec<Cmd>) {
+        let s = 6.0;
+        let copied = self
+            .copied
+            .map(|t| t.elapsed())
+            .filter(|e| *e < COPIED_TICK);
+        if let Some(e) = copied {
+            ui.ctx().request_repaint_after(COPIED_TICK - e);
+        }
+        let copy = tool(
+            ui,
+            tr!("Copy all", "Копировать всё"),
+            true,
+            |p, o, c| {
+                if copied.is_some() {
+                    icons::check(p, o, s, c);
+                } else {
+                    icons::copy(p, o, s, c);
+                }
+            },
+        );
+        if copy.clicked() {
+            ui.ctx().copy_text(info::report_in(lang(), subject));
+            self.copied = Some(Instant::now());
+        }
+        if cover
+            && tool(
+                ui,
+                tr!("Save the cover…", "Сохранить обложку…"),
+                true,
+                |p, o, c| icons::save(p, o, s, c),
+            )
+            .clicked()
+        {
+            out.push(Cmd::SaveCover);
+        }
     }
 
     /// The cover over the whole window, as big as it fits; a click or `Esc`
