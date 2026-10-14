@@ -217,24 +217,21 @@ impl VideoPanel {
                         );
                         tallest = tallest.max(unseen.min_rect().height());
                     }
-                    let shown = ui
-                        .scope(|ui| {
-                            tab_contents(
-                                ui,
-                                self.tab,
-                                adjust,
-                                &mut kept,
-                                now,
-                                &mut self.naming,
-                                &mut out,
-                            )
-                        })
-                        .response
-                        .rect
-                        .height();
-                    if shown < tallest {
-                        ui.add_space(tallest - shown);
-                    }
+                    // The room as a least height, not space added after:
+                    // that came with the spacing between items, and the
+                    // shorter tabs were taller by it.
+                    ui.scope(|ui| {
+                        ui.set_min_height(tallest);
+                        tab_contents(
+                            ui,
+                            self.tab,
+                            adjust,
+                            &mut kept,
+                            now,
+                            &mut self.naming,
+                            &mut out,
+                        );
+                    });
                 });
             });
         self.rect = Some(shown.response.rect);
