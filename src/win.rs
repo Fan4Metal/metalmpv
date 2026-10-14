@@ -980,26 +980,28 @@ unsafe extern "system" fn playlist_proc(
     if let Some(result) = media_message(hwnd, msg, wparam, lparam) {
         return result;
     }
+    // The window, the pointer and the invisible frame's widths now: where
+    // a move counts from.
+    let move_start = || {
+        let mut cursor = POINT::default();
+        match (window_rect(me), visible_rect(me)) {
+            (Some(outer), Some(visible)) if unsafe { GetCursorPos(&mut cursor) } != 0 => Some((
+                outer,
+                [cursor.x, cursor.y],
+                [
+                    visible[0] - outer[0],
+                    visible[1] - outer[1],
+                    outer[2] - visible[2],
+                    outer[3] - visible[3],
+                ],
+            )),
+            _ => None,
+        }
+    };
     match msg {
         WM_ENTERSIZEMOVE => {
-            let mut cursor = POINT::default();
-            let start = match (window_rect(me), visible_rect(me)) {
-                (Some(outer), Some(visible)) if unsafe { GetCursorPos(&mut cursor) } != 0 => {
-                    Some((
-                        outer,
-                        [cursor.x, cursor.y],
-                        [
-                            visible[0] - outer[0],
-                            visible[1] - outer[1],
-                            outer[2] - visible[2],
-                            outer[3] - visible[3],
-                        ],
-                    ))
-                }
-                _ => None,
-            };
             if let Ok(mut m) = PLAYLIST_MOVE.lock() {
-                *m = start;
+                *m = move_start();
             }
         }
         WM_EXITSIZEMOVE => {
@@ -1012,7 +1014,20 @@ unsafe extern "system" fn playlist_proc(
         // gives, else Windows would work the next one out from the one
         // given back and a slow move would stay stuck.
         WM_MOVING if lparam != 0 => {
-            let start = PLAYLIST_MOVE.lock().ok().and_then(|m| *m);
+            let mut start = PLAYLIST_MOVE.lock().ok().and_then(|m| *m);
+            // Its size changed on the way (another monitor's scale): the
+            // move counts from here, as the player's does.
+            let given = unsafe { &*(lparam as *const RECT) };
+            let size = (given.right - given.left, given.bottom - given.top);
+            if let Some((outer, ..)) = start
+                && (outer[2] - outer[0], outer[3] - outer[1]) != size
+            {
+                start = move_start();
+                if let Ok(mut m) = PLAYLIST_MOVE.lock() {
+                    *m = start;
+                }
+                return unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) };
+            }
             let owner = unsafe { GetWindow(hwnd, GW_OWNER) } as isize;
             let mut cursor = POINT::default();
             if let (Some((outer, from, edge)), Some(main)) = (start, visible_rect(owner))
