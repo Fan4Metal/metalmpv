@@ -2,8 +2,8 @@
 //! of the control bar): a window over its button, as the tracks window is,
 //! that a press outside it closes; not an egui popup, so that playback and
 //! the keys go on while it is open (egui's popups take the keys). Its head
-//! is the three tabs, a note on the tab (ⓘ) and Save the frame (the
-//! camera; its menu opens the folder).
+//! is the three tabs and Save the frame (the camera; its menu opens the
+//! folder). How each setting applies is said in its tooltip.
 //!
 //! Video: the picture's adjustments (`adjust.rs`): the colour, the zoom and
 //! the pan, the sharpness, the noise reduction and the debanding, the
@@ -69,24 +69,6 @@ impl Tab {
             Tab::Video => tr!("Video", "Видео"),
             Tab::Sound => tr!("Sound", "Звук"),
             Tab::Subtitles => tr!("Subtitles", "Субтитры"),
-        }
-    }
-
-    /// What the tab's ⓘ says.
-    fn note(self) -> &'static str {
-        match self {
-            Tab::Video => tr!(
-                "The adjustments apply to every file until the program closes, or between runs with Remember. The sharpness, the noise reduction and the flips run on the processor (hardware decoding then copies each frame back for them); the rest on the graphics card.",
-                "Настройки действуют для всех файлов до закрытия программы, а с «Запоминать» — и между запусками. Резкость, шумоподавление и отражения выполняет процессор (при аппаратном декодировании кадры для них копируются обратно в память), остальное — видеокарта."
-            ),
-            Tab::Sound => tr!(
-                "The device, the channels and the boost are those of the settings' Sound page. The equalizer, the normalization and clearer speech do not apply to sound sent to a receiver undecoded. The delay is not kept between runs; the rest is.",
-                "Устройство, каналы и усиление — те же, что на странице «Звук» настроек. Эквалайзер, нормализация и усиление речи не действуют на звук, передаваемый на ресивер без декодирования. Задержка между запусками не запоминается, остальное — запоминается."
-            ),
-            Tab::Subtitles => tr!(
-                "The size and the height apply to all subtitles; the font and the colours to text ones (SRT and the like), and to ASS ones with Style for ASS too. The delay is not kept between runs; the rest is.",
-                "Размер и высота действуют на все субтитры; шрифт и цвета — на текстовые (SRT и подобные), а с «Стиль и для ASS» — и на ASS. Задержка между запусками не запоминается, остальное — запоминается."
-            ),
         }
     }
 }
@@ -224,12 +206,12 @@ impl VideoPanel {
         out
     }
 
-    /// The tabs, then at the right the tab's note (ⓘ) and the camera:
-    /// Save the frame, its menu opening the folder.
+    /// The tabs, then at the right the camera: Save the frame, its menu
+    /// opening the folder.
     fn head(&mut self, ui: &mut Ui, has_video: bool, out: &mut Vec<Cmd>) {
         ui.horizontal(|ui| {
             let before = self.tab;
-            tabs(ui, &mut self.tab, WIDTH - 2.0 * RESET - 16.0);
+            tabs(ui, &mut self.tab, WIDTH - RESET - 12.0);
             if self.tab != before {
                 self.naming = None;
             }
@@ -254,7 +236,6 @@ impl VideoPanel {
                         ui.close();
                     }
                 });
-                super::tool(ui, self.tab.note(), true, |p, o, c| icons::info(p, o, 6.5, c));
             });
         });
     }
@@ -359,8 +340,8 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, keep: &mut bool) {
         tr!("Sharpness", "Резкость"),
         &mut adjust.sharpen,
         &strength(tr!(
-            "AMD's contrast adaptive sharpening (CAS)",
-            "Адаптивная резкость AMD (CAS)"
+            "AMD's contrast adaptive sharpening (CAS), on the processor: hardware decoding then copies each frame back for it",
+            "Адаптивная резкость AMD (CAS), на процессоре: при аппаратном декодировании кадры для неё копируются обратно в память"
         )),
     );
     int_row(
@@ -368,8 +349,8 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, keep: &mut bool) {
         tr!("Noise reduction", "Шумоподавление"),
         &mut adjust.denoise,
         &strength(tr!(
-            "Smooths out grain and compression noise (hqdn3d); 40% is FFmpeg's usual strength, more blurs",
-            "Сглаживает зерно и шум сжатия (hqdn3d); 40 % — обычная сила FFmpeg, больше — размывает"
+            "Smooths out grain and compression noise (hqdn3d); 40% is FFmpeg's usual strength, more blurs. On the processor, as the sharpness",
+            "Сглаживает зерно и шум сжатия (hqdn3d); 40 % — обычная сила FFmpeg, больше — размывает. На процессоре, как резкость"
         )),
     );
     switch_line(
@@ -377,8 +358,8 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, keep: &mut bool) {
         &mut adjust.deband,
         tr!("Smooth gradient banding", "Сглаживание полос градиента"),
         Some(tr!(
-            "Removes the steps in skies and dark scenes",
-            "Убирает ступеньки на небе и в тёмных сценах"
+            "Removes the steps in skies and dark scenes, on the graphics card",
+            "Убирает ступеньки на небе и в тёмных сценах, на видеокарте"
         )),
     );
 
@@ -454,13 +435,19 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, keep: &mut bool) {
         }
         ui.add_space(12.0);
         if icon_button(ui, flip, "", size, |b| b.selected(flipped))
-            .on_hover_text(tr!("Upside down", "Перевернуть вертикально"))
+            .on_hover_text(tr!(
+                "Upside down (on the processor)",
+                "Перевернуть вертикально (на процессоре)"
+            ))
             .clicked()
         {
             adjust.flip = !adjust.flip;
         }
         if icon_button(ui, mirror, "", size, |b| b.selected(mirrored))
-            .on_hover_text(tr!("Mirror", "Отразить зеркально"))
+            .on_hover_text(tr!(
+                "Mirror (on the processor)",
+                "Отразить зеркально (на процессоре)"
+            ))
             .clicked()
         {
             adjust.mirror = !adjust.mirror;
@@ -478,8 +465,8 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, keep: &mut bool) {
                 keep,
                 tr!("Remember", "Запоминать"),
                 tr!(
-                    "Keep the adjustments between runs of the program",
-                    "Сохранять настройки изображения между запусками программы"
+                    "The adjustments apply to every file until the program closes; on, they are kept between runs too",
+                    "Настройки изображения действуют для всех файлов до закрытия программы; включено — сохраняются и между запусками"
                 ),
             );
         });
@@ -494,7 +481,11 @@ fn sound_tab(
     out: &mut Vec<Cmd>,
 ) {
     heading(ui, tr!("Output", "Вывод"));
-    labelled(ui, tr!("Device", "Устройство"), |ui| {
+    let same = tr!(
+        "As on the settings' Sound page",
+        "Как на странице «Звук» в настройках"
+    );
+    labelled_tip(ui, tr!("Device", "Устройство"), Some(same), |ui| {
         let width = ui.available_width();
         super::settings::device_choice(
             ui,
@@ -519,8 +510,8 @@ fn sound_tab(
         "panel_channels",
         kept.channels.label(),
         Some(tr!(
-            "Auto: as the device is set up in Windows, more channels mixed down to it",
-            "«Авто» — как устройство настроено в Windows, лишние каналы сводятся под него"
+            "Auto: as the device is set up in Windows, more channels mixed down to it. As on the settings' Sound page",
+            "«Авто» — как устройство настроено в Windows, лишние каналы сводятся под него. Как на странице «Звук» в настройках"
         )),
         |ui| {
             for c in Channels::ALL {
@@ -534,8 +525,8 @@ fn sound_tab(
         tr!("Delay", "Задержка"),
         &mut delay,
         &Spec::delay(tr!(
-            "Later when positive. Also Ctrl+= and Ctrl+-",
-            "Положительная — звук позже. Также Ctrl+= и Ctrl+-"
+            "Later when positive. Also Ctrl+= and Ctrl+-; not kept between runs",
+            "Положительная — звук позже. Также Ctrl+= и Ctrl+-; между запусками не запоминается"
         )),
     ) {
         out.push(Cmd::SetAudioDelay(delay));
@@ -548,8 +539,8 @@ fn sound_tab(
         "panel_volume_max",
         &audio::boost_label(*kept.volume_max),
         Some(tr!(
-            "How far the volume goes past 100%",
-            "Насколько громкость может превышать 100 %"
+            "How far the volume goes past 100%. As on the settings' Sound page",
+            "Насколько громкость может превышать 100 %. Как на странице «Звук» в настройках"
         )),
         |ui| {
             for b in audio::BOOSTS {
@@ -562,8 +553,8 @@ fn sound_tab(
         kept.normalize,
         tr!("Normalization", "Нормализация"),
         Some(tr!(
-            "Evens out the volume as the film plays: quiet dialogue louder, loud scenes quieter",
-            "Выравнивает громкость по ходу фильма: тихие диалоги громче, громкие сцены тише"
+            "Evens out the volume as the film plays: quiet dialogue louder, loud scenes quieter. Not for sound sent to a receiver undecoded",
+            "Выравнивает громкость по ходу фильма: тихие диалоги громче, громкие сцены тише. Не действует на звук, передаваемый на ресивер без декодирования"
         )),
     );
     switch_line(
@@ -571,8 +562,8 @@ fn sound_tab(
         kept.voice_boost,
         tr!("Clearer speech", "Усилить речь"),
         Some(tr!(
-            "Raises the voice over the music: in stereo through FFmpeg's dialogue enhancer, in 5.1 and more through the centre channel; mono stays as it is",
-            "Поднимает голос над музыкой: в стерео — фильтром FFmpeg для диалогов, в 5.1 и больше — центральным каналом; моно остаётся как есть"
+            "Raises the voice over the music: in stereo through FFmpeg's dialogue enhancer, in 5.1 and more through the centre channel; mono stays as it is. Not for sound sent to a receiver undecoded",
+            "Поднимает голос над музыкой: в стерео — фильтром FFmpeg для диалогов, в 5.1 и больше — центральным каналом; моно остаётся как есть. Не действует на звук, передаваемый на ресивер без декодирования"
         )),
     );
 
@@ -588,7 +579,10 @@ fn eq_head(ui: &mut Ui, eq: &mut Equalizer, own: &mut Vec<OwnEq>, naming: &mut O
     let mine = own.iter().position(|o| o.gains == eq.gains);
     let preset = Preset::of(&eq.gains);
     ui.horizontal(|ui| {
-        super::settings::switch(ui, &mut eq.on).on_hover_text(tr!("On", "Включён"));
+        super::settings::switch(ui, &mut eq.on).on_hover_text(tr!(
+            "On or off. Not for sound sent to a receiver undecoded",
+            "Включён или выключен. Не действует на звук, передаваемый на ресивер без декодирования"
+        ));
         ui.add_space(4.0);
         let name = match (mine, preset) {
             (Some(i), _) => own[i].name.clone(),
@@ -787,7 +781,11 @@ fn subtitles_tab(
     preview(ui, style);
 
     heading(ui, tr!("Text", "Текст"));
-    labelled(ui, tr!("Font", "Шрифт"), |ui| {
+    let text_only = tr!(
+        "For text subtitles (SRT and the like), and ASS ones with Style for ASS too",
+        "Для текстовых субтитров (SRT и подобных), а со «Стиль и для ASS» — и для ASS"
+    );
+    labelled_tip(ui, tr!("Font", "Шрифт"), Some(text_only), |ui| {
         let width = ui.available_width() - RESET - ui.spacing().item_spacing.x;
         if let Some(family) = super::settings::font_choice(ui, "panel_sub_font", &style.font, width)
         {
@@ -800,13 +798,20 @@ fn subtitles_tab(
     let size = Spec {
         step: 5.0,
         suffix: "%",
+        tip: Some(tr!("For all subtitles", "Для всех субтитров")),
         ..Spec::centred(sub_style::SCALE_RANGE, d.scale)
     };
     value_row(ui, tr!("Size", "Размер"), &mut style.scale, &size);
     switch_line(ui, &mut style.bold, tr!("Bold", "Жирные"), None);
 
     heading(ui, tr!("Colour", "Цвет"));
-    color_row(ui, tr!("Letters", "Буквы"), &mut style.color, d.color);
+    color_row(
+        ui,
+        tr!("Letters", "Буквы"),
+        text_only,
+        &mut style.color,
+        d.color,
+    );
     // With the box, the outline's colour and thickness are the box's
     // colour and margin.
     let (outline, thickness) = if style.boxed {
@@ -814,7 +819,13 @@ fn subtitles_tab(
     } else {
         (tr!("Outline", "Обводка"), tr!("Thickness", "Толщина"))
     };
-    color_row(ui, outline, &mut style.outline_color, d.outline_color);
+    color_row(
+        ui,
+        outline,
+        text_only,
+        &mut style.outline_color,
+        d.outline_color,
+    );
     let thick = Spec {
         step: 0.05,
         decimals: 2,
@@ -840,7 +851,10 @@ fn subtitles_tab(
 
     heading(ui, tr!("Place and timing", "Положение и время"));
     let height = Spec {
-        tip: Some(tr!("100 is the bottom", "100 — внизу")),
+        tip: Some(tr!(
+            "For all subtitles; 100 is the bottom",
+            "Для всех субтитров; 100 — внизу"
+        )),
         ..Spec::centred(sub_style::POS_RANGE, d.pos)
     };
     value_row(ui, tr!("Height", "Высота"), &mut style.pos, &height);
@@ -850,8 +864,8 @@ fn subtitles_tab(
         tr!("Delay", "Задержка"),
         &mut delay,
         &Spec::delay(tr!(
-            "Later when positive. Also Shift+. and Shift+,",
-            "Положительная — субтитры позже. Также Shift+. и Shift+,"
+            "Later when positive. Also Shift+. and Shift+,; not kept between runs",
+            "Положительная — субтитры позже. Также Shift+. и Shift+,; между запусками не запоминается"
         )),
     ) {
         out.push(Cmd::SetSubDelay(delay));
@@ -1069,7 +1083,7 @@ fn range_of(range: RangeInclusive<i64>) -> RangeInclusive<f64> {
 /// slider). Whether the value changed.
 fn value_row(ui: &mut Ui, label: &str, value: &mut f64, spec: &Spec) -> bool {
     let before = *value;
-    labelled(ui, label, |ui| {
+    labelled_tip(ui, label, spec.tip, |ui| {
         let spacing = ui.spacing().item_spacing.x;
         let width = WIDTH - LABEL - spec.value_width - RESET - 3.0 * spacing;
         let mut response = rail(ui, value, spec, width);
@@ -1318,8 +1332,8 @@ fn preview(ui: &mut Ui, style: &SubStyle) {
 }
 
 /// A colour row: the swatch that opens a picker, the reset at the end.
-fn color_row(ui: &mut Ui, label: &str, color: &mut [u8; 3], default: [u8; 3]) {
-    labelled(ui, label, |ui| {
+fn color_row(ui: &mut Ui, label: &str, tip: &str, color: &mut [u8; 3], default: [u8; 3]) {
+    labelled_tip(ui, label, Some(tip), |ui| {
         egui::widgets::color_picker::color_edit_button_srgb(ui, color);
         ui.add_space((ui.available_width() - RESET).max(0.0));
         if reset(ui, *color != default, tr!("Default", "По умолчанию")) {
@@ -1391,11 +1405,19 @@ fn reset_all(ui: &mut Ui, enabled: bool) -> bool {
 
 /// A row: the label in a fixed-width column, then what `add` adds.
 fn labelled(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui)) {
+    labelled_tip(ui, label, None, add);
+}
+
+/// [`labelled`] with `tip` on the label.
+fn labelled_tip(ui: &mut Ui, label: &str, tip: Option<&str>, add: impl FnOnce(&mut Ui)) {
     ui.horizontal(|ui| {
-        ui.add_sized(
+        let response = ui.add_sized(
             vec2(LABEL, ui.spacing().interact_size.y),
             egui::Label::new(label),
         );
+        if let Some(tip) = tip {
+            response.on_hover_text(tip);
+        }
         add(ui);
     });
 }
