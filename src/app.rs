@@ -27,11 +27,11 @@ use crate::mpv::Mpv;
 use crate::player::{DataEnd, Happened, Player, Seek, State};
 use crate::playlist::{self, Playlist, Repeat};
 use crate::resume::{Positions, Tracks};
-use crate::settings::{OnTop, Settings};
+use crate::settings::{Interface, OnTop, Settings};
 use crate::sizing;
 use crate::tracks::{self, Kind};
 use crate::ui::about::AboutDialog;
-use crate::ui::info::{ChannelView, CoverView, InfoWindow, Look};
+use crate::ui::info::{ChannelView, CoverView, InfoWindow};
 use crate::ui::osd::OsdLine;
 use crate::ui::picture::VideoPanel;
 use crate::ui::settings::SettingsDialog;
@@ -131,19 +131,22 @@ pub struct App {
     /// Fullscreen with the picture filling the screen, cropped (`6`,
     /// mpv's `panscan`); ends with fullscreen.
     fill: bool,
-    /// Only the picture: no title row, control bar or playlist (`7`).
-    bare: bool,
-    /// What hiding them took off the window's sides, in pixels (left, top,
-    /// right, bottom), given back when they return; none when the window
-    /// was maximized or in fullscreen, which keep their size.
-    bare_insets: Option<[i32; 4]>,
+    /// The interface `7` brings back from only the picture: the last
+    /// other one shown.
+    before_bare: Interface,
+    /// The interface the window's size was made for: when another is
+    /// shown, the window grows or shrinks by the difference, so that the
+    /// picture stays put (`fit_interface`; not while maximized or in
+    /// fullscreen, which keep their size, but once it is a window again).
+    sized_for: Interface,
+    /// The docked playlist's width as of the last frame with it, in points.
+    playlist_inset: f32,
+    /// The title row is shown over the picture's top this frame (an
+    /// interface without its own, the pointer there).
+    title_strip: bool,
     /// Windows is ending the session: the settings and positions are saved
     /// in `logic` (winit does not close the window for it).
     ending_session: bool,
-    /// The interface came back while the window was maximized or in
-    /// fullscreen: `bare_insets` are given back once it is a window again
-    /// (its restored rectangle is still the smaller one).
-    regrow: bool,
     /// The right button went down on the picture: the context menu opens
     /// when it is let go.
     menu_press: bool,
@@ -314,9 +317,10 @@ impl App {
             pick_tracks: false,
             pick_ready: false,
             fill: false,
-            bare: false,
-            bare_insets: None,
-            regrow: false,
+            before_bare: Interface::Full,
+            sized_for: Interface::Full,
+            playlist_inset: 0.0,
+            title_strip: false,
             ending_session: false,
             menu_press: false,
             middle_press: false,
@@ -328,6 +332,7 @@ impl App {
             taskbar: hwnd.and_then(crate::taskbar::Taskbar::new),
             on_top: false,
         };
+        app.sized_for = app.settings.interface;
         app.open(files);
         app
     }
@@ -1011,8 +1016,8 @@ impl App {
                     self.video_panel.open = false;
                 } else if frameless::is_fullscreen(ctx) {
                     self.set_fullscreen(ctx, frame, false);
-                } else if self.bare {
-                    self.set_bare(ctx, false);
+                } else if self.interface() == Interface::Bare {
+                    self.run(ctx, frame, Cmd::ToggleInterface);
                 } else {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
@@ -1186,7 +1191,26 @@ impl App {
                     (aspect != crate::adjust::Aspect::Auto).then(|| aspect.label().to_owned()),
                 ));
             }
-            Cmd::ToggleInterface => self.set_bare(ctx, !self.bare),
+            Cmd::ToggleInterface => {
+                let interface = if self.interface() == Interface::Bare {
+                    self.before_bare
+                } else {
+                    Interface::Bare
+                };
+                self.run(ctx, frame, Cmd::SetInterface(interface));
+            }
+            Cmd::CycleInterface => {
+                let next = self.interface().next();
+                self.run(ctx, frame, Cmd::SetInterface(next));
+                self.osd.show(Osd::Interface(next));
+            }
+            Cmd::SetInterface(interface) => {
+                if self.settings.interface != Interface::Bare {
+                    self.before_bare = self.settings.interface;
+                }
+                self.settings.interface = interface;
+                self.fit_interface(ctx);
+            }
             Cmd::ToggleFill => {
                 if self.fill {
                     // Fullscreen stays, with the black bars.
@@ -1387,7 +1411,7 @@ impl App {
         };
         let shown = self.settings.playlist_visible
             && self.settings.playlist_detached
-            && !self.bare
+            && self.interface() != Interface::Bare
             && !(self.fullscreen && over_player);
         if !shown {
             if self.playlist_builder.take().is_some() {
@@ -1543,71 +1567,114 @@ impl App {
         });
     }
 
-    /// Hide the title row, the control bar and the playlist (`on`), or
-    /// show them again. The picture keeps its place and size on the screen:
-    /// the window loses what they took and gets it back (not while
-    /// maximized or in fullscreen).
-    fn set_bare(&mut self, ctx: &egui::Context, on: bool) {
-        if self.bare == on {
-            return;
-        }
-        self.bare = on;
-        self.regrow = false;
-        let windowed = !frameless::is_fullscreen(ctx) && !frameless::is_maximized(ctx);
-        if !windowed {
-            // Given back when the window is restored (`ui`); the insets of
-            // a window hidden before it was maximized are kept for that.
-            self.regrow = !on && self.bare_insets.is_some();
-            return;
-        }
-        self.resize_bare(ctx, on);
+    /// The interface shown.
+    fn interface(&self) -> Interface {
+        self.settings.interface
     }
 
-    /// Take the interface's room off the window (`on`) or give back what
-    /// was taken.
-    fn resize_bare(&mut self, ctx: &egui::Context, on: bool) {
-        let insets = if on { None } else { self.bare_insets.take() };
+    /// What `interface` takes around the picture in a window, in points
+    /// (left, top, right, bottom).
+    fn insets(&self, interface: Interface) -> [f32; 4] {
+        let top = if interface.title_row() {
+            style::TITLE_HEIGHT
+        } else {
+            0.0
+        };
+        let (right, bottom) = match interface {
+            Interface::Bare => (0.0, 0.0),
+            Interface::Compact => (self.playlist_inset, ui::controls::height(true)),
+            Interface::Full | Interface::NoTitle => {
+                (self.playlist_inset, ui::controls::height(false))
+            }
+        };
+        [0.0, top, right, bottom]
+    }
+
+    /// The window was made for another interface than the one shown: it
+    /// grows or shrinks by the difference, the picture keeping its place
+    /// and size on the screen, and is kept on the work area. Not while
+    /// maximized, in fullscreen or minimised: once it is a window again.
+    fn fit_interface(&mut self, ctx: &egui::Context) {
+        let now = self.interface();
+        if self.sized_for == now
+            || frameless::is_fullscreen(ctx)
+            || frameless::is_maximized(ctx)
+            || ctx.input(|i| i.viewport().minimized.unwrap_or(false))
+        {
+            return;
+        }
         let Some(hwnd) = self.hwnd else {
             return;
         };
         let Some(window) = win::window_rect(hwnd) else {
             return;
         };
-        let rect = if on {
-            let ppp = ctx.pixels_per_point();
-            let (content, picture) = (ctx.content_rect(), self.picture_area);
-            let taken = [
-                picture.left() - content.left(),
-                picture.top() - content.top(),
-                content.right() - picture.right(),
-                content.bottom() - picture.bottom(),
-            ]
-            .map(|v| (v * ppp).round().max(0.0) as i32);
-            self.bare_insets = Some(taken);
-            [
-                window[0] + taken[0],
-                window[1] + taken[1],
-                window[2] - taken[2],
-                window[3] - taken[3],
-            ]
-        } else if let Some(i) = insets {
-            let grown = [
-                window[0] - i[0],
-                window[1] - i[1],
-                window[2] + i[2],
-                window[3] + i[3],
-            ];
-            // Kept on the work area, as a window sized for a picture is.
-            match win::work_area(hwnd) {
-                Some(work) => {
-                    sizing::placed(grown, [grown[2] - grown[0], grown[3] - grown[1]], work)
-                }
-                None => grown,
-            }
-        } else {
-            return;
+        let (old, new) = (self.insets(self.sized_for), self.insets(now));
+        self.sized_for = now;
+        let ppp = ctx.pixels_per_point();
+        let grow = |i: usize| (new[i] * ppp).round() as i32 - (old[i] * ppp).round() as i32;
+        let rect = [
+            window[0] - grow(0),
+            window[1] - grow(1),
+            window[2] + grow(2),
+            window[3] + grow(3),
+        ];
+        let rect = match win::work_area(hwnd) {
+            Some(work) => sizing::placed(rect, [rect[2] - rect[0], rect[3] - rect[1]], work),
+            None => rect,
         };
         win::set_rect(hwnd, rect);
+    }
+
+    /// The title row comes over the picture's top (an interface without
+    /// one of its own) while the pointer is there, over nothing else.
+    fn wants_title_strip(&self, ctx: &egui::Context) -> bool {
+        let area = self.picture_area;
+        let zone = Rect::from_min_max(
+            area.min,
+            egui::pos2(area.right(), area.top() + style::TITLE_HEIGHT + 8.0),
+        );
+        pointer_over(ctx, zone)
+    }
+
+    /// With only the picture, the control bar comes over its bottom while
+    /// the pointer is there, a seek is dragged or a window of the bar is
+    /// open.
+    fn wants_bar_over(&self, ctx: &egui::Context) -> bool {
+        let area = self.picture_area;
+        let height = ui::controls::height(self.settings.interface == Interface::Compact);
+        let zone = Rect::from_min_max(
+            egui::pos2(area.left(), area.bottom() - height - 16.0),
+            area.max,
+        );
+        pointer_over(ctx, zone)
+            || self.seek_drag.is_some()
+            || self.video_panel.open
+            || self.tracks_window.open
+    }
+
+    /// The control bar's view of the app.
+    fn controls_bar<'a>(
+        &'a mut self,
+        state: &'a State,
+        fullscreen: bool,
+        compact: bool,
+    ) -> ui::controls::Bar<'a> {
+        ui::controls::Bar {
+            state,
+            playlist_visible: !fullscreen && self.settings.playlist_visible,
+            video_panel_open: self.video_panel.open,
+            tracks_open: self.tracks_window.open,
+            fullscreen,
+            compact,
+            has_prev: self.playlist.prev_in(self.settings.repeat).is_some(),
+            has_next: self.playlist.next_in(self.settings.repeat).is_some(),
+            chapter_marks: self.settings.chapter_marks,
+            time_mode: self.settings.time_mode,
+            drag: &mut self.seek_drag,
+            panel_button: &mut self.panel_button,
+            tracks_button: &mut self.tracks_button,
+        }
     }
 
     fn size_window(&mut self, ctx: &egui::Context, frame: &eframe::Frame, picture: [f64; 2]) {
@@ -1643,6 +1710,8 @@ impl App {
         let rect = sizing::placed(window, [size[0] + border[0], size[1] + border[1]], work);
         log::debug!("window for a picture of {picture:?} px: {rect:?}");
         win::set_rect(hwnd, rect);
+        // Measured with the interface shown.
+        self.sized_for = self.interface();
     }
 
     /// Take what the player and other starts have to say; also called
@@ -1848,7 +1917,7 @@ impl App {
             (self.settings.playlist_visible, self.settings.chapter_marks);
         let marks = Marks {
             fill: self.fill,
-            bare: self.bare,
+            interface: self.interface(),
             aspect: self.adjust.aspect,
             repeat: self.settings.repeat,
             on_top: self.settings.on_top,
@@ -1913,6 +1982,8 @@ impl App {
         // that is shown.
         let osd_rect = if self.fullscreen && self.fullscreen_panels(ui.ctx()).top {
             rect.with_min_y(rect.top() + FULLSCREEN_TITLE_HEIGHT)
+        } else if self.title_strip {
+            rect.with_min_y(rect.top() + style::TITLE_HEIGHT)
         } else {
             rect
         };
@@ -2157,20 +2228,8 @@ impl App {
         if !panels.bottom {
             return;
         }
-        let bar = ui::controls::Bar {
-            state,
-            playlist_visible: false,
-            video_panel_open: self.video_panel.open,
-            tracks_open: self.tracks_window.open,
-            fullscreen: true,
-            has_prev: self.playlist.prev_in(self.settings.repeat).is_some(),
-            has_next: self.playlist.next_in(self.settings.repeat).is_some(),
-            chapter_marks: self.settings.chapter_marks,
-            time_mode: self.settings.time_mode,
-            drag: &mut self.seek_drag,
-            panel_button: &mut self.panel_button,
-            tracks_button: &mut self.tracks_button,
-        };
+        let compact = self.settings.interface == Interface::Compact;
+        let bar = self.controls_bar(state, true, compact);
         egui::Area::new(egui::Id::new("fullscreen_controls"))
             .order(egui::Order::Foreground)
             .anchor(Align2::LEFT_BOTTOM, egui::vec2(0.0, 0.0))
@@ -2280,6 +2339,17 @@ fn fullscreen_title(ctx: &egui::Context, screen: Rect, title: &str, fill: Color3
         });
 }
 
+/// The pointer is in `zone` and over nothing but the window's own panels
+/// (no menu, popup or window of egui).
+fn pointer_over(ctx: &egui::Context, zone: Rect) -> bool {
+    ctx.pointer_hover_pos().is_some_and(|p| {
+        zone.contains(p)
+            && ctx
+                .layer_id_at(p)
+                .is_none_or(|layer| layer.order == egui::Order::Background)
+    })
+}
+
 /// The menu of a right click on the picture.
 fn context_menu(
     ui: &mut egui::Ui,
@@ -2298,7 +2368,7 @@ fn context_menu(
             ui.close();
         }
     };
-    if marks.bare {
+    if marks.interface == Interface::Bare {
         // First, where it is found without the interface.
         item(
             ui,
@@ -2362,13 +2432,7 @@ fn context_menu(
         tr!("Fullscreen", "Полный экран").into(),
         Cmd::ToggleFullscreen,
     );
-    if !marks.bare {
-        item(
-            ui,
-            tr!("Only the picture", "Только видео").into(),
-            Cmd::ToggleInterface,
-        );
-    }
+    interface_menu(ui, marks.interface, &mut menu_cmds);
     zoom_menu(ui, state, marks.fill, &mut menu_cmds);
     on_top_menu(ui, marks.on_top, &mut menu_cmds);
     aspect_menu(ui, state, marks.aspect, &mut menu_cmds);
@@ -2422,12 +2486,32 @@ fn dropped_files(ctx: &egui::Context) -> Vec<PathBuf> {
 /// What the context menu marks as chosen.
 struct Marks {
     fill: bool,
-    /// Only the picture is shown (`7`).
-    bare: bool,
+    /// The interface shown (`8`; only the picture, `7`).
+    interface: Interface,
     aspect: crate::adjust::Aspect,
     repeat: Repeat,
     on_top: OnTop,
     playlist_detached: bool,
+}
+
+/// The interfaces, the current marked.
+fn interface_menu(ui: &mut egui::Ui, current: Interface, out: &mut Vec<Cmd>) {
+    ui.menu_button(tr!("Interface", "Интерфейс"), |ui| {
+        for i in Interface::ALL {
+            let key = if i == Interface::Bare {
+                keymap::shortcut(Cmd::ToggleInterface)
+            } else {
+                String::new()
+            };
+            let button = egui::Button::new(i.label())
+                .shortcut_text(key)
+                .selected(current == i);
+            if ui.add(button).clicked() {
+                out.push(Cmd::SetInterface(i));
+                ui.close();
+            }
+        }
+    });
 }
 
 /// Over the other windows: never, always, while playing; the current
@@ -2700,22 +2784,9 @@ impl eframe::App for App {
         }
         self.fullscreen = fullscreen;
         let maximized = frameless::is_maximized(&ctx);
-        // The interface came back while maximized or in fullscreen: the
-        // restored window gets its room back now.
-        if self.regrow
-            && !fullscreen
-            && !maximized
-            && !ctx.input(|i| i.viewport().minimized.unwrap_or(false))
-        {
-            self.regrow = false;
-            self.resize_bare(&ctx, false);
-        }
-        // Closing with only the picture: eframe keeps the window's size
-        // for the next start, which shows the interface.
-        if self.bare && !fullscreen && !maximized && ctx.input(|i| i.viewport().close_requested()) {
-            self.bare = false;
-            self.resize_bare(&ctx, false);
-        }
+        // The interface changed while maximized or in fullscreen: the
+        // restored window is made for it now.
+        self.fit_interface(&ctx);
         let state = self.state();
         let mut cmds = std::mem::take(&mut self.pending);
 
@@ -2739,46 +2810,31 @@ impl eframe::App for App {
             frameless::resize_edges(root_ui);
         }
         let title = self.title(&state);
-        if !fullscreen && !self.bare {
-            let icon = ui::app_icon(&ctx, 16.0, &mut self.icon);
-            let newer = self.updates.newer().map(str::to_owned);
-            egui::Panel::top("title")
-                .exact_size(style::TITLE_HEIGHT)
-                .frame(egui::Frame::NONE.fill(style::TITLE_BG))
-                .show_separator_line(false)
-                .show(root_ui, |ui| {
-                    if let Some(cmd) =
-                        ui::title::row(ui, &title, maximized, &icon, newer.as_deref())
-                    {
-                        cmds.push(cmd);
-                    }
-                });
-            let bar = ui::controls::Bar {
-                state: &state,
-                playlist_visible: self.settings.playlist_visible,
-                video_panel_open: self.video_panel.open,
-                tracks_open: self.tracks_window.open,
-                fullscreen: false,
-                has_prev: self.playlist.prev_in(self.settings.repeat).is_some(),
-                has_next: self.playlist.next_in(self.settings.repeat).is_some(),
-                chapter_marks: self.settings.chapter_marks,
-                time_mode: self.settings.time_mode,
-                drag: &mut self.seek_drag,
-                panel_button: &mut self.panel_button,
-                tracks_button: &mut self.tracks_button,
-            };
+        let interface = self.interface();
+        self.title_strip = !fullscreen && interface.title_over() && self.wants_title_strip(&ctx);
+        let bar_over = !fullscreen && interface == Interface::Bare && self.wants_bar_over(&ctx);
+        let icon = (!fullscreen && (interface.title_row() || self.title_strip))
+            .then(|| ui::app_icon(&ctx, 16.0, &mut self.icon));
+        let newer = self.updates.newer().map(str::to_owned);
+        if !fullscreen && interface != Interface::Bare {
+            if let Some(icon) = icon.as_ref().filter(|_| interface.title_row()) {
+                egui::Panel::top("title")
+                    .exact_size(style::TITLE_HEIGHT)
+                    .frame(egui::Frame::NONE.fill(style::TITLE_BG))
+                    .show_separator_line(false)
+                    .show(root_ui, |ui| {
+                        if let Some(cmd) =
+                            ui::title::row(ui, &title, maximized, icon, newer.as_deref())
+                        {
+                            cmds.push(cmd);
+                        }
+                    });
+            }
+            let compact = interface == Interface::Compact;
+            let bar = self.controls_bar(&state, false, compact);
             egui::Panel::bottom("controls")
-                .frame(
-                    egui::Frame::NONE
-                        .fill(style::BAR_BG)
-                        .stroke(egui::Stroke::new(1.0, style::LINE))
-                        .inner_margin(egui::Margin {
-                            left: 0,
-                            right: 0,
-                            top: 4,
-                            bottom: 2,
-                        }),
-                )
+                .exact_size(ui::controls::height(compact))
+                .frame(ui::controls::frame(compact))
                 .show_separator_line(false)
                 .show(root_ui, |ui| cmds.extend(ui::controls::bar(ui, bar)));
             if self.settings.playlist_visible && !self.settings.playlist_detached {
@@ -2803,11 +2859,48 @@ impl eframe::App for App {
         }
         self.playlist_window(&ctx, &state, &mut cmds, keys);
         let picture = egui::CentralPanel::no_frame()
-            .show(root_ui, |ui| self.video_area(ui, frame, &state, &mut cmds))
+            .show(root_ui, |ui| {
+                self.video_area(ui, frame, &state, &mut cmds);
+                // Over the picture, in its layer: the edges' strips under
+                // it stay as under the title row.
+                if self.title_strip
+                    && let Some(icon) = &icon
+                {
+                    let rect = Rect::from_min_size(
+                        ui.max_rect().min,
+                        egui::vec2(ui.max_rect().width(), style::TITLE_HEIGHT),
+                    );
+                    if let Some(cmd) =
+                        ui::title::over(ui, rect, &title, maximized, icon, newer.as_deref())
+                    {
+                        cmds.push(cmd);
+                    }
+                }
+                if bar_over {
+                    let compact = self.settings.interface == Interface::Compact;
+                    let area = ui.max_rect();
+                    let rect = Rect::from_min_max(
+                        egui::pos2(area.left(), area.bottom() - ui::controls::height(compact)),
+                        area.max,
+                    );
+                    let mut child =
+                        ui.new_child(egui::UiBuilder::new().max_rect(rect).id_salt("bar_over"));
+                    let bar = self.controls_bar(&state, false, compact);
+                    ui::controls::frame(compact)
+                        .fill(style::BAR_BG.gamma_multiply_u8(235))
+                        .show(&mut child, |ui| {
+                            ui.set_min_size(ui.max_rect().size());
+                            cmds.extend(ui::controls::bar(ui, bar));
+                        });
+                }
+            })
             .response
             .rect;
         self.picture_area = picture;
         if !fullscreen {
+            if interface != Interface::Bare {
+                self.playlist_inset = (ctx.content_rect().right() - picture.right()).max(0.0);
+            }
             self.chrome = ctx.content_rect().size() - picture.size();
             if let Some(picture) = self.pending_picture.take() {
                 self.size_window(&ctx, frame, picture);
@@ -2928,15 +3021,7 @@ impl eframe::App for App {
                 .filter(|f| Some(f.path.as_path()) == path)
                 .and_then(|f| f.loaded.as_ref()),
         };
-        let info_cmds = self.info.show(
-            &ctx,
-            &subject,
-            cover,
-            Look {
-                colours: self.settings.info_colours,
-            },
-            channel,
-        );
+        let info_cmds = self.info.show(&ctx, &subject, cover, channel);
         cmds.extend(info_cmds);
         let before = self.adjust.clone();
         let subs_before = self.settings.sub.clone();
@@ -3002,6 +3087,8 @@ impl eframe::App for App {
         for cmd in cmds {
             self.run(&ctx, frame, cmd);
         }
+        // Chosen in the settings.
+        self.fit_interface(&ctx);
         self.update_window_title(&ctx, &title);
     }
 

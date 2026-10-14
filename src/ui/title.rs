@@ -123,6 +123,23 @@ pub fn row(
     cmd
 }
 
+/// The title row over the picture's top in `rect`, on a ground a little
+/// transparent (an interface without a title row of its own, while the
+/// pointer is there).
+pub fn over(
+    ui: &mut Ui,
+    rect: Rect,
+    title: &str,
+    maximized: bool,
+    icon: &TextureHandle,
+    update: Option<&str>,
+) -> Option<Cmd> {
+    ui.painter()
+        .rect_filled(rect, 0.0, style::TITLE_BG.gamma_multiply_u8(235));
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).id_salt("title_over"));
+    row(&mut child, title, maximized, icon, update)
+}
+
 /// The title row of the playlist's own window, frameless as the player's:
 /// `title` in the middle, close on the right; the rest drags the window.
 /// Whether close was clicked.

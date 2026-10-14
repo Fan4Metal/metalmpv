@@ -308,6 +308,7 @@ actions! {
     FitWindow "fit_window" Window Cmd::FitWindow, [Chord::key(Key::Backtick)];
     Fill "fill" Window Cmd::ToggleFill, [Chord::key(Key::Num6)];
     Interface "interface" Window Cmd::ToggleInterface, [Chord::key(Key::Num7)];
+    Interfaces "interfaces" Window Cmd::CycleInterface, [Chord::key(Key::Num8)];
     OnTop "on_top" Window Cmd::CycleOnTop, [Chord::ctrl(Key::T)];
     Minimize "minimize" Window Cmd::Minimize, [];
     Maximize "maximize" Window Cmd::ToggleMaximize, [];
@@ -417,6 +418,10 @@ impl Action {
             Action::Interface => tr!(
                 "Only the picture / the interface again",
                 "Только видео / вернуть интерфейс"
+            ),
+            Action::Interfaces => tr!(
+                "Interface: full, without the title row, compact, only the picture",
+                "Интерфейс: полный, без заголовка, компактный, только видео"
             ),
             Action::OnTop => tr!(
                 "Over the other windows: never, always, while playing",

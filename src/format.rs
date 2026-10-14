@@ -325,6 +325,8 @@ pub enum Osd {
     Speed(f64),
     /// When the window stays over the others.
     OnTop(crate::settings::OnTop),
+    /// The interface chosen (`8`).
+    Interface(crate::settings::Interface),
     /// What plays after the end of a file.
     Repeat(crate::playlist::Repeat),
     /// The A-B repeat's points (none: off).
@@ -479,6 +481,19 @@ impl Osd {
                     (OnTop::Never, true) => "[ Поверх окон: никогда ]".into(),
                     (OnTop::Always, true) => "[ Поверх окон: всегда ]".into(),
                     (OnTop::Playing, true) => "[ Поверх окон: во время воспроизведения ]".into(),
+                }
+            }
+            Osd::Interface(interface) => {
+                use crate::settings::Interface;
+                match (interface, ru) {
+                    (Interface::Full, false) => "[ Interface: full ]".into(),
+                    (Interface::NoTitle, false) => "[ Interface: without the title row ]".into(),
+                    (Interface::Compact, false) => "[ Interface: compact ]".into(),
+                    (Interface::Bare, false) => "[ Only the picture ]".into(),
+                    (Interface::Full, true) => "[ Интерфейс: полный ]".into(),
+                    (Interface::NoTitle, true) => "[ Интерфейс: без заголовка ]".into(),
+                    (Interface::Compact, true) => "[ Интерфейс: компактный ]".into(),
+                    (Interface::Bare, true) => "[ Только видео ]".into(),
                 }
             }
             Osd::Repeat(repeat) => {

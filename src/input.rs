@@ -138,6 +138,11 @@ pub enum Cmd {
     /// Only the picture in the window, or the title row, the control bar
     /// and the playlist again (`7`, the context menu).
     ToggleInterface,
+    /// The next of the interfaces: full, without the title row, compact,
+    /// only the picture (`8`).
+    CycleInterface,
+    /// One of the interfaces (the context menu).
+    SetInterface(crate::settings::Interface),
     /// Force the picture's shape, or the file's again (the context menu).
     SetAspect(crate::adjust::Aspect),
     Minimize,
@@ -309,6 +314,7 @@ mod tests {
         assert_eq!(scale(Key::Backtick), Some(Cmd::FitWindow));
         assert_eq!(scale(Key::Num6), Some(Cmd::ToggleFill));
         assert_eq!(scale(Key::Num7), Some(Cmd::ToggleInterface));
+        assert_eq!(scale(Key::Num8), Some(Cmd::CycleInterface));
         assert_eq!(default_command(Key::Num4, none, true), None);
         assert_eq!(default_command(Key::Num1, Modifiers::COMMAND, false), None);
         assert_eq!(default_command(Key::Num1, Modifiers::ALT, false), None);

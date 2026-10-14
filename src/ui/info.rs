@@ -48,13 +48,6 @@ pub struct ChannelView<'a> {
     pub logo: Option<TextureHandle>,
 }
 
-/// How the window is shown, from the settings.
-#[derive(Clone, Copy, Debug)]
-pub struct Look {
-    /// The chips in colour (`settings.info_colours`).
-    pub colours: bool,
-}
-
 /// The cover as the window gets it: the picture and its texture.
 pub struct CoverView<'a> {
     pub cover: &'a Cover,
@@ -89,7 +82,6 @@ impl InfoWindow {
         ctx: &egui::Context,
         subject: &Subject,
         cover: Option<CoverView<'_>>,
-        look: Look,
         channel: Option<ChannelView<'_>>,
     ) -> Vec<Cmd> {
         let mut out = Vec::new();
@@ -123,14 +115,7 @@ impl InfoWindow {
                     return;
                 }
                 let title = title_of(subject, channel.as_ref().map(|v| v.channel));
-                out.extend(self.header(
-                    ui,
-                    subject,
-                    &title,
-                    cover.as_ref(),
-                    channel.as_ref(),
-                    look.colours,
-                ));
+                out.extend(self.header(ui, subject, &title, cover.as_ref(), channel.as_ref()));
                 ui.add_space(8.0);
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
@@ -158,7 +143,6 @@ impl InfoWindow {
         title: &str,
         cover: Option<&CoverView<'_>>,
         view: Option<&ChannelView<'_>>,
-        colours: bool,
     ) -> Vec<Cmd> {
         let mut out = Vec::new();
         let state = subject.state;
@@ -244,7 +228,7 @@ impl InfoWindow {
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
                         for c in row {
-                            if chip(ui, &c, colours).clicked() {
+                            if chip(ui, &c).clicked() {
                                 match c.action {
                                     ChipAction::Audio(id) => out.push(Cmd::SelectAudio(id)),
                                     ChipAction::None => {}
@@ -697,12 +681,12 @@ fn hue(tone: Tone) -> Option<Color32> {
 
 /// A chip of the header: plain text on a light ground, as the badges of
 /// the tracks window; the playing track's outlined in the accent colour,
-/// one that does something lit when hovered. With `colours`, the format
-/// chip is its file icon's band with white letters, and the picture, the
-/// sound and the subtitles each a tint of their own hue.
-fn chip(ui: &mut Ui, chip: &info::Chip, colours: bool) -> egui::Response {
+/// one that does something lit when hovered. The format chip is its file
+/// icon's band with white letters, and the picture, the sound and the
+/// subtitles each a tint of their own hue.
+fn chip(ui: &mut Ui, chip: &info::Chip) -> egui::Response {
     let clickable = chip.action != ChipAction::None;
-    let tone = if colours { chip.tone } else { Tone::Plain };
+    let tone = chip.tone;
     let (ground, lit, color) = match tone {
         Tone::Format(c) => {
             let band = Color32::from_rgb(c.band[0], c.band[1], c.band[2]);

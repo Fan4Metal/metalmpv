@@ -16,7 +16,9 @@ use crate::fonts::Family;
 use crate::i18n::LangChoice;
 use crate::input::Cmd;
 use crate::keymap::{Action, Chord, Group, Keymap, shortcut};
-use crate::settings::{MAX_STEP, MAX_TRANSPARENCY, MIN_STEP, OSD_SCALE_RANGE, OnTop, Settings};
+use crate::settings::{
+    Interface, MAX_STEP, MAX_TRANSPARENCY, MIN_STEP, OSD_SCALE_RANGE, OnTop, Settings,
+};
 use crate::update::{Status, Updates, release_url, version_of};
 
 /// The size of the window's content in points.
@@ -596,6 +598,30 @@ fn on_top_hint() -> String {
     }
 }
 
+/// The hint of the layout row: what each one shows and the keys.
+fn interface_hint() -> String {
+    let mut hint = tr!(
+        "Without the title row, the title row comes over the picture's top while the pointer is there; compact puts the control bar in one row; with only the picture, the control bar comes over its bottom too.",
+        "Без строки заголовка она появляется поверх картинки, когда указатель у её верхнего края; компактный вид укладывает панель управления в одну строку; в режиме «только видео» поверх нижнего края появляется и панель управления."
+    )
+    .to_owned();
+    let cycle = crate::keymap::shortcut(crate::input::Cmd::CycleInterface);
+    if !cycle.is_empty() {
+        hint += &tr!(
+            format!(" {cycle} switches them."),
+            format!(" {cycle} переключает.")
+        );
+    }
+    let bare = crate::keymap::shortcut(crate::input::Cmd::ToggleInterface);
+    if !bare.is_empty() {
+        hint += &tr!(
+            format!(" {bare}: only the picture and back."),
+            format!(" {bare} — только видео и обратно.")
+        );
+    }
+    hint
+}
+
 /// An on/off switch.
 pub fn switch(ui: &mut Ui, on: &mut bool) -> Response {
     let size = vec2(40.0, 20.0);
@@ -662,6 +688,23 @@ fn general(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
         divider(ui);
         row(
             ui,
+            tr!("Layout", "Вид интерфейса"),
+            Some(&interface_hint()),
+            230.0,
+            |ui| {
+                egui::ComboBox::from_id_salt("settings_interface")
+                    .selected_text(settings.interface.label())
+                    .width(220.0)
+                    .show_ui(ui, |ui| {
+                        for i in Interface::ALL {
+                            ui.selectable_value(&mut settings.interface, i, i.label());
+                        }
+                    });
+            },
+        );
+        divider(ui);
+        row(
+            ui,
             tr!("Accent colour", "Акцентный цвет"),
             Some(tr!(
                 "The Play button, the seek bar, the switches, the playing file and the icon of the window.",
@@ -669,20 +712,6 @@ fn general(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
             )),
             ACCENTS_WIDTH,
             |ui| changed.accent |= accents(ui, &mut settings.accent),
-        );
-        divider(ui);
-        row(
-            ui,
-            tr!(
-                "Colour in the file information",
-                "Цвета в сведениях о файле"
-            ),
-            Some(tr!(
-                "The chips under the title: the format in the colour of its file icon, the picture, the sound and the subtitles each in a hue of their own; off, all of them grey.",
-                "Чипы под названием: формат — цветом значка его типа файлов, изображение, звук и субтитры — каждый своим оттенком; выключено — все серые."
-            )),
-            50.0,
-            |ui| switch(ui, &mut settings.info_colours),
         );
         divider(ui);
         row(
@@ -1697,9 +1726,9 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.remember_recent = d.remember_recent;
     settings.fullscreen_transparency = d.fullscreen_transparency;
     settings.fullscreen_title = d.fullscreen_title;
-    settings.info_colours = d.info_colours;
     settings.snap_to_centre = d.snap_to_centre;
     settings.on_top = d.on_top;
+    settings.interface = d.interface;
     changed.accent |= settings.accent != d.accent;
     settings.accent = d.accent;
     changed.keys |= settings.keys != d.keys;

@@ -35,18 +35,88 @@ const CHAPTER_MARKS: &str = "chapter_marks";
 const TIME_DISPLAY: &str = "time_display";
 const FULLSCREEN_TRANSPARENCY: &str = "fullscreen_transparency";
 const FULLSCREEN_TITLE: &str = "fullscreen_title";
-const INFO_COLOURS: &str = "info_colours";
 /// Keys of settings there are no more, removed when saving: the panels
 /// could be unpinned (the information window is always pinned now, the
-/// Video, sound and subtitles panel stands over its button).
-const DROPPED: [&str; 2] = ["panels_pinned", "info_pinned"];
+/// Video, sound and subtitles panel stands over its button), the chips of
+/// the information window could be grey (they are always in colour).
+const DROPPED: [&str; 3] = ["panels_pinned", "info_pinned", "info_colours"];
 const SNAP_TO_CENTRE: &str = "snap_to_centre";
 const REPEAT: &str = "repeat";
 const ON_TOP: &str = "on_top";
+const INTERFACE: &str = "interface";
 const KEYS: &str = "keys";
 const ACCENT: &str = "accent";
 const PLAYLIST_DETACHED: &str = "playlist_detached";
 const PLAYLIST_RECT: &str = "playlist_rect";
+
+/// What the window shows around the picture.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Interface {
+    /// The title row and the control bar of two rows.
+    #[default]
+    Full,
+    /// The control bar; the title row comes over the picture's top while
+    /// the pointer is there.
+    NoTitle,
+    /// The control bar in one row, the title row as without it.
+    Compact,
+    /// Only the picture; the title row and the control bar come over its
+    /// top and bottom while the pointer is there.
+    Bare,
+}
+
+impl Interface {
+    /// Those that can be chosen in the settings.
+    pub const ALL: [Interface; 4] = [
+        Interface::Full,
+        Interface::NoTitle,
+        Interface::Compact,
+        Interface::Bare,
+    ];
+
+    /// The stored name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Interface::Full => "full",
+            Interface::NoTitle => "no_title",
+            Interface::Compact => "compact",
+            Interface::Bare => "bare",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|i| i.name() == name)
+    }
+
+    /// Full, without the title row, compact, only the picture (`8`).
+    pub fn next(self) -> Self {
+        match self {
+            Interface::Full => Interface::NoTitle,
+            Interface::NoTitle => Interface::Compact,
+            Interface::Compact => Interface::Bare,
+            Interface::Bare => Interface::Full,
+        }
+    }
+
+    /// The title row is drawn above the picture.
+    pub fn title_row(self) -> bool {
+        self == Interface::Full
+    }
+
+    /// The title row comes over the picture's top while the pointer is there.
+    pub fn title_over(self) -> bool {
+        self != Interface::Full
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Interface::Full => tr!("Full", "Полный"),
+            Interface::NoTitle => tr!("Without the title row", "Без заголовка"),
+            Interface::Compact => tr!("Compact", "Компактный"),
+            Interface::Bare => tr!("Only the picture", "Только видео"),
+        }
+    }
+}
 
 /// When the window stays over the other windows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -244,15 +314,14 @@ pub struct Settings {
     pub fullscreen_transparency: f64,
     /// A strip with the file's name at the top in fullscreen.
     pub fullscreen_title: bool,
-    /// The chips of the information window in colour: the format as its
-    /// file icon, the picture, the sound and the subtitles each in a hue.
-    pub info_colours: bool,
     /// The window, being moved, is drawn to the screen's centre lines.
     pub snap_to_centre: bool,
     /// What plays after the end of a file (`R`, the playlist's button).
     pub repeat: Repeat,
     /// When the window stays over the other windows (`Ctrl+T`).
     pub on_top: OnTop,
+    /// What the window shows around the picture (`8`; only the picture, `7`).
+    pub interface: Interface,
     /// The keys, as changed on the Keys page (`keymap.rs`).
     pub keys: Keymap,
     /// The interface's accent colour and the icon's screen.
@@ -337,10 +406,10 @@ impl Default for Settings {
             time_mode: TimeMode::Both,
             fullscreen_transparency: 12.0,
             fullscreen_title: true,
-            info_colours: true,
             snap_to_centre: true,
             repeat: Repeat::Off,
             on_top: OnTop::Never,
+            interface: Interface::Full,
             keys: Keymap::default(),
             accent: Accent::Blue,
             audio_device: String::new(),
@@ -450,7 +519,6 @@ impl Settings {
                 d.fullscreen_transparency,
             ),
             fullscreen_title: flag(FULLSCREEN_TITLE, d.fullscreen_title),
-            info_colours: flag(INFO_COLOURS, d.info_colours),
             snap_to_centre: flag(SNAP_TO_CENTRE, d.snap_to_centre),
             repeat: get(REPEAT)
                 .as_deref()
@@ -460,6 +528,10 @@ impl Settings {
                 .as_deref()
                 .and_then(OnTop::from_name)
                 .unwrap_or(d.on_top),
+            interface: get(INTERFACE)
+                .as_deref()
+                .and_then(Interface::from_name)
+                .unwrap_or(d.interface),
             keys: get(KEYS).as_deref().map_or(d.keys, Keymap::from_setting),
             accent: get(ACCENT)
                 .as_deref()
@@ -590,13 +662,13 @@ impl Settings {
             format!("{:.0}", self.fullscreen_transparency),
         );
         storage.set_string(FULLSCREEN_TITLE, self.fullscreen_title.to_string());
-        storage.set_string(INFO_COLOURS, self.info_colours.to_string());
         for key in DROPPED {
             storage.remove_string(key);
         }
         storage.set_string(SNAP_TO_CENTRE, self.snap_to_centre.to_string());
         storage.set_string(REPEAT, self.repeat.name().into());
         storage.set_string(ON_TOP, self.on_top.name().into());
+        storage.set_string(INTERFACE, self.interface.name().into());
         storage.set_string(KEYS, self.keys.to_setting());
         storage.set_string(ACCENT, self.accent.name());
         storage.set_string(AUDIO_DEVICE, self.audio_device.clone());
@@ -712,10 +784,10 @@ mod tests {
             time_mode: TimeMode::Remaining,
             fullscreen_transparency: 40.0,
             fullscreen_title: false,
-            info_colours: false,
             snap_to_centre: false,
             repeat: Repeat::All,
             on_top: OnTop::Playing,
+            interface: Interface::Compact,
             keys: Keymap::from_setting("pause\tF\nstop\tSpace Ctrl+MouseBack\nmute\t"),
             accent: Accent::Custom(0x12ab9f),
             audio_device: "wasapi/{0.0.0.00000000}.{abc}".into(),
@@ -798,7 +870,23 @@ mod tests {
         storage.set_string(OSD_FONT, "Segoe UI".into());
         storage.set_string(OSD_FONT_FILE, "x|C:/f.ttf".into());
         storage.set_string(WINDOW_NORMAL, "1,2,3".into());
+        storage.set_string(INTERFACE, "none".into());
         assert_eq!(Settings::load(&storage), Settings::default());
+    }
+
+    #[test]
+    fn interfaces_go_round_and_are_kept_by_name() {
+        let mut i = Interface::Full;
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            seen.push(i);
+            i = i.next();
+        }
+        assert_eq!(seen, Interface::ALL);
+        assert_eq!(i, Interface::Full);
+        for i in Interface::ALL {
+            assert_eq!(Interface::from_name(i.name()), Some(i));
+        }
     }
 
     #[test]
