@@ -276,12 +276,12 @@ pub fn track_details_in(lang: Lang, track: &Track, s: &Subject) -> String {
             }
         }
         Kind::Audio => {
-            if let Some(n) = track.channels {
-                parts.push(tracks::channels_in(lang, n));
+            if let Some(channels) = track.channels_label(lang) {
+                parts.push(channels);
             }
             if let Some(rate) = track.samplerate.filter(|r| *r > 0) {
                 let khz = rate as f64 / 1000.0;
-                let decimals = if rate % 1000 == 0 { 0 } else { 1 };
+                let decimals = tracks::khz_decimals(rate);
                 let unit = if ru { "кГц" } else { "kHz" };
                 parts.push(format!("{} {unit}", decimal_in(lang, khz, decimals)));
             }
@@ -394,8 +394,7 @@ pub fn track_rows_in(lang: Lang, track: &Track, s: &Subject) -> Vec<(String, Str
             }
         }
         Kind::Audio => {
-            if let Some(n) = track.channels {
-                let mut text = tracks::channels_in(lang, n);
+            if let Some(mut text) = track.channels_label(lang) {
                 // The layout when it says more: "5.1 (5.1(side))"; not
                 // "stereo", nor "unknown2" of a track not being decoded.
                 if let Some(layout) = track.layout.as_ref().filter(|l| {
@@ -409,7 +408,7 @@ pub fn track_rows_in(lang: Lang, track: &Track, s: &Subject) -> Vec<(String, Str
             }
             if let Some(rate) = track.samplerate.filter(|r| *r > 0) {
                 let khz = rate as f64 / 1000.0;
-                let decimals = if rate % 1000 == 0 { 0 } else { 1 };
+                let decimals = tracks::khz_decimals(rate);
                 let unit = if ru { "кГц" } else { "kHz" };
                 rows.push((
                     label("Sample rate", "Частота дискретизации"),
@@ -844,7 +843,7 @@ pub fn audio_out_in(lang: Lang, out: &AudioOut) -> Option<String> {
     let mut parts = Vec::new();
     if let Some(rate) = out.samplerate.filter(|r| *r > 0) {
         let khz = rate as f64 / 1000.0;
-        let decimals = if rate % 1000 == 0 { 0 } else { 1 };
+        let decimals = tracks::khz_decimals(rate);
         let unit = if ru { "кГц" } else { "kHz" };
         parts.push(format!("{} {unit}", decimal_in(lang, khz, decimals)));
     }
@@ -1088,8 +1087,8 @@ pub fn chips_in(lang: Lang, s: &Subject) -> Vec<Vec<Chip>> {
         if let Some(format) = track.format_name() {
             parts.push(format);
         }
-        if let Some(n) = track.channels {
-            parts.push(tracks::channels_in(lang, n));
+        if let Some(channels) = track.channels_label(lang) {
+            parts.push(channels);
         }
         if let Some(code) = &track.lang {
             parts.push(tracks::language_in(lang, code));

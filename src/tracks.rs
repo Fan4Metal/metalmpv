@@ -150,8 +150,9 @@ pub fn from_value(list: &Value) -> Vec<Track> {
 }
 
 /// A track's `metadata` map without what says nothing new: the language
-/// (the track has it), FFmpeg's default handler names ("SoundHandler") and
-/// empty values.
+/// and the title (the track has them), FFmpeg's default handler names
+/// ("SoundHandler"), an MP4's empty vendor ("[0][0][0][0]") and empty
+/// values.
 fn track_tags(metadata: &Value) -> Vec<(String, String)> {
     let Value::Map(entries) = metadata else {
         return Vec::new();
@@ -162,7 +163,9 @@ fn track_tags(metadata: &Value) -> Vec<(String, String)> {
         .filter(|(k, v)| {
             !v.is_empty()
                 && !k.eq_ignore_ascii_case("language")
+                && !k.eq_ignore_ascii_case("title")
                 && !(k.eq_ignore_ascii_case("handler_name") && v.ends_with("Handler"))
+                && !(k.eq_ignore_ascii_case("vendor_id") && v.chars().all(|c| "[0]".contains(c)))
         })
         .collect()
 }
@@ -263,6 +266,18 @@ pub fn next(tracks: &[Track], kind: Kind) -> Option<Option<i64>> {
 }
 
 impl Track {
+    /// Its channels as people name them: the layout's number when mpv
+    /// gives one ("5.1" of "5.1(side)", "3.0"), else by their count.
+    pub fn channels_label(&self, lang: Lang) -> Option<String> {
+        let n = self.channels?;
+        let named = self.layout.as_deref().and_then(|layout| {
+            let base = layout.split('(').next()?;
+            (base.contains('.') && base.bytes().all(|b| b.is_ascii_digit() || b == b'.'))
+                .then(|| base.to_owned())
+        });
+        Some(named.unwrap_or_else(|| channels_in(lang, n)))
+    }
+
     /// The track's number among those of its kind, from 1.
     pub fn number(&self, tracks: &[Track]) -> usize {
         of_kind(tracks, self.kind)
@@ -335,12 +350,30 @@ impl Track {
         if let Some(format) = self.format_name() {
             badges.push(format);
         }
-        if let Some(n) = self.channels {
-            badges.push(channels_in(lang, n));
+        if let Some(channels) = self.channels_label(lang) {
+            badges.push(channels);
         }
+        // Subtitles are plural in Russian, a track of sound is not.
+        let one = self.kind != Kind::Sub;
         for (on, en, ru_text) in [
-            (self.external, "external", "внешние"),
-            (self.forced, "forced", "принудительные"),
+            (
+                self.external,
+                "external",
+                if one {
+                    "внешняя"
+                } else {
+                    "внешние"
+                },
+            ),
+            (
+                self.forced,
+                "forced",
+                if one {
+                    "принудительная"
+                } else {
+                    "принудительные"
+                },
+            ),
             (self.default, "default", "по умолчанию"),
         ] {
             if on {
@@ -394,12 +427,22 @@ pub fn codec_name(codec: &str) -> String {
     }
 }
 
+/// The places after the point a sample rate in kHz needs: 48, 44.1,
+/// 22.05, 11.025.
+pub fn khz_decimals(rate: i64) -> usize {
+    match rate {
+        r if r % 1000 == 0 => 0,
+        r if r % 100 == 0 => 1,
+        r if r % 10 == 0 => 2,
+        _ => 3,
+    }
+}
+
 pub fn channels_in(lang: Lang, n: i64) -> String {
     match (n, lang) {
         (1, Lang::En) => "mono".into(),
         (1, Lang::Ru) => "моно".into(),
         (2, _) => "2.0".into(),
-        (3, _) => "2.1".into(),
         (6, _) => "5.1".into(),
         (8, _) => "7.1".into(),
         (n, Lang::En) => format!("{n} ch"),
@@ -566,6 +609,32 @@ mod tests {
         assert_eq!(selected(&t, Kind::Sub), None);
         assert_eq!(t[1].channels, Some(6));
         assert!(t[3].external);
+    }
+
+    #[test]
+    fn channels_rates_and_flags_as_people_say_them() {
+        let audio = |extra| from_value(&Value::List(vec![track(1, "audio", extra)])).remove(0);
+        let three = audio(vec![
+            ("demux-channel-count", Value::Int(3)),
+            ("demux-channels", Value::Str("3.0".into())),
+        ]);
+        assert_eq!(three.channels_label(Lang::En).as_deref(), Some("3.0"));
+        let side = audio(vec![
+            ("demux-channel-count", Value::Int(6)),
+            ("demux-channels", Value::Str("5.1(side)".into())),
+        ]);
+        assert_eq!(side.channels_label(Lang::En).as_deref(), Some("5.1"));
+        let bare = audio(vec![("demux-channel-count", Value::Int(3))]);
+        assert_eq!(bare.channels_label(Lang::En).as_deref(), Some("3 ch"));
+        assert_eq!([48000, 44100, 22050, 11025].map(khz_decimals), [0, 1, 2, 3]);
+        let forced = audio(vec![("forced", Value::Flag(true))]);
+        assert!(
+            forced
+                .badges_in(Lang::Ru)
+                .contains(&"принудительная".to_owned())
+        );
+        let t = sample();
+        assert!(t[3].badges_in(Lang::Ru).contains(&"внешние".to_owned()));
     }
 
     #[test]

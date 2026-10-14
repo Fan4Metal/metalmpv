@@ -669,14 +669,17 @@ fn now_playing(ui: &mut Ui, now: &Now<'_>) {
             if let Some(desc) = &track.codec_desc {
                 title.on_hover_text(desc);
             }
-            let mut parts = vec![crate::tracks::channels_in(lang, channels)];
+            let mut parts = vec![
+                track
+                    .channels_label(lang)
+                    .unwrap_or_else(|| crate::tracks::channels_in(lang, channels)),
+            ];
             if let Some(rate) = track.samplerate.filter(|r| *r > 0) {
-                let khz = rate as f64 / 1000.0;
-                let khz = if rate % 1000 == 0 {
-                    format!("{khz:.0}")
-                } else {
-                    format!("{khz:.1}")
-                };
+                let khz = format!(
+                    "{:.*}",
+                    crate::tracks::khz_decimals(rate),
+                    rate as f64 / 1000.0
+                );
                 parts.push(tr!(
                     format!("{khz} kHz"),
                     format!("{} кГц", khz.replace('.', ","))
