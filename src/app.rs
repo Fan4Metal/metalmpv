@@ -148,9 +148,10 @@ pub struct App {
     /// bottom): a menu or a popup opened over them keeps them
     /// ([`Self::held`]).
     shown_over: (bool, bool),
-    /// Windows is ending the session: the settings and positions are saved
-    /// in `logic` (winit does not close the window for it).
-    ending_session: bool,
+    /// Windows is ending the session or going to sleep: the settings and
+    /// positions are saved in `logic` (winit does not close the window for
+    /// either); why, for the log.
+    save_now: Option<&'static str>,
     /// The right button went down on the picture: the context menu opens
     /// when it is let go.
     menu_press: bool,
@@ -326,7 +327,7 @@ impl App {
             playlist_inset: 0.0,
             title_strip: false,
             shown_over: (false, false),
-            ending_session: false,
+            save_now: None,
             menu_press: false,
             middle_press: false,
             picture_area: Rect::NOTHING,
@@ -1264,7 +1265,11 @@ impl App {
                     continue;
                 }
                 win::Hooked::EndSession => {
-                    self.ending_session = true;
+                    self.save_now = Some("the session is ending");
+                    continue;
+                }
+                win::Hooked::Suspend => {
+                    self.save_now = Some("going to sleep");
                     continue;
                 }
                 win::Hooked::Thumb(id) => {
@@ -2772,10 +2777,10 @@ impl eframe::App for App {
         self.updates.poll();
         self.take_events();
         self.take_hooked();
-        if std::mem::take(&mut self.ending_session)
+        if let Some(why) = self.save_now.take()
             && let Some(storage) = frame.storage_mut()
         {
-            log::info!("the session is ending: saving");
+            log::info!("{why}: saving");
             self.save(storage);
             storage.flush();
         }
@@ -3124,6 +3129,20 @@ impl eframe::App for App {
         // Chosen in the settings.
         self.fit_interface(&ctx);
         self.update_window_title(&ctx, &title);
+    }
+
+    /// More often while a file plays, so that where it was left is kept
+    /// when the process is ended or the power goes.
+    fn auto_save_interval(&self) -> Duration {
+        let playing = self
+            .player
+            .as_ref()
+            .is_some_and(|p| !p.state.idle && !p.state.paused && !p.state.eof);
+        if playing {
+            Duration::from_secs(10)
+        } else {
+            Duration::from_secs(30)
+        }
     }
 
     /// Called by eframe every `auto_save_interval` and on exit.

@@ -457,6 +457,9 @@ pub enum Hooked {
     /// Windows is ending the session (`WM_QUERYENDSESSION`): winit closes
     /// nothing, so the settings are saved now.
     EndSession,
+    /// The computer is going to sleep (`WM_POWERBROADCAST` with
+    /// `PBT_APMSUSPEND`): saved now too, as it may not wake.
+    Suspend,
 }
 
 /// `TaskbarButtonCreated`, registered by [`hook_window`].
@@ -576,8 +579,8 @@ unsafe extern "system" fn window_proc(
     use std::sync::atomic::Ordering;
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        WM_COMMAND, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_MOVING, WM_NCCALCSIZE,
-        WM_QUERYENDSESSION, WM_WINDOWPOSCHANGED,
+        PBT_APMSUSPEND, WM_COMMAND, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_MOVING, WM_NCCALCSIZE,
+        WM_POWERBROADCAST, WM_QUERYENDSESSION, WM_WINDOWPOSCHANGED,
     };
     // THBN_CLICKED in WM_COMMAND's high word.
     const THBN_CLICKED: usize = 0x1800;
@@ -592,6 +595,7 @@ unsafe extern "system" fn window_proc(
         // Answered as DefWindowProc does (yes); the app saves before the
         // process is ended.
         WM_QUERYENDSESSION => hook(Hooked::EndSession),
+        WM_POWERBROADCAST if wparam == PBT_APMSUSPEND as usize => hook(Hooked::Suspend),
         // Not winit's: the whole rectangle, maximized or not.
         WM_NCCALCSIZE if wparam != 0 && lparam != 0 && FULLSCREEN.load(Ordering::Relaxed) => {
             unsafe { fullscreen_client(lparam) };
