@@ -41,10 +41,21 @@ impl OsdLine {
     /// Paint the line over `video`, `scale` times its usual size (which
     /// follows the picture's height). A seek's line shows where playback
     /// actually landed (a keyframe seek lands near, not on, the target)
-    /// once mpv has finished the seek.
-    pub fn paint(&mut self, ctx: &egui::Context, video: Rect, state: &State, scale: f32) {
+    /// once mpv has finished the seek. With `passing` off (the OSD turned
+    /// off) only the line at the end is shown.
+    pub fn paint(
+        &mut self,
+        ctx: &egui::Context,
+        video: Rect,
+        state: &State,
+        scale: f32,
+        passing: bool,
+    ) {
         if !state.eof || state.idle {
             self.at_end = None;
+        }
+        if !passing {
+            self.line = None;
         }
         // The age read once: read again, it could be past SHOWN.
         let age = self.line.as_ref().map(|(_, since)| since.elapsed());

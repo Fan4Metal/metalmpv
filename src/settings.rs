@@ -298,6 +298,7 @@ const VOICE_BOOST: &str = "voice_boost";
 const EQ_PRESETS: &str = "eq_presets";
 const KEEP_ADJUST: &str = "keep_adjust";
 const ADJUST: &str = "adjust";
+const OSD: &str = "osd";
 const OSD_FONT: &str = "osd_font";
 const OSD_FONT_FILE: &str = "osd_font_file";
 const OSD_SCALE: &str = "osd_scale";
@@ -525,6 +526,9 @@ pub struct Settings {
     /// The picture's adjustments are kept between runs, as `adjust`.
     pub keep_adjust: bool,
     pub adjust: crate::adjust::Adjust,
+    /// The OSD line is shown; off, only the line of a stop where the data
+    /// ran out is.
+    pub osd: bool,
     /// The font family of the OSD line, empty for the interface's.
     pub osd_font: String,
     /// The file and the face number of `osd_font`.
@@ -602,6 +606,7 @@ impl Default for Settings {
             track_prefs: crate::tracks::TrackPrefs::default(),
             keep_adjust: false,
             adjust: crate::adjust::Adjust::default(),
+            osd: true,
             osd_font: String::new(),
             osd_font_file: None,
             osd_scale: 100.0,
@@ -812,6 +817,7 @@ impl Settings {
                 .filter(|_| flag(KEEP_ADJUST, d.keep_adjust))
                 .map(|v| crate::adjust::Adjust::from_text(&v))
                 .unwrap_or_default(),
+            osd: flag(OSD, d.osd),
             osd_font: osd_font
                 .as_ref()
                 .map(|(name, _)| name.clone())
@@ -942,6 +948,7 @@ impl Settings {
                 storage.remove_string(OSD_FONT_FILE);
             }
         }
+        storage.set_string(OSD, self.osd.to_string());
         storage.set_string(OSD_SCALE, format!("{:.0}", self.osd_scale));
         match self.window_normal {
             Some(r) => storage.set_string(
@@ -1072,6 +1079,7 @@ mod tests {
                     ..SubStyle::default()
                 },
             }],
+            osd: false,
             osd_font: "Segoe UI".into(),
             osd_font_file: Some((PathBuf::from(r"C:\Windows\Fonts\segoeui.ttf"), 0)),
             osd_scale: 80.0,

@@ -1259,16 +1259,20 @@ fn osd_section(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
         ui,
         tr!("On-screen messages", "Экранные сообщения"),
         |ui| {
-            let chosen = row(
+            row(
                 ui,
-                tr!("Font", "Шрифт"),
+                tr!("Show messages", "Показывать сообщения"),
                 Some(tr!(
-                    "The yellow line in the top left corner after a seek, a volume change and the like.",
-                    "Жёлтая строка в левом верхнем углу после перемотки, смены громкости и т. п."
+                    "The yellow line in the top left corner after a seek, a volume change and the like. Off, only the line saying where the data of an incomplete file ends is shown.",
+                    "Жёлтая строка в левом верхнем углу после перемотки, смены громкости и т. п. Если выключено, показывается только строка о том, где кончаются данные недокачанного файла."
                 )),
-                230.0,
-                |ui| font_choice(ui, "osd_font", &settings.osd_font, 220.0),
+                50.0,
+                |ui| switch(ui, &mut settings.osd),
             );
+            divider(ui);
+            let chosen = row(ui, tr!("Font", "Шрифт"), None, 230.0, |ui| {
+                font_choice(ui, "osd_font", &settings.osd_font, 220.0)
+            });
             if let Some(family) = chosen {
                 settings.osd_font = family.map(|f| f.name.clone()).unwrap_or_default();
                 settings.osd_font_file = family.map(|f| (f.file.clone(), f.index));
@@ -1842,6 +1846,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.accent = d.accent;
     changed.keys |= settings.keys != d.keys;
     settings.keys = d.keys;
+    settings.osd = d.osd;
     settings.osd_font = d.osd_font;
     settings.osd_font_file = d.osd_font_file;
     settings.osd_scale = d.osd_scale;
