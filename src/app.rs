@@ -1776,7 +1776,7 @@ impl App {
             WindowOnOpen::Fit => {
                 let ppp = f64::from(ctx.pixels_per_point());
                 let area = self.picture_area.size();
-                sizing::fitted(video, [f64::from(area.x) * ppp, f64::from(area.y) * ppp])
+                sizing::same_width(video, [f64::from(area.x) * ppp, f64::from(area.y) * ppp])
             }
         };
         self.size_window(ctx, frame, target);

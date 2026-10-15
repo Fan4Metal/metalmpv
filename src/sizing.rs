@@ -3,6 +3,16 @@
 //! and the playlist (the chrome) around it, kept on the monitor's work
 //! area. All in pixels; `win.rs` moves the window.
 
+/// The picture `video` as wide as `area`, its height by its shape: a file
+/// opened keeps the window's width, whatever the shape of the file before
+/// (`fitted` would shrink the window at each change of shape).
+pub fn same_width(video: [f64; 2], area: [f64; 2]) -> [f64; 2] {
+    if video[0] <= 0.0 || video[1] <= 0.0 || area[0] <= 0.0 {
+        return area;
+    }
+    [area[0], area[0] * video[1] / video[0]]
+}
+
 /// The size of the picture `video` (its display size) shown whole in
 /// `area`, as mpv letterboxes it.
 pub fn fitted(video: [f64; 2], area: [f64; 2]) -> [f64; 2] {
@@ -153,6 +163,19 @@ mod tests {
         assert_eq!([w.round(), (h * 100.0).round()], [1000.0, 41667.0]);
         assert_eq!(fitted([1080.0, 1920.0], [1000.0, 960.0]), [540.0, 960.0]);
         assert_eq!(fitted([0.0, 0.0], [10.0, 20.0]), [10.0, 20.0]);
+    }
+
+    #[test]
+    fn files_of_other_shapes_keep_the_width() {
+        // 2.39:1, 4:3, 16:9 in turn: the width stays, the window does not
+        // shrink step by step.
+        let mut area = [1280.0, 720.0];
+        for video in [[1920.0, 803.0], [1440.0, 1080.0], [1920.0, 1080.0]] {
+            area = same_width(video, area);
+            assert_eq!(area[0], 1280.0);
+        }
+        assert_eq!(area, [1280.0, 720.0]);
+        assert_eq!(same_width([0.0, 0.0], [10.0, 20.0]), [10.0, 20.0]);
     }
 
     #[test]
