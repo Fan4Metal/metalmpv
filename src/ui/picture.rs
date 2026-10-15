@@ -107,6 +107,7 @@ pub struct Kept<'a> {
     pub voice_boost: &'a mut bool,
     pub upmix: &'a mut bool,
     pub upmix_lfe: &'a mut audio::Upmix,
+    pub subwoofer: &'a mut audio::Subwoofer,
     pub equalizer: &'a mut Equalizer,
     /// The equalizer's gains the user saved.
     pub eq_presets: &'a mut Vec<OwnEq>,
@@ -706,20 +707,6 @@ fn sound_tab(
             &mut kept.upmix_lfe.lfe_cut,
             &cut,
         );
-        let level = Spec {
-            suffix: tr!(" dB", " дБ"),
-            tip: Some(tr!(
-                "0 is the standard level of a 5.1's subwoofer channel (10 dB under the others: receivers and sound systems play it that much louder). Lower if the bass booms",
-                "0 — стандартный уровень канала сабвуфера в 5.1 (на 10 дБ ниже остальных: ресиверы и звуковые системы воспроизводят его настолько громче). Если бас бухает, ниже"
-            )),
-            ..Spec::centred(range_of(audio::LFE_LEVEL_RANGE), d.lfe_level as f64)
-        };
-        int_row(
-            ui,
-            tr!("Subwoofer level", "Уровень сабвуфера"),
-            &mut kept.upmix_lfe.lfe_level,
-            &level,
-        );
         switch_line(
             ui,
             &mut kept.upmix_lfe.bass_only,
@@ -728,6 +715,48 @@ fn sound_tab(
                 "The low end taken out of the other speakers, not only copied to the subwoofer: for small front speakers",
                 "Низкие частоты убираются из остальных колонок, а не только дублируются в сабвуфер: для небольших фронтальных колонок"
             )),
+        );
+    }
+
+    heading(ui, tr!("Subwoofer", "Сабвуфер"));
+    let d = audio::Subwoofer::default();
+    let level = Spec {
+        suffix: tr!(" dB", " дБ"),
+        tip: Some(tr!(
+            "The subwoofer channel of 5.1 and 7.1 tracks against the track's own level; with Stereo to 5.1, against the standard one (10 dB under the others: receivers and sound systems play it that much louder). Lower if the bass booms",
+            "Канал сабвуфера дорожек 5.1 и 7.1 относительно уровня в самой дорожке; со «Стерео в 5.1» — относительно стандартного (на 10 дБ ниже остальных: ресиверы и звуковые системы воспроизводят его настолько громче). Если бас бухает, ниже"
+        )),
+        ..Spec::centred(range_of(audio::LFE_LEVEL_RANGE), d.level as f64)
+    };
+    int_row(
+        ui,
+        tr!("Level", "Уровень"),
+        &mut kept.subwoofer.level,
+        &level,
+    );
+    switch_line(
+        ui,
+        &mut kept.subwoofer.infrasonic,
+        tr!("Cut the infrasound", "Срез инфранизких"),
+        Some(tr!(
+            "Takes out what lies under the frequency below in all channels: a subwoofer hardly plays it, but its cone is driven to the limit, and the bass bubbles and chuffs. Films with deep bass have much of it. Not for sound sent to a receiver undecoded",
+            "Убирает во всех каналах то, что ниже частоты под переключателем: сабвуфер это почти не воспроизводит, но его диффузор доходит до предела хода, и бас булькает и хлопает. В фильмах с глубоким басом такого много. Не действует на звук, передаваемый на ресивер без декодирования"
+        )),
+    );
+    if kept.subwoofer.infrasonic {
+        let cut = Spec {
+            suffix: tr!(" Hz", " Гц"),
+            tip: Some(tr!(
+                "Half as loud at it and fading by 24 dB an octave below. Higher for a small subwoofer, lower for a large one",
+                "На ней звук вдвое тише, ниже затухает на 24 дБ на октаву. Для небольшого сабвуфера выше, для большого ниже"
+            )),
+            ..Spec::centred(range_of(audio::INFRASONIC_RANGE), d.infrasonic_hz as f64)
+        };
+        int_row(
+            ui,
+            tr!("Below", "Ниже"),
+            &mut kept.subwoofer.infrasonic_hz,
+            &cut,
         );
     }
 

@@ -852,6 +852,8 @@ impl Player {
             &setup.equalizer,
             None,
             None,
+            audio::Subwoofer::default(),
+            false,
         ));
         player.set_passthrough(setup.passthrough);
         player.set_volume_max(setup.volume_max);
@@ -2532,6 +2534,8 @@ mod tests {
                 &eq,
                 None,
                 None,
+                audio::Subwoofer::default(),
+                false,
             )),
         );
         mpv.set(
@@ -2825,6 +2829,8 @@ mod tests {
                                 &audio::Equalizer::default(),
                                 Some((&n, 7)),
                                 None,
+                                audio::Subwoofer::default(),
+                                false,
                             );
                             eprintln!("{n}, af: {af}");
                             mpv.set("af", &Value::Str(af));
@@ -2862,13 +2868,27 @@ mod tests {
         let upmix = audio::Upmix {
             lfe_cut: 120,
             bass_only: true,
-            lfe_level: -6,
+        };
+        let sub = audio::Subwoofer {
+            level: -6,
+            infrasonic: true,
+            infrasonic_hz: 30,
         };
         let af = audio::filters(
             Some(audio::Normalize::Strong),
             &audio::Equalizer::default(),
             Some(("stereo", 7)),
             Some(upmix),
+            sub,
+            false,
+        );
+        assert_eq!(channels_out(af), Some(6));
+        // The LFE's level and the cut on a track of six channels: the
+        // upmix's output taken as one.
+        let af = format!(
+            "{},{}",
+            upmix.filter(0),
+            audio::filters(None, &audio::Equalizer::default(), None, None, sub, true)
         );
         assert_eq!(channels_out(af), Some(6));
     }
@@ -2884,6 +2904,8 @@ mod tests {
                 &audio::Equalizer::default(),
                 Some(("stereo", *audio::VOICE_RANGE.end())),
                 None,
+                audio::Subwoofer::default(),
+                false,
             );
             assert!(channels_out(af).is_some());
         }

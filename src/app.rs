@@ -330,6 +330,8 @@ impl App {
             &settings.equalizer,
             None,
             None,
+            crate::audio::Subwoofer::default(),
+            false,
         );
         let adjust = if settings.keep_adjust {
             settings.adjust.clone()
@@ -713,6 +715,8 @@ impl App {
             &self.settings.equalizer,
             voice,
             upmix,
+            self.settings.subwoofer,
+            layout.as_deref().is_some_and(crate::audio::has_lfe),
         );
         self.af_layout = layout;
         if af != self.af_applied {
@@ -4198,6 +4202,7 @@ impl eframe::App for App {
             voice_boost: &mut self.settings.voice_boost,
             upmix: &mut self.settings.upmix,
             upmix_lfe: &mut self.settings.upmix_lfe,
+            subwoofer: &mut self.settings.subwoofer,
             equalizer: &mut self.settings.equalizer,
             eq_presets: &mut self.settings.eq_presets,
             subs: &mut self.settings.sub,

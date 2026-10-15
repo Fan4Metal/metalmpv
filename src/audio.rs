@@ -324,9 +324,6 @@ pub struct Upmix {
     /// The low end taken out of the other channels (`lfe_mode=sub`), not
     /// only copied to the subwoofer: for small speakers.
     pub bass_only: bool,
-    /// The subwoofer's level in dB against the standard
-    /// ([`LFE_LEVEL_RANGE`], 0: [`LFE_STANDARD_DB`] in the filter).
-    pub lfe_level: i64,
 }
 
 impl Default for Upmix {
@@ -334,7 +331,6 @@ impl Default for Upmix {
         Self {
             lfe_cut: 80,
             bass_only: false,
-            lfe_level: 0,
         }
     }
 }
@@ -342,15 +338,14 @@ impl Default for Upmix {
 impl Upmix {
     /// The filter: FFmpeg's `surround` finds, band by band, what is common
     /// to both sides (the centre, mostly the voice), what differs (the
-    /// surrounds) and the low end (the LFE).
-    pub fn filter(self) -> String {
+    /// surrounds) and the low end (the LFE), at `level`
+    /// ([`Subwoofer::level`]; 0 is [`LFE_STANDARD_DB`] in the filter).
+    pub fn filter(self, level: i64) -> String {
         let cut = self
             .lfe_cut
             .clamp(*LFE_CUT_RANGE.start(), *LFE_CUT_RANGE.end());
         let mode = if self.bass_only { "sub" } else { "add" };
-        let level = self
-            .lfe_level
-            .clamp(*LFE_LEVEL_RANGE.start(), *LFE_LEVEL_RANGE.end());
+        let level = level.clamp(*LFE_LEVEL_RANGE.start(), *LFE_LEVEL_RANGE.end());
         let gain = 10f64.powf((level + LFE_STANDARD_DB) as f64 / 20.0);
         format!(
             "lavfi=[surround=chl_out=5.1:lfe_low={cut}:lfe_high={}:lfe_mode={mode}:lfe_out={gain:.3}]",
@@ -364,29 +359,104 @@ pub fn is_stereo(layout: &str) -> bool {
     layout == "stereo" || layout == "fl-fr"
 }
 
+/// A layout with a subwoofer channel: mpv's name `5.1`, `7.1(wide)`, or
+/// its speakers, `fl-fr-fc-lfe-…`.
+pub fn has_lfe(layout: &str) -> bool {
+    let name = layout.split('(').next().unwrap_or(layout);
+    name.split('.').nth(1) == Some("1") || layout.split('-').any(|s| s == "lfe")
+}
+
+/// Where the cut of the deepest bass may be set, in Hz.
+pub const INFRASONIC_RANGE: std::ops::RangeInclusive<i64> = 15..=40;
+
+/// The subwoofer, for every track that has one (or gets one from the
+/// upmix).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Subwoofer {
+    /// Its level in dB ([`LFE_LEVEL_RANGE`]): 0 leaves a track's LFE as it
+    /// is and gives the upmix's the standard level.
+    pub level: i64,
+    /// What lies under `infrasonic_hz` taken out of all the channels: a
+    /// subwoofer hardly plays it, but its cone is driven to its limits and
+    /// the bass bubbles (a film's LFE can hold as much under 25 Hz as
+    /// above).
+    pub infrasonic: bool,
+    pub infrasonic_hz: i64,
+}
+
+impl Default for Subwoofer {
+    fn default() -> Self {
+        Self {
+            level: 0,
+            infrasonic: false,
+            infrasonic_hz: 25,
+        }
+    }
+}
+
+impl Subwoofer {
+    /// Its filters for a track with an LFE channel (`lfe`) or without, the
+    /// upmix aside (its level is the upmix's own): one graph.
+    fn filter(self, lfe: bool) -> Option<String> {
+        let mut parts = Vec::new();
+        let level = self
+            .level
+            .clamp(*LFE_LEVEL_RANGE.start(), *LFE_LEVEL_RANGE.end());
+        if lfe && level != 0 {
+            // A biquad of a gain alone: FFmpeg's `volume` takes every
+            // channel, the biquads take `c`.
+            let gain = 10f64.powf(level as f64 / 20.0);
+            parts.push(format!(
+                "biquad=b0={gain:.3}:b1=0:b2=0:a0=1:a1=0:a2=0:c=LFE"
+            ));
+        }
+        if self.infrasonic {
+            let hz = self
+                .infrasonic_hz
+                .clamp(*INFRASONIC_RANGE.start(), *INFRASONIC_RANGE.end());
+            // Two Butterworths: 24 dB an octave, half at `hz`.
+            parts.extend([
+                format!("highpass=f={hz}:p=2"),
+                format!("highpass=f={hz}:p=2"),
+            ]);
+        }
+        (!parts.is_empty()).then(|| format!("lavfi=[{}]", parts.join(",")))
+    }
+}
+
 /// mpv's `af`: stereo spread over 5.1 when `upmix` is given (for a
-/// stereo track, [`Upmix::filter`]), the voice's filter when `voice` gives the channel
-/// layout of the track playing and the strength ([`voice_filter`]; after
-/// the upmix, the 5.1's), the equalizer's bands that are not flat (one
-/// graph), then the normalization (which evens out what the others raised).
+/// stereo track, [`Upmix::filter`]), the subwoofer's level (for a track
+/// with an LFE channel, `lfe`) and the cut under it ([`Subwoofer`]), the
+/// voice's filter when `voice` gives the channel layout of the track
+/// playing and the strength ([`voice_filter`]; after the upmix, the
+/// 5.1's), the equalizer's bands that are not flat (one graph), then the
+/// normalization (which evens out what the others raised).
 pub fn filters(
     normalize: Option<Normalize>,
     eq: &Equalizer,
     voice: Option<(&str, i64)>,
     upmix: Option<Upmix>,
+    sub: Subwoofer,
+    lfe: bool,
 ) -> String {
     let mut af: Vec<String> = Vec::new();
     if let Some(upmix) = upmix {
-        af.push(upmix.filter());
+        af.push(upmix.filter(sub.level));
+    }
+    let lfe_raised = upmix.is_none() && lfe && sub.level > 0;
+    if let Some(filter) = sub.filter(lfe && upmix.is_none()) {
+        af.push(filter);
     }
     let voice = voice.map(|(layout, db)| (if upmix.is_some() { "5.1" } else { layout }, db));
-    if let Some(filter) = voice.and_then(|(layout, db)| voice_filter(layout, db)) {
-        af.push(filter);
-        // A voice raised 12 dB goes over full scale where it was over
-        // -12 dB; the normalization keeps the peaks under, else a limiter.
-        if normalize.is_none() {
-            af.push(LIMITER.to_owned());
-        }
+    let voice = voice.and_then(|(layout, db)| voice_filter(layout, db));
+    if let Some(filter) = &voice {
+        af.push(filter.clone());
+    }
+    // A voice raised 12 dB goes over full scale where it was over -12 dB,
+    // as a raised LFE may; the normalization keeps the peaks under, else
+    // a limiter.
+    if (voice.is_some() || lfe_raised) && normalize.is_none() {
+        af.push(LIMITER.to_owned());
     }
     if eq.on {
         // One graph for all the bands: one filter for mpv to set up.
@@ -613,13 +683,27 @@ mod tests {
     #[test]
     fn equalizer_filters() {
         let mut eq = Equalizer::default();
-        assert_eq!(filters(None, &eq, None, None), "");
+        assert_eq!(
+            filters(None, &eq, None, None, Subwoofer::default(), false),
+            ""
+        );
         eq.gains = Preset::Bass.gains();
-        assert_eq!(filters(None, &eq, None, None), "", "off: no bands");
+        assert_eq!(
+            filters(None, &eq, None, None, Subwoofer::default(), false),
+            "",
+            "off: no bands"
+        );
         eq.on = true;
         eq.gains = [0, 0, 0, 0, 0, 0, 0, 0, 3, -20];
         assert_eq!(
-            filters(Some(Normalize::Medium), &eq, None, None),
+            filters(
+                Some(Normalize::Medium),
+                &eq,
+                None,
+                None,
+                Subwoofer::default(),
+                false
+            ),
             format!(
                 "lavfi=[equalizer=f=8000:t=o:w=1:g=3,equalizer=f=16000:t=o:w=1:g=-12],{}",
                 Normalize::Medium.filter()
@@ -698,7 +782,9 @@ mod tests {
                 Some(Normalize::Medium),
                 &eq,
                 Some(("stereo", VOICE_DEFAULT)),
-                None
+                None,
+                Subwoofer::default(),
+                false
             ),
             format!(
                 "lavfi=[dialoguenhance=enhance=1.00],{}",
@@ -708,24 +794,75 @@ mod tests {
         // Spread over 5.1, the voice is raised in its centre.
         let upmix = Upmix::default();
         assert_eq!(
-            upmix.filter(),
+            upmix.filter(0),
             "lavfi=[surround=chl_out=5.1:lfe_low=80:lfe_high=160:lfe_mode=add:lfe_out=0.316]"
         );
         assert_eq!(
-            filters(None, &eq, Some(("stereo", VOICE_DEFAULT)), Some(upmix)),
-            format!("{},{centre},{LIMITER}", upmix.filter())
+            filters(
+                None,
+                &eq,
+                Some(("stereo", VOICE_DEFAULT)),
+                Some(upmix),
+                Subwoofer::default(),
+                false
+            ),
+            format!("{},{centre},{LIMITER}", upmix.filter(0))
         );
         let small = Upmix {
             lfe_cut: 500,
             bass_only: true,
-            lfe_level: 10,
         };
         assert_eq!(
-            small.filter(),
+            small.filter(10),
             "lavfi=[surround=chl_out=5.1:lfe_low=200:lfe_high=400:lfe_mode=sub:lfe_out=1.000]"
         );
         assert!(is_stereo("stereo") && is_stereo("fl-fr") && !is_stereo("5.1"));
         assert!(Channels::Auto.takes_upmix() && !Channels::Stereo.takes_upmix());
+    }
+
+    #[test]
+    fn subwoofer_filters() {
+        for layout in ["5.1", "5.1(side)", "7.1(wide)", "2.1", "fl-fr-lfe-sl-sr"] {
+            assert!(has_lfe(layout), "{layout}");
+        }
+        for layout in ["stereo", "5.0(side)", "7.0", "quad", "mono"] {
+            assert!(!has_lfe(layout), "{layout}");
+        }
+        let eq = Equalizer::default();
+        let sub = Subwoofer {
+            level: -6,
+            infrasonic: true,
+            infrasonic_hz: 25,
+        };
+        let cut = "highpass=f=25:p=2,highpass=f=25:p=2";
+        assert_eq!(
+            filters(None, &eq, None, None, sub, true),
+            format!("lavfi=[biquad=b0=0.501:b1=0:b2=0:a0=1:a1=0:a2=0:c=LFE,{cut}]")
+        );
+        // No LFE: only the cut; nothing when it is off and the level is 0.
+        assert_eq!(
+            filters(None, &eq, None, None, sub, false),
+            format!("lavfi=[{cut}]")
+        );
+        assert_eq!(
+            filters(None, &eq, None, None, Subwoofer::default(), true),
+            ""
+        );
+        // The upmix's LFE gets the level in `surround`, the cut after it.
+        let upmix = Upmix::default();
+        assert_eq!(
+            filters(None, &eq, None, Some(upmix), sub, false),
+            format!("{},lavfi=[{cut}]", upmix.filter(-6))
+        );
+        // A raised LFE is kept under full scale.
+        let loud = Subwoofer {
+            level: 4,
+            ..Subwoofer::default()
+        };
+        assert_eq!(
+            filters(None, &eq, None, None, loud, true),
+            format!("lavfi=[biquad=b0=1.585:b1=0:b2=0:a0=1:a1=0:a2=0:c=LFE],{LIMITER}")
+        );
     }
 
     #[test]

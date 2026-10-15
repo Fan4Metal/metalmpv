@@ -306,6 +306,8 @@ const VOICE_LEVEL: &str = "voice_level";
 const LFE_CUT: &str = "lfe_cut";
 const BASS_ONLY: &str = "bass_only";
 const LFE_LEVEL: &str = "lfe_level";
+const INFRASONIC: &str = "infrasonic_cut";
+const INFRASONIC_HZ: &str = "infrasonic_hz";
 const EQ_PRESETS: &str = "eq_presets";
 const KEEP_ADJUST: &str = "keep_adjust";
 const ADJUST: &str = "adjust";
@@ -541,6 +543,8 @@ pub struct Settings {
     /// How much clearer speech raises the voice, in dB.
     pub voice_db: i64,
     pub upmix_lfe: audio::Upmix,
+    /// The subwoofer's level and the cut of the deepest bass.
+    pub subwoofer: audio::Subwoofer,
     /// The equalizer's gains the user saved; not a setting, Reset keeps
     /// them.
     pub eq_presets: Vec<audio::OwnEq>,
@@ -647,6 +651,7 @@ impl Default for Settings {
             normalize_strength: audio::Normalize::Medium,
             voice_db: audio::VOICE_DEFAULT,
             upmix_lfe: audio::Upmix::default(),
+            subwoofer: audio::Subwoofer::default(),
             eq_presets: Vec::new(),
             equalizer: audio::Equalizer::default(),
             passthrough: Passthrough::Off,
@@ -836,13 +841,25 @@ impl Settings {
                 )
                 .round() as i64,
                 bass_only: flag(BASS_ONLY, d.upmix_lfe.bass_only),
-                lfe_level: number(
+            },
+            subwoofer: audio::Subwoofer {
+                level: number(
                     LFE_LEVEL,
                     {
                         let r = audio::LFE_LEVEL_RANGE;
                         *r.start() as f64..=*r.end() as f64
                     },
-                    d.upmix_lfe.lfe_level as f64,
+                    d.subwoofer.level as f64,
+                )
+                .round() as i64,
+                infrasonic: flag(INFRASONIC, d.subwoofer.infrasonic),
+                infrasonic_hz: number(
+                    INFRASONIC_HZ,
+                    {
+                        let r = audio::INFRASONIC_RANGE;
+                        *r.start() as f64..=*r.end() as f64
+                    },
+                    d.subwoofer.infrasonic_hz as f64,
                 )
                 .round() as i64,
             },
@@ -1034,7 +1051,9 @@ impl Settings {
         storage.set_string(VOICE_LEVEL, self.voice_db.to_string());
         storage.set_string(LFE_CUT, self.upmix_lfe.lfe_cut.to_string());
         storage.set_string(BASS_ONLY, self.upmix_lfe.bass_only.to_string());
-        storage.set_string(LFE_LEVEL, self.upmix_lfe.lfe_level.to_string());
+        storage.set_string(LFE_LEVEL, self.subwoofer.level.to_string());
+        storage.set_string(INFRASONIC, self.subwoofer.infrasonic.to_string());
+        storage.set_string(INFRASONIC_HZ, self.subwoofer.infrasonic_hz.to_string());
         storage.set_string(EQ_PRESETS, audio::OwnEq::to_text(&self.eq_presets));
         storage.set_string(SUB_ASS_OVERRIDE, self.sub_ass_override.to_string());
         storage.set_string(SUB_MARGINS, self.sub_margins.to_string());
@@ -1180,7 +1199,11 @@ mod tests {
             upmix_lfe: audio::Upmix {
                 lfe_cut: 120,
                 bass_only: true,
-                lfe_level: -4,
+            },
+            subwoofer: audio::Subwoofer {
+                level: -4,
+                infrasonic: true,
+                infrasonic_hz: 30,
             },
             eq_presets: vec![audio::OwnEq {
                 name: "Ночь".into(),
