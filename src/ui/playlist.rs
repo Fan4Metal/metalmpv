@@ -463,6 +463,16 @@ fn files_list(
         let current = playlist.current();
         let (modifiers, pointer) = ui.input(|i| (i.modifiers, i.pointer.interact_pos()));
         let mut fold = None;
+        // All the groups folded (true) or unfolded, from a group's menu.
+        let mut fold_all: Option<bool> = None;
+        let names = || {
+            view.rows.iter().filter_map(|r| match r {
+                Row::Group { name, .. } => Some(name),
+                Row::Entry(_) => None,
+            })
+        };
+        let all_folded = names().all(|n| folded.contains(n));
+        let any_folded = names().any(|n| folded.contains(n));
         // The entries drawn, for the slot a drag would drop them in.
         let mut drawn: Vec<(usize, Rect)> = Vec::new();
         let output = egui::ScrollArea::vertical()
@@ -480,7 +490,26 @@ fn files_list(
                             if response.clicked() {
                                 fold = Some(name.clone());
                             }
-                            response.context_menu(|ui| groups_item(ui, groups, out));
+                            response.context_menu(|ui| {
+                                let fold = tr!("Fold all groups", "Свернуть все группы");
+                                if ui
+                                    .add_enabled(!all_folded, egui::Button::new(fold))
+                                    .clicked()
+                                {
+                                    fold_all = Some(true);
+                                    ui.close();
+                                }
+                                let unfold = tr!("Unfold all groups", "Развернуть все группы");
+                                if ui
+                                    .add_enabled(any_folded, egui::Button::new(unfold))
+                                    .clicked()
+                                {
+                                    fold_all = Some(false);
+                                    ui.close();
+                                }
+                                ui.separator();
+                                groups_item(ui, groups, out);
+                            });
                             continue;
                         }
                         Row::Entry(i) => *i,
@@ -564,6 +593,18 @@ fn files_list(
                 folded.insert(name);
             }
             *folds += 1;
+        }
+        match fold_all {
+            Some(true) => {
+                let all: Vec<String> = names().cloned().collect();
+                folded.extend(all);
+                *folds += 1;
+            }
+            Some(false) => {
+                folded.clear();
+                *folds += 1;
+            }
+            None => {}
         }
         // Let go: dropped where the line was (taken in any case).
         if drag.is_some()
