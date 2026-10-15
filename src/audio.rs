@@ -50,10 +50,12 @@ impl Normalize {
     }
 
     /// mpv's `af`: `f` the frame in ms (how quickly it follows), `g` the
-    /// frames it smooths over (odd), `m` the most it raises.
+    /// frames it smooths over (odd), `m` the most it raises. It sounds
+    /// only once it holds f × g of sound: kept to Medium's 7.75 s at most
+    /// (Soft at 500 × 31 waited 15 s after every seek).
     pub fn filter(self) -> &'static str {
         match self {
-            Normalize::Soft => "lavfi=[dynaudnorm=f=500:g=31:p=0.5:m=3:r=0.9:b=1]",
+            Normalize::Soft => "lavfi=[dynaudnorm=f=400:g=19:p=0.5:m=3:r=0.9:b=1]",
             Normalize::Medium => "lavfi=[dynaudnorm=f=250:g=31:p=0.5:m=5:r=0.9:b=1]",
             Normalize::Strong => "lavfi=[dynaudnorm=f=150:g=15:p=0.5:m=10:r=0.9:b=1]",
         }
@@ -229,7 +231,7 @@ fn centre_filter(db: i64) -> String {
 /// mpv's names of the layouts whose third channel is the centre (FL, FR,
 /// FC, …); others name it elsewhere or not at all (`5.1(alsa)`, `quad`,
 /// `6.0(front)`, `2.1`).
-const CENTRE_THIRD: [&str; 18] = [
+const CENTRE_THIRD: [&str; 22] = [
     "3.0",
     "3.1",
     "4.0",
@@ -241,11 +243,15 @@ const CENTRE_THIRD: [&str; 18] = [
     "6.0",
     "6.1",
     "6.1(back)",
+    "6.1(top)",
     "7.0",
     "7.0(front)",
+    "7.0(rear)",
     "7.1",
     "7.1(wide)",
     "7.1(wide-side)",
+    "7.1(top)",
+    "7.1(rear)",
     "hexagonal",
     "octagonal",
 ];
@@ -278,6 +284,16 @@ pub fn voice_filter(layout: &str, db: i64) -> Option<String> {
     let centre = CENTRE_THIRD.contains(&layout) || speakers.get(2) == Some(&"fc");
     centre.then(|| centre_filter(db))
 }
+
+/// The track is stereo, by its layout or its channel count: what Stereo to
+/// 5.1 takes.
+pub fn stereo_track(track: &crate::tracks::Track) -> bool {
+    voice_layout(track.layout.as_deref(), track.channels).is_some_and(|l| is_stereo(&l))
+}
+
+/// What keeps the raised voice under full scale when nothing else does:
+/// FFmpeg's limiter, without its own levelling of the output.
+const LIMITER: &str = "lavfi=[alimiter=limit=0.97:level=0]";
 
 /// The layout a track's voice filter is made for: mpv's, else one its
 /// channel count names.
@@ -366,6 +382,11 @@ pub fn filters(
     let voice = voice.map(|(layout, db)| (if upmix.is_some() { "5.1" } else { layout }, db));
     if let Some(filter) = voice.and_then(|(layout, db)| voice_filter(layout, db)) {
         af.push(filter);
+        // A voice raised 12 dB goes over full scale where it was over
+        // -12 dB; the normalization keeps the peaks under, else a limiter.
+        if normalize.is_none() {
+            af.push(LIMITER.to_owned());
+        }
     }
     if eq.on {
         // One graph for all the bands: one filter for mpv to set up.
@@ -692,7 +713,7 @@ mod tests {
         );
         assert_eq!(
             filters(None, &eq, Some(("stereo", VOICE_DEFAULT)), Some(upmix)),
-            format!("{},{centre}", upmix.filter())
+            format!("{},{centre},{LIMITER}", upmix.filter())
         );
         let small = Upmix {
             lfe_cut: 500,

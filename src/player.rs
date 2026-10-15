@@ -2840,18 +2840,20 @@ mod tests {
         assert_eq!(channels_out(af), Some(6));
     }
 
-    /// Stereo's voice filter at its strongest and the soft normalization
-    /// are taken.
+    /// Stereo's voice filter at its strongest with the soft normalization,
+    /// and without it (the limiter after it), are taken.
     #[test]
     #[ignore = "needs vendor/libmpv"]
     fn sound_filters_of_stereo() {
-        let af = audio::filters(
-            Some(audio::Normalize::Soft),
-            &audio::Equalizer::default(),
-            Some(("stereo", *audio::VOICE_RANGE.end())),
-            None,
-        );
-        assert!(channels_out(af).is_some());
+        for normalize in [Some(audio::Normalize::Soft), None] {
+            let af = audio::filters(
+                normalize,
+                &audio::Equalizer::default(),
+                Some(("stereo", *audio::VOICE_RANGE.end())),
+                None,
+            );
+            assert!(channels_out(af).is_some());
+        }
     }
 
     /// The channels a stereo WAV made here comes out with through `af`,
