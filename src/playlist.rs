@@ -3,7 +3,7 @@
 //! one. A plain list is easy to show, edit and test.
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// Extensions of the files a folder contributes (a file opened by name is
@@ -340,8 +340,11 @@ pub struct Playlist {
     items: Vec<PathBuf>,
     /// The entry loaded in the player.
     current: Option<usize>,
-    /// The entry selected in the list (for Delete).
-    pub selected: Option<usize>,
+    /// The entries selected in the list, by their files (each is listed
+    /// once): the selection follows them through sorting and removal.
+    selected: HashSet<PathBuf>,
+    /// Where a range selected with Shift starts.
+    anchor: Option<PathBuf>,
     /// What the M3U lists said about their entries.
     channels: HashMap<PathBuf, Channel>,
     /// The file playing, taken out of the list: still the current path
@@ -349,6 +352,9 @@ pub struct Playlist {
     /// comes next.
     gone: Option<PathBuf>,
     after_gone: Option<usize>,
+    /// Counts the changes of the entries, their order and what the lists
+    /// said, for views made of them (the panel's rows).
+    revision: u64,
 }
 
 impl Playlist {
@@ -368,9 +374,18 @@ impl Playlist {
         self.current
     }
 
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    fn changed(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
+    }
+
     /// Keep what a list said about its entries (`expand_lists`).
     pub fn describe(&mut self, channels: HashMap<PathBuf, Channel>) {
         self.channels.extend(channels);
+        self.changed();
     }
 
     /// What the list said about `path`.
@@ -412,19 +427,84 @@ impl Playlist {
         self.items.get(index).map(PathBuf::as_path)
     }
 
+    pub fn is_selected(&self, index: usize) -> bool {
+        self.items
+            .get(index)
+            .is_some_and(|p| self.selected.contains(p))
+    }
+
+    /// The selected entries in the list's order.
+    pub fn selection(&self) -> Vec<usize> {
+        if self.selected.is_empty() {
+            return Vec::new();
+        }
+        (0..self.items.len())
+            .filter(|i| self.selected.contains(&self.items[*i]))
+            .collect()
+    }
+
+    pub fn has_selection(&self) -> bool {
+        !self.selected.is_empty()
+    }
+
+    /// Select entry `index` alone (a click).
+    pub fn select(&mut self, index: usize) {
+        self.selected.clear();
+        if let Some(path) = self.items.get(index) {
+            self.selected.insert(path.clone());
+            self.anchor = Some(path.clone());
+        }
+    }
+
+    /// Select or unselect entry `index`, the rest staying (Ctrl+click).
+    pub fn toggle_selected(&mut self, index: usize) {
+        if let Some(path) = self.items.get(index) {
+            if !self.selected.remove(path) {
+                self.selected.insert(path.clone());
+            }
+            self.anchor = Some(path.clone());
+        }
+    }
+
+    /// Select the entries from the anchor to `index` (Shift+click), or
+    /// `index` alone without one.
+    pub fn select_range(&mut self, index: usize) {
+        let from = self
+            .anchor
+            .as_ref()
+            .and_then(|a| self.items.iter().position(|p| p == a));
+        let Some(from) = from else {
+            self.select(index);
+            return;
+        };
+        if index >= self.items.len() {
+            return;
+        }
+        self.selected = self.items[from.min(index)..=from.max(index)]
+            .iter()
+            .cloned()
+            .collect();
+    }
+
+    pub fn select_all(&mut self) {
+        self.selected = self.items.iter().cloned().collect();
+    }
+
     /// Replace the list with `paths` (folders give their media files);
     /// the first becomes current.
     pub fn replace(&mut self, paths: Vec<PathBuf>) {
         self.items.clear();
         self.channels.clear();
         self.current = None;
-        self.selected = None;
+        self.selected.clear();
+        self.anchor = None;
         self.gone = None;
         self.after_gone = None;
         self.add(paths);
         if !self.items.is_empty() {
             self.current = Some(0);
         }
+        self.changed();
     }
 
     /// Append `paths` (folders give their media files), leaving out those
@@ -432,12 +512,13 @@ impl Playlist {
     pub fn add(&mut self, paths: Vec<PathBuf>) -> Option<usize> {
         let first = self.items.len();
         // A set, not `contains`: an IPTV list has thousands of entries.
-        let mut listed: std::collections::HashSet<PathBuf> = self.items.iter().cloned().collect();
+        let mut listed: HashSet<PathBuf> = self.items.iter().cloned().collect();
         for path in expand(paths) {
             if listed.insert(path.clone()) {
                 self.items.push(path);
             }
         }
+        self.changed();
         (self.items.len() > first).then_some(first)
     }
 
@@ -449,7 +530,7 @@ impl Playlist {
             return;
         };
         let playing_path = entries.get(playing).map(|(p, _)| p.clone());
-        let listed: std::collections::HashSet<PathBuf> = self
+        let listed: HashSet<PathBuf> = self
             .items
             .iter()
             .enumerate()
@@ -458,7 +539,7 @@ impl Playlist {
             .collect();
         let mut new = Vec::new();
         // A set as well: a list of thousands of channels.
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = HashSet::new();
         for (path, title) in entries {
             if listed.contains(&path) || !seen.insert(path.clone()) {
                 continue;
@@ -470,25 +551,26 @@ impl Playlist {
             new.push(path);
         }
         let count = new.len();
-        self.items.splice(at..=at, new);
-        self.selected = match self.selected {
-            Some(i) if i > at => Some(i + count - 1),
-            Some(i) if i == at => (count > 0).then_some(at),
-            other => other,
-        };
+        let first = new.first().cloned();
+        let old: Vec<PathBuf> = self.items.splice(at..=at, new).collect();
+        // The list selected: its first entry is.
+        if let Some(old) = old.first()
+            && self.selected.remove(old)
+            && let Some(first) = first
+        {
+            self.selected.insert(first);
+        }
         self.current = playing_path
             .and_then(|p| self.items.iter().position(|i| *i == p))
             .or((count > 0).then_some(at));
+        self.changed();
     }
 
-    /// Remove entry `index`; the current and the selected entries keep
-    /// pointing at the same files. The current one removed stays the
-    /// current path while it plays, and the entry after it comes next.
-    pub fn remove(&mut self, index: usize) {
-        if index >= self.items.len() {
-            return;
-        }
+    /// Take entry `index` out; the current one taken out stays the current
+    /// path while it plays, and the entry after it comes next.
+    fn take_out(&mut self, index: usize) {
         let removed = self.items.remove(index);
+        self.selected.remove(&removed);
         if self.current == Some(index) {
             // Its title is still the window's while it plays.
             self.gone = Some(removed);
@@ -501,29 +583,83 @@ impl Playlist {
             }
             self.channels.remove(&removed);
         }
-        let shift = |i: Option<usize>| match i {
+        self.current = match self.current {
             Some(i) if i == index => None,
             Some(i) if i > index => Some(i - 1),
             other => other,
         };
-        self.current = shift(self.current);
-        self.selected =
-            shift(self.selected).or_else(|| (index < self.items.len()).then_some(index));
-        if self.items.is_empty() {
-            self.selected = None;
+    }
+
+    /// Remove entry `index`; the current entry keeps pointing at the same
+    /// file, and the entry that takes its place is selected.
+    #[cfg(test)]
+    pub fn remove(&mut self, index: usize) {
+        self.remove_many(&[index]);
+    }
+
+    /// Remove the entries `indices`; the entry that takes the place of the
+    /// first of them is selected.
+    pub fn remove_many(&mut self, indices: &[usize]) {
+        let mut indices: Vec<usize> = indices
+            .iter()
+            .copied()
+            .filter(|i| *i < self.items.len())
+            .collect();
+        if indices.is_empty() {
+            return;
         }
+        indices.sort_unstable();
+        indices.dedup();
+        let first = indices[0];
+        for &i in indices.iter().rev() {
+            self.take_out(i);
+        }
+        self.selected.clear();
+        if !self.items.is_empty() {
+            self.select(first.min(self.items.len() - 1));
+        }
+        self.changed();
+    }
+
+    /// Remove the selected entries.
+    pub fn remove_selected(&mut self) {
+        let selection = self.selection();
+        self.remove_many(&selection);
+    }
+
+    /// Move the selected entries, in their order, to `slot` (0 before the
+    /// first entry, `len` after the last; counted before the move).
+    pub fn move_selected(&mut self, slot: usize) {
+        let moved = self.selection();
+        if moved.is_empty() || slot > self.items.len() {
+            return;
+        }
+        let current = self.current.and_then(|i| self.items.get(i)).cloned();
+        let before = moved.iter().filter(|i| **i < slot).count();
+        let mut taken = Vec::with_capacity(moved.len());
+        for &i in moved.iter().rev() {
+            taken.push(self.items.remove(i));
+        }
+        taken.reverse();
+        let at = slot - before;
+        self.items.splice(at..at, taken);
+        self.current = current.and_then(|p| self.items.iter().position(|i| *i == p));
+        // The place of a playing entry taken out means nothing now.
+        self.after_gone = None;
+        self.changed();
     }
 
     pub fn clear(&mut self) {
+        let revision = self.revision;
         *self = Self::default();
+        self.revision = revision;
+        self.changed();
     }
 
     /// Sort by name (a channel's, else the file's), numbers by value ("2"
-    /// before "10"); the current and the selected entries follow their
-    /// files.
+    /// before "10"); the current entry follows its file.
     pub fn sort(&mut self) {
         let current = self.current_path().map(Path::to_path_buf);
-        let selected = self.selected.and_then(|i| self.items.get(i)).cloned();
         // The names made once, not at each comparison (lists of thousands).
         let mut keyed: Vec<(String, PathBuf)> = std::mem::take(&mut self.items)
             .into_iter()
@@ -531,11 +667,10 @@ impl Playlist {
             .collect();
         keyed.sort_by(|(ka, a), (kb, b)| natural_cmp(ka, kb).then_with(|| a.cmp(b)));
         self.items = keyed.into_iter().map(|(_, p)| p).collect();
-        let find = |p: Option<PathBuf>| p.and_then(|p| self.items.iter().position(|i| *i == p));
-        self.current = find(current);
+        self.current = current.and_then(|p| self.items.iter().position(|i| *i == p));
         // The place of a playing entry taken out means nothing now.
         self.after_gone = None;
-        self.selected = find(selected);
+        self.changed();
     }
 
     /// The entry after the current one (after the place of the playing
@@ -572,11 +707,9 @@ impl Playlist {
     }
 
     /// Put the entries in a random order (`seed` picks it); the current
-    /// entry goes first, so that all the others play after it, and the
-    /// selected one follows its file.
+    /// entry goes first, so that all the others play after it.
     pub fn shuffle(&mut self, seed: u64) {
         let current = self.current_path().map(Path::to_path_buf);
-        let selected = self.selected.and_then(|i| self.items.get(i)).cloned();
         // xorshift64*, enough to deal a list.
         let mut state = seed | 1;
         let mut random = || {
@@ -589,17 +722,14 @@ impl Playlist {
             let j = (random() % (i as u64 + 1)) as usize;
             self.items.swap(i, j);
         }
-        let find = |items: &[PathBuf], p: Option<PathBuf>| {
-            p.and_then(|p| items.iter().position(|i| *i == p))
-        };
         // Left where it fell, the entries before it would not play.
-        if let Some(i) = find(&self.items, current) {
+        if let Some(i) = current.and_then(|p| self.items.iter().position(|i| *i == p)) {
             self.items[..=i].rotate_right(1);
             self.current = Some(0);
         }
         // The place of a playing entry taken out means nothing now.
         self.after_gone = None;
-        self.selected = find(&self.items, selected);
+        self.changed();
     }
 }
 
@@ -934,7 +1064,7 @@ mod tests {
     fn a_list_mpv_opened_takes_its_place() {
         let mut p = list(&["a", "https://x/list.m3u", "b"]);
         p.set_current(1);
-        p.selected = Some(2);
+        p.select(2);
         p.expand_current(
             vec![
                 (PathBuf::from("https://x/1"), Some("One".into())),
@@ -946,7 +1076,7 @@ mod tests {
         let items: Vec<_> = p.items().iter().map(|i| i.to_string_lossy()).collect();
         assert_eq!(items, ["a", "https://x/1", "https://x/2", "b"]);
         assert_eq!(p.current_path(), Some(Path::new("https://x/2")));
-        assert_eq!(p.selected, Some(3));
+        assert_eq!(p.selection(), [3]);
         assert_eq!(p.title(Path::new("https://x/1")), "One");
     }
 
@@ -978,6 +1108,56 @@ mod tests {
             .collect();
         assert_eq!(names, ["ep1.mkv", "ep2.mkv", "ep10.mkv"]);
         assert_eq!(p.current_path(), Some(Path::new("ep10.mkv")));
+    }
+
+    #[test]
+    fn several_selected() {
+        let mut p = list(&["a", "b", "c", "d", "e"]);
+        p.select(1);
+        p.select_range(3);
+        assert_eq!(p.selection(), [1, 2, 3]);
+        p.toggle_selected(2);
+        assert_eq!(p.selection(), [1, 3]);
+        // The selection follows its files.
+        p.sort();
+        p.shuffle(7);
+        let names: Vec<_> = p
+            .selection()
+            .iter()
+            .map(|i| p.items()[*i].clone())
+            .collect();
+        assert!(names.contains(&PathBuf::from("b")) && names.contains(&PathBuf::from("d")));
+        p.sort();
+        p.remove_selected();
+        let items: Vec<_> = p.items().iter().map(|i| i.to_string_lossy()).collect();
+        assert_eq!(items, ["a", "c", "e"]);
+        // The entry in the place of the first removed is selected.
+        assert_eq!(p.selection(), [1]);
+        p.select_all();
+        assert_eq!(p.selection(), [0, 1, 2]);
+    }
+
+    #[test]
+    fn selected_entries_move() {
+        let mut p = list(&["a", "b", "c", "d", "e"]);
+        p.set_current(3);
+        p.select(0);
+        p.toggle_selected(2);
+        // Before "e": both after "d", in their order.
+        p.move_selected(4);
+        let items: Vec<_> = p.items().iter().map(|i| i.to_string_lossy()).collect();
+        assert_eq!(items, ["b", "d", "a", "c", "e"]);
+        assert_eq!(p.current_path(), Some(Path::new("d")));
+        assert_eq!(p.selection(), [2, 3]);
+        // To the top, and to the end.
+        p.move_selected(0);
+        assert_eq!(p.items()[0], Path::new("a"));
+        p.move_selected(5);
+        assert_eq!(p.items()[3..], [PathBuf::from("a"), PathBuf::from("c")]);
+        assert_eq!(p.current_path(), Some(Path::new("d")));
+        let before = p.revision();
+        p.clear();
+        assert_ne!(p.revision(), before, "a view of the old list is not taken");
     }
 
     #[test]

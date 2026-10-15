@@ -112,6 +112,8 @@ pub struct App {
     /// size.
     icon: ui::IconCache,
     start_icon: ui::IconCache,
+    /// The playlist panel's search, folded groups, drag and scrolling.
+    list_state: ui::playlist::ListState,
     /// The start screen's recent files while they scroll: the wheel there
     /// scrolls them instead of setting the volume.
     recent_scroll: Option<Rect>,
@@ -360,6 +362,7 @@ impl App {
             icon: None,
             start_icon: None,
             recent_scroll: None,
+            list_state: ui::playlist::ListState::default(),
             window_icon: style::Accent::Blue,
             playlist_builder: None,
             playlist_hwnd: None,
@@ -462,7 +465,11 @@ impl App {
         let Some(path) = self.playlist.set_current(index).map(Path::to_path_buf) else {
             return;
         };
-        self.playlist.selected = Some(index);
+        // The entry playing is selected, unless several are (to be moved or
+        // removed: the next file coming should not undo that).
+        if self.playlist.selection().len() <= 1 {
+            self.playlist.select(index);
+        }
         self.file_error = None;
         self.osd.clear_at_end();
         self.remember_position();
@@ -1334,13 +1341,36 @@ impl App {
                 } else {
                     self.settings.playlist_visible && self.interface() != Interface::Bare
                 };
-                if shown && let Some(i) = self.playlist.selected {
-                    self.playlist.remove(i);
+                if shown {
+                    self.playlist.remove_selected();
                 }
             }
             Cmd::PlayIndex(i) => self.play(i),
             Cmd::PlaylistAdd => self.pick_files(ctx, true),
-            Cmd::PlaylistRemove(i) => self.playlist.remove(i),
+            Cmd::PlaylistRemoveSelected => self.playlist.remove_selected(),
+            Cmd::PlaylistMove(slot) => self.playlist.move_selected(slot),
+            Cmd::PlaylistSearch => {
+                // Shown first, where it is shown now.
+                let shown = if frameless::is_fullscreen(ctx) {
+                    self.fullscreen_playlist
+                } else {
+                    self.settings.playlist_visible && self.interface() != Interface::Bare
+                };
+                if !shown {
+                    self.run(ctx, frame, Cmd::TogglePlaylist);
+                }
+                self.list_state.search();
+            }
+            Cmd::ShowEntryInFolder(i) => {
+                if let Some(path) = self
+                    .playlist
+                    .items()
+                    .get(i)
+                    .filter(|p| !playlist::is_url(p))
+                {
+                    win::show_in_folder(path);
+                }
+            }
             Cmd::PlaylistSort => self.playlist.sort(),
             Cmd::PlaylistClear => self.playlist.clear(),
             Cmd::PlaylistSave => self.save_playlist(ctx),
@@ -1929,7 +1959,7 @@ impl App {
             let ctx = ui.ctx().clone();
             close = ctx.input(|i| i.viewport().close_requested());
             dropped = dropped_files(&ctx);
-            if keys && !egui::Popup::is_any_open(&ctx) {
+            if keys && !ui::playlist::typing(&ctx) && !egui::Popup::is_any_open(&ctx) {
                 if let Some(id) = ctx.memory(|m| m.focused()) {
                     ctx.memory_mut(|m| m.surrender_focus(id));
                 }
@@ -1957,12 +1987,17 @@ impl App {
                     let logos = self.settings.channel_logos.then_some(&mut self.logos);
                     cmds.extend(ui::playlist::panel(
                         ui,
-                        &mut self.playlist,
-                        logos,
-                        self.settings.repeat,
-                        &state.chapters,
-                        state.time,
-                        true,
+                        ui::playlist::Panel {
+                            playlist: &mut self.playlist,
+                            state: &mut self.list_state,
+                            positions: &self.positions,
+                            logos,
+                            repeat: self.settings.repeat,
+                            chapters: &state.chapters,
+                            time: state.time,
+                            duration: state.duration,
+                            detached: true,
+                        },
                     ));
                 });
         });
@@ -2897,6 +2932,7 @@ impl App {
         let rect = Rect::from_min_max(egui::pos2(screen.right() - width, screen.top()), screen.max);
         let logos = self.settings.channel_logos.then_some(&mut self.logos);
         let (playlist, repeat) = (&mut self.playlist, self.settings.repeat);
+        let (list_state, positions) = (&mut self.list_state, &self.positions);
         egui::Area::new(egui::Id::new("fullscreen_playlist"))
             .order(egui::Order::Foreground)
             .fixed_pos(rect.min)
@@ -2907,12 +2943,17 @@ impl App {
                     ui.set_max_size(inner);
                     cmds.extend(ui::playlist::panel(
                         ui,
-                        playlist,
-                        logos,
-                        repeat,
-                        &state.chapters,
-                        state.time,
-                        false,
+                        ui::playlist::Panel {
+                            playlist,
+                            state: list_state,
+                            positions,
+                            logos,
+                            repeat,
+                            chapters: &state.chapters,
+                            time: state.time,
+                            duration: state.duration,
+                            detached: false,
+                        },
                     ));
                 });
                 // The left edge resizes it.
@@ -3554,6 +3595,7 @@ impl eframe::App for App {
         // The keys are the player's: no widget keeps the focus to take
         // Space or Enter as a click. A modal takes the keys while open.
         let keys = !self.video_panel.typing(&ctx)
+            && !ui::playlist::typing(&ctx)
             && !self.about.open
             && !self.settings_dialog.open
             && !self.url_dialog.is_open()
@@ -3609,19 +3651,24 @@ impl eframe::App for App {
             if self.settings.playlist_visible && !self.settings.playlist_detached {
                 egui::Panel::right("playlist")
                     .resizable(true)
-                    .default_size(260.0)
+                    .default_size(ui::playlist::MIN_WIDTH)
                     .size_range(ui::playlist::MIN_WIDTH..=600.0)
                     .frame(egui::Frame::NONE.fill(style::PANEL_BG).inner_margin(6))
                     .show(root_ui, |ui| {
                         let logos = self.settings.channel_logos.then_some(&mut self.logos);
                         cmds.extend(ui::playlist::panel(
                             ui,
-                            &mut self.playlist,
-                            logos,
-                            self.settings.repeat,
-                            &state.chapters,
-                            state.time,
-                            false,
+                            ui::playlist::Panel {
+                                playlist: &mut self.playlist,
+                                state: &mut self.list_state,
+                                positions: &self.positions,
+                                logos,
+                                repeat: self.settings.repeat,
+                                chapters: &state.chapters,
+                                time: state.time,
+                                duration: state.duration,
+                                detached: false,
+                            },
                         ))
                     });
             }

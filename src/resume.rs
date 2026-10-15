@@ -8,11 +8,16 @@
 //! starts from the beginning), and only between [`MIN_START`] after the
 //! start and [`END_MARGIN`] before the end: a file watched to its end, or
 //! barely begun, starts from the beginning. The tracks are kept whatever
-//! the position. The most recent first, at most [`CAPACITY`]; stored as
-//! lines of `seconds<TAB>audio<TAB>subtitles<TAB>path`, `-` for what is not
-//! kept and `no` for a track turned off (lines of `seconds<TAB>path` are
-//! read too).
+//! the position. A file of [`MIN_DURATION`] or more left within
+//! [`END_MARGIN`] of its end is marked watched (the playlist shows it); the
+//! duration is kept with a position (the playlist shows how far it went).
+//! The most recent first, at most [`CAPACITY`]; stored as lines of
+//! `seconds<TAB>audio<TAB>subtitles<TAB>duration<TAB>path`, `end` for the
+//! seconds of a file watched, `-` for what is not kept and `no` for a track
+//! turned off (lines of `seconds<TAB>audio<TAB>subtitles<TAB>path` and
+//! `seconds<TAB>path` are read too).
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// Shorter files start from the beginning.
@@ -22,7 +27,7 @@ const MIN_START: f64 = 10.0;
 /// Positions this close to the end are not kept: the file was watched.
 const END_MARGIN: f64 = 30.0;
 /// How many files are remembered.
-const CAPACITY: usize = 200;
+const CAPACITY: usize = 500;
 
 /// The tracks a file played: mpv's track ids, `None` for none (subtitles
 /// off).
@@ -33,21 +38,50 @@ pub struct Tracks {
 }
 
 /// What is kept of a file.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Left {
     pub time: Option<f64>,
+    /// The file's duration, kept with the time.
+    pub duration: Option<f64>,
+    /// Left at its end.
+    pub watched: bool,
     pub tracks: Option<Tracks>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+impl Left {
+    /// How far the file went, 0 to 1, when its position is kept.
+    pub fn progress(&self) -> Option<f32> {
+        let (time, duration) = (self.time?, self.duration?);
+        (duration > 0.0).then(|| (time / duration).clamp(0.0, 1.0) as f32)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct Positions {
     /// The most recent first.
     list: Vec<(PathBuf, Left)>,
+    /// Counts the changes, for views made of the list (the playlist's).
+    revision: u64,
 }
 
-/// Paths compare as Windows does: without regard to case.
+impl PartialEq for Positions {
+    fn eq(&self, other: &Self) -> bool {
+        self.list == other.list
+    }
+}
+
+/// A path as Windows compares it: without regard to case.
+pub fn key(path: &Path) -> String {
+    path.to_string_lossy().to_lowercase()
+}
+
 fn same(a: &Path, b: &Path) -> bool {
-    a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+    key(a) == key(b)
+}
+
+/// Whether `time` of `duration` is the end of something watched.
+fn watched_to_end(time: f64, duration: f64) -> bool {
+    duration >= MIN_DURATION && time >= duration - END_MARGIN && time.is_finite()
 }
 
 /// Whether `time` of `duration` is worth going on from.
@@ -72,20 +106,42 @@ impl Positions {
     /// keeping is kept, the rest of the file forgotten.
     pub fn remember(&mut self, path: &Path, time: Option<(f64, f64)>, tracks: Option<Tracks>) {
         self.forget(path);
-        let time = time.filter(|(t, d)| worth_resuming(*t, *d)).map(|(t, _)| t);
-        if time.is_some() || tracks.is_some() {
-            self.list
-                .insert(0, (path.to_path_buf(), Left { time, tracks }));
+        let watched = time.is_some_and(|(t, d)| watched_to_end(t, d));
+        let time = time.filter(|(t, d)| worth_resuming(*t, *d));
+        if time.is_some() || tracks.is_some() || watched {
+            let left = Left {
+                time: time.map(|(t, _)| t),
+                duration: time.map(|(_, d)| d),
+                watched,
+                tracks,
+            };
+            self.list.insert(0, (path.to_path_buf(), left));
             self.list.truncate(CAPACITY);
         }
     }
 
     pub fn forget(&mut self, path: &Path) {
         self.list.retain(|(p, _)| !same(p, path));
+        self.revision = self.revision.wrapping_add(1);
     }
 
     pub fn clear(&mut self) {
         self.list.clear();
+        self.revision = self.revision.wrapping_add(1);
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// What is kept of each file by its [`key`], to look many up.
+    pub fn by_key(&self) -> HashMap<String, Left> {
+        // The most recent last, so that it wins over an older line.
+        self.list
+            .iter()
+            .rev()
+            .map(|(p, left)| (key(p), left.clone()))
+            .collect()
     }
 
     /// The stored lines; lines that are not understood are skipped.
@@ -97,34 +153,44 @@ impl Positions {
         let list = text
             .lines()
             .filter_map(|line| {
-                let fields: Vec<&str> = line.splitn(4, '\t').collect();
-                let (time, tracks, path) = match fields[..] {
-                    [time, path] => (time, None, path),
-                    [time, "-", "-", path] => (time, None, path),
-                    [time, audio, sub, path] => (
-                        time,
-                        Some(Tracks {
-                            audio: id(audio)?,
-                            sub: id(sub)?,
-                        }),
-                        path,
-                    ),
+                let fields: Vec<&str> = line.splitn(5, '\t').collect();
+                let (time, tracks, duration, path) = match fields[..] {
+                    [time, path] => (time, ("-", "-"), "-", path),
+                    [time, audio, sub, path] => (time, (audio, sub), "-", path),
+                    [time, audio, sub, duration, path] => (time, (audio, sub), duration, path),
                     _ => return None,
                 };
-                let time = match time {
-                    "-" => None,
-                    t => Some(
-                        t.parse::<f64>()
-                            .ok()
-                            .filter(|t| t.is_finite() && *t > 0.0)?,
-                    ),
+                let tracks = match tracks {
+                    ("-", "-") => None,
+                    (audio, sub) => Some(Tracks {
+                        audio: id(audio)?,
+                        sub: id(sub)?,
+                    }),
                 };
-                (!path.is_empty() && (time.is_some() || tracks.is_some()))
-                    .then(|| (PathBuf::from(path), Left { time, tracks }))
+                let seconds = |s: &str| match s {
+                    "-" => Some(None),
+                    s => s
+                        .parse::<f64>()
+                        .ok()
+                        .filter(|t| t.is_finite() && *t > 0.0)
+                        .map(Some),
+                };
+                let watched = time == "end";
+                let time = if watched { None } else { seconds(time)? };
+                let duration = time.and(seconds(duration)?);
+                (!path.is_empty() && (time.is_some() || tracks.is_some() || watched)).then(|| {
+                    let left = Left {
+                        time,
+                        duration,
+                        watched,
+                        tracks,
+                    };
+                    (PathBuf::from(path), left)
+                })
             })
             .take(CAPACITY)
             .collect();
-        Self { list }
+        Self { list, revision: 0 }
     }
 
     pub fn to_text(&self) -> String {
@@ -132,12 +198,17 @@ impl Positions {
         self.list
             .iter()
             .map(|(p, left)| {
-                let time = left.time.map_or("-".into(), |t| format!("{t:.1}"));
+                let time = match left.time {
+                    Some(t) => format!("{t:.1}"),
+                    None if left.watched => "end".into(),
+                    None => "-".into(),
+                };
+                let duration = left.duration.map_or("-".into(), |d| format!("{d:.1}"));
                 let (audio, sub) = match left.tracks {
                     Some(t) => (id(t.audio), id(t.sub)),
                     None => ("-".into(), "-".into()),
                 };
-                format!("{time}\t{audio}\t{sub}\t{}", p.display())
+                format!("{time}\t{audio}\t{sub}\t{duration}\t{}", p.display())
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -160,9 +231,15 @@ mod tests {
         assert_eq!(time_of(&p, r"D:\Films\Brazil.mkv"), Some(1234.5));
         // Any case of the same path.
         assert_eq!(time_of(&p, r"d:\films\BRAZIL.MKV"), Some(1234.5));
-        // Watched to the end, or barely begun: forgotten.
+        assert_eq!(
+            p.get(film).and_then(Left::progress),
+            Some((1234.5 / 8600.0) as f32)
+        );
+        // Watched to the end: marked, starting from the beginning.
         p.remember(film, Some((8590.0, 8600.0)), None);
-        assert_eq!(p.get(film), None);
+        let left = p.get(film).unwrap();
+        assert!(left.watched && left.time.is_none());
+        // Barely begun: forgotten.
         p.remember(film, Some((5.0, 8600.0)), None);
         assert_eq!(p.get(film), None);
         // A song: never kept.
@@ -184,13 +261,14 @@ mod tests {
         assert_eq!(
             p.get(film),
             Some(&Left {
-                time: None,
-                tracks: Some(tracks)
+                watched: true,
+                tracks: Some(tracks),
+                ..Left::default()
             })
         );
         let back = Positions::parse(&p.to_text());
         assert_eq!(back, p);
-        assert_eq!(p.to_text(), "-\t3\tno\tD:\\Films\\Brazil.mkv");
+        assert_eq!(p.to_text(), "end\t3\tno\t-\tD:\\Films\\Brazil.mkv");
     }
 
     #[test]
@@ -217,16 +295,34 @@ mod tests {
         let back = Positions::parse(&p.to_text());
         assert_eq!(back, p);
         assert_eq!(time_of(&back, r"D:\100.mkv"), Some(200.0));
-        // The first format, and lines that are not understood.
         assert_eq!(
-            Positions::parse("x\tD:\\a.mkv\n12.5\t\n7.0\tD:\\b.mkv\n-\t-\t-\tD:\\c.mkv").list,
-            vec![(
-                PathBuf::from(r"D:\b.mkv"),
-                Left {
-                    time: Some(7.0),
-                    tracks: None
-                }
-            )]
+            back.get(Path::new(r"D:\100.mkv")).unwrap().duration,
+            Some(3600.0)
+        );
+        // The older formats, and lines that are not understood.
+        let old = "x\tD:\\a.mkv\n12.5\t\n7.0\tD:\\b.mkv\n-\t-\t-\tD:\\c.mkv\n9.0\t2\tno\tD:\\d.mkv";
+        assert_eq!(
+            Positions::parse(old).list,
+            vec![
+                (
+                    PathBuf::from(r"D:\b.mkv"),
+                    Left {
+                        time: Some(7.0),
+                        ..Left::default()
+                    }
+                ),
+                (
+                    PathBuf::from(r"D:\d.mkv"),
+                    Left {
+                        time: Some(9.0),
+                        tracks: Some(Tracks {
+                            audio: Some(2),
+                            sub: None
+                        }),
+                        ..Left::default()
+                    }
+                )
+            ]
         );
     }
 }

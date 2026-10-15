@@ -66,7 +66,12 @@ pub enum Cmd {
     SetVolume(f64),
     PlayIndex(usize),
     PlaylistAdd,
-    PlaylistRemove(usize),
+    /// Remove the entries selected in the playlist.
+    PlaylistRemoveSelected,
+    /// Move the selected entries to this slot (0 before the first entry).
+    PlaylistMove(usize),
+    /// Show the search field of the playlist (`Ctrl+F`).
+    PlaylistSearch,
     PlaylistSort,
     PlaylistClear,
     /// Write the playlist to an M3U8 file.
@@ -120,6 +125,8 @@ pub enum Cmd {
     ClearRecent,
     /// Show the file in Explorer.
     ShowInFolder,
+    /// Show playlist entry `n` in Explorer.
+    ShowEntryInFolder(usize),
     /// The time in the control bar: both, elapsed, remaining (a click on it).
     CycleTime,
     /// The position, the duration and the chapter on the OSD (`Tab`).

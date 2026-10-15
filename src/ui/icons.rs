@@ -367,6 +367,14 @@ pub fn shuffle(p: &Painter, o: Pos2, s: f32, c: Color32) {
     }
 }
 
+/// A magnifying glass: search.
+pub fn search(p: &Painter, o: Pos2, s: f32, c: Color32) {
+    let stroke = Stroke::new(1.4, c);
+    let centre = o + vec2(-0.2, -0.2) * s;
+    p.circle_stroke(centre, 0.62 * s, stroke);
+    p.line_segment([o + vec2(0.25, 0.25) * s, o + vec2(0.95, 0.95) * s], stroke);
+}
+
 /// Three sliders with their knobs: the picture's and the sound's settings.
 pub fn sliders(p: &Painter, o: Pos2, s: f32, c: Color32) {
     let stroke = Stroke::new(1.4, c);

@@ -384,6 +384,7 @@ actions! {
     PlaylistShuffle "playlist_shuffle" Files Cmd::PlaylistShuffle, [];
     PlaylistSort "playlist_sort" Files Cmd::PlaylistSort, [];
     PlaylistClear "playlist_clear" Files Cmd::PlaylistClear, [];
+    PlaylistSearch "playlist_search" Files Cmd::PlaylistSearch, [Chord::ctrl(Key::F)];
     ShowInFolder "show_in_folder" Files Cmd::ShowInFolder, [];
     Info "info" Files Cmd::ToggleInfo, [Chord::key(Key::I)];
     VideoPanel "video_panel" Files Cmd::ToggleVideoPanel, [Chord::key(Key::U), Chord::key(Key::F7)];
@@ -570,6 +571,7 @@ impl Action {
             Action::PlaylistAdd => tr!("Add files to the playlist", "Добавить файлы в плейлист"),
             Action::PlaylistSave => tr!("Save the playlist (M3U8)", "Сохранить плейлист (M3U8)"),
             Action::PlaylistShuffle => tr!("Shuffle the playlist", "Перемешать плейлист"),
+            Action::PlaylistSearch => tr!("Search the playlist", "Поиск в плейлисте"),
             Action::PlaylistSort => tr!("Sort the playlist", "Сортировать плейлист"),
             Action::PlaylistClear => tr!("Clear the playlist", "Очистить плейлист"),
             Action::ShowInFolder => tr!("Show the file in its folder", "Показать файл в папке"),
