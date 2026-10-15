@@ -2523,7 +2523,11 @@ impl App {
             .last_audio
             .as_ref()
             .and_then(|like| tracks::most_like(all, Kind::Audio, like));
+        let subs_off = self.settings.track_prefs.sub_mode == tracks::SubMode::Off;
         let sub = match &self.settings.last_sub {
+            // Subtitles turned off in the settings stay off: the subtitles
+            // chosen by hand once do not bring them back in every file.
+            Some(Some(_)) if subs_off => None,
             Some(Some(like)) => tracks::most_like(all, Kind::Sub, like).map(Some),
             // None by hand last time: none now either.
             Some(None) => Some(None),
