@@ -1385,6 +1385,9 @@ impl App {
             Cmd::PlaylistAdd => self.pick_files(ctx, true),
             Cmd::PlaylistRemoveSelected => self.playlist.remove_selected(),
             Cmd::PlaylistMove(slot) => self.playlist.move_selected(slot),
+            Cmd::TogglePlaylistProgress => {
+                self.settings.playlist_progress = !self.settings.playlist_progress;
+            }
             Cmd::TogglePlaylistGroups => {
                 self.settings.playlist_groups = !self.settings.playlist_groups;
             }
@@ -2033,6 +2036,7 @@ impl App {
                             logos,
                             repeat: self.settings.repeat,
                             groups: self.settings.playlist_groups,
+                            progress: self.settings.playlist_progress,
                             chapters: &state.chapters,
                             time: state.time,
                             duration: state.duration,
@@ -2979,6 +2983,7 @@ impl App {
         let logos = self.settings.channel_logos.then_some(&mut self.logos);
         let (playlist, repeat) = (&mut self.playlist, self.settings.repeat);
         let groups = self.settings.playlist_groups;
+        let progress = self.settings.playlist_progress;
         let (list_state, positions) = (&mut self.list_state, &self.positions);
         egui::Area::new(egui::Id::new("fullscreen_playlist"))
             .order(egui::Order::Foreground)
@@ -2997,6 +3002,7 @@ impl App {
                             logos,
                             repeat,
                             groups,
+                            progress,
                             chapters: &state.chapters,
                             time: state.time,
                             duration: state.duration,
@@ -3713,6 +3719,7 @@ impl eframe::App for App {
                                 logos,
                                 repeat: self.settings.repeat,
                                 groups: self.settings.playlist_groups,
+                                progress: self.settings.playlist_progress,
                                 chapters: &state.chapters,
                                 time: state.time,
                                 duration: state.duration,

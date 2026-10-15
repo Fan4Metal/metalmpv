@@ -6,7 +6,8 @@
 //! click selects an entry (with Ctrl one more, with Shift a range), a
 //! double click plays it, the right button opens its menu, a drag moves
 //! the selected entries (not while searching or in groups). A thin line
-//! under an entry shows how far it was watched, a tick that it was watched
+//! under an entry shows how far it was watched (unless turned off in the
+//! entries' menu), a tick that it was watched
 //! to its end (`resume.rs`). An IPTV list's entries go under their groups,
 //! which fold, unless turned off in the entries' and the groups' menu.
 //! The list scrolls to the current entry when it changes.
@@ -162,6 +163,8 @@ pub struct Panel<'a> {
     pub repeat: Repeat,
     /// An IPTV list's entries under their groups.
     pub groups: bool,
+    /// A line under each entry shows how far it was watched.
+    pub progress: bool,
     /// The playing file's chapters, position and duration.
     pub chapters: &'a [Chapter],
     pub time: Option<f64>,
@@ -178,6 +181,7 @@ pub fn panel(ui: &mut Ui, panel: Panel<'_>) -> Vec<Cmd> {
         logos,
         repeat,
         groups,
+        progress,
         chapters,
         time,
         duration,
@@ -342,7 +346,7 @@ pub fn panel(ui: &mut Ui, panel: Panel<'_>) -> Vec<Cmd> {
     );
     let now = time.zip(duration);
     ui.allocate_ui(files, |ui| {
-        files_list(ui, playlist, state, logos, now, &mut out)
+        files_list(ui, playlist, state, logos, now, progress, &mut out)
     });
     if !chapters.is_empty() {
         if chapters_header(ui, chapters.len(), open).clicked() {
@@ -408,13 +412,14 @@ fn search_row(ui: &mut Ui, state: &mut ListState) -> bool {
 
 /// The files, filling `ui`: an IPTV list's channels by their names, with
 /// their logos, under their groups; `now`, the playing file's position and
-/// duration.
+/// duration; `progress`, how far each entry was watched is shown.
 fn files_list(
     ui: &mut Ui,
     playlist: &mut Playlist,
     state: &mut ListState,
     mut logos: Option<&mut Logos>,
     now: Option<(f64, f64)>,
+    progress: bool,
     out: &mut Vec<Cmd>,
 ) {
     let frame = egui::Frame::new()
@@ -490,7 +495,9 @@ fn files_list(
                         ui.allocate_exact_size(vec2(ui.available_width(), ROW), sense);
                     drawn.push((i, rect));
                     let left = marks.and_then(|m| m.get(&resume::key(&path)));
-                    let progress = if current == Some(i) {
+                    let watched_part = if !progress {
+                        None
+                    } else if current == Some(i) {
                         now.filter(|(_, d)| *d >= resume::MIN_DURATION)
                             .map(|(t, d)| (t / d).clamp(0.0, 1.0) as f32)
                     } else {
@@ -503,7 +510,7 @@ fn files_list(
                         selected: playlist.is_selected(i),
                         hovered: response.hovered(),
                         watched: left.is_some_and(|l| l.watched),
-                        progress,
+                        progress: watched_part,
                     };
                     let channel = playlist.channel(&path);
                     let logo = channel
@@ -538,6 +545,13 @@ fn files_list(
                     }
                     response.context_menu(|ui| {
                         entry_menu(ui, playlist, i, out);
+                        ui.separator();
+                        let mut on = progress;
+                        let text = tr!("Show how far files went", "Показывать полосы просмотра");
+                        if ui.checkbox(&mut on, text).clicked() {
+                            out.push(Cmd::TogglePlaylistProgress);
+                            ui.close();
+                        }
                         groups_item(ui, groups, out);
                     });
                 }
@@ -767,7 +781,6 @@ fn groups_item(ui: &mut Ui, groups: Option<bool>, out: &mut Vec<Cmd>) {
     let Some(shown) = groups else {
         return;
     };
-    ui.separator();
     let mut on = shown;
     if ui
         .checkbox(&mut on, tr!("Show the groups", "Показывать группы"))

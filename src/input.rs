@@ -77,6 +77,8 @@ pub enum Cmd {
     PlaylistSearch,
     /// Show an IPTV list's entries under their groups, or not.
     TogglePlaylistGroups,
+    /// Show how far the playlist's entries were watched, or not.
+    TogglePlaylistProgress,
     PlaylistSort,
     PlaylistClear,
     /// Write the playlist to an M3U8 file.

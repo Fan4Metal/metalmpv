@@ -390,6 +390,7 @@ actions! {
     PlaylistClear "playlist_clear" Files Cmd::PlaylistClear, [];
     PlaylistSearch "playlist_search" Files Cmd::PlaylistSearch, [Chord::ctrl(Key::F)];
     PlaylistGroups "playlist_groups" Files Cmd::TogglePlaylistGroups, [];
+    PlaylistProgress "playlist_progress" Files Cmd::TogglePlaylistProgress, [];
     ShowInFolder "show_in_folder" Files Cmd::ShowInFolder, [];
     Info "info" Files Cmd::ToggleInfo, [Chord::key(Key::I)];
     VideoPanel "video_panel" Files Cmd::ToggleVideoPanel, [Chord::key(Key::U), Chord::key(Key::F7)];
@@ -586,6 +587,10 @@ impl Action {
             Action::PlaylistShuffle => tr!("Shuffle the playlist", "Перемешать плейлист"),
             Action::PlaylistSearch => tr!("Search the playlist", "Поиск в плейлисте"),
             Action::PlaylistGroups => tr!("IPTV groups in the playlist", "Группы IPTV в плейлисте"),
+            Action::PlaylistProgress => tr!(
+                "How far files were watched in the playlist",
+                "Полосы просмотра в плейлисте"
+            ),
             Action::PlaylistSort => tr!("Sort the playlist", "Сортировать плейлист"),
             Action::PlaylistClear => tr!("Clear the playlist", "Очистить плейлист"),
             Action::ShowInFolder => tr!("Show the file in its folder", "Показать файл в папке"),
