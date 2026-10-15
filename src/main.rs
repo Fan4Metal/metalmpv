@@ -14,6 +14,7 @@ mod assoc;
 mod audio;
 mod bookmarks;
 mod chapters;
+mod clip;
 mod cover;
 mod dialog;
 mod dock;

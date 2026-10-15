@@ -4,6 +4,7 @@
 
 pub mod about;
 pub mod assoc;
+pub mod clip;
 pub mod controls;
 pub mod goto;
 pub mod icons;

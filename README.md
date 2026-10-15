@@ -95,6 +95,8 @@ When the file has chapters, the seek bar is cut at the start of each, and the to
 
 `[` marks the start of a stretch at the position playing and `]` its end; from then on, playback goes back to the start each time it reaches the end, until `\` turns the repeat off. An end marked without a start repeats from the beginning of the file, and an end before the start swaps the two. The points appear as yellow ticks on the seek bar with the stretch between them highlighted, the on-screen message gives them to a tenth of a second, and the **A-B repeat** submenu of the picture's context menu does the same. The points belong to the file: another file starts without them.
 
+`Ctrl+Shift+S` or **Save the stretch…** in the same submenu saves the stretch between the points as a file of its own, while playback goes on. The window names the file (next to the source, with the times in its name; **…** chooses another) and the way: **As it is** copies the video, the audio track playing and the file's own subtitles shown into an MKV without decoding them, in a moment and in the quality they were, starting and ending on the keyframes around the points; **Encoded** makes an MP4 exact to the frame, in H.264 or HEVC, on the processor (x264, x265) or an NVIDIA card (NVENC), with a chosen quality, AAC sound, and, if wanted, the subtitles shown burnt into the picture in their look. A progress bar and **Cancel** follow; the on-screen message names the file saved. The way chosen is kept. A stretch saved as it is must fit in 3 GB of memory.
+
 ### Audio and subtitles
 
 The button with a speech bubble left of the volume (`T`) opens a window with the audio tracks and the subtitles of the file as two tabs; the button at the right of the tabs shows them side by side in two columns instead, and the same button in that view turns back to tabs (the choice is kept between runs). Each entry names the language first and the track's title after a dash ("Russian — Superbit"); under it, badges show the format, the channels and whether the track is external, forced or the file's default. A long list scrolls. A choice applies at once and the window stays open, so both can be changed in one go; as with the Video, sound and subtitles panel, which it replaces at that place, playback and the keys go on while it is open, and a click outside, the button again, `T` or `Esc` closes it. **Load from a file…** under the subtitles adds subtitles from a file of their own (SRT, ASS, SSA, VobSub, PGS, WebVTT); a subtitle file dropped onto the playing video is added the same way. Subtitles named like the video next to it are loaded by themselves. The same lists are in the picture's context menu, and every change is reported on the screen.
@@ -215,6 +217,7 @@ The keys below are the defaults. In the settings, the **Keyboard shortcuts** cat
 | `R` | Repeat: off, the file, the list |
 | `[` / `]` | A-B repeat: start / end at the position playing |
 | `\` | A-B repeat off |
+| `Ctrl+Shift+S` | Save the A-B stretch as a file |
 | `Ctrl+T` | Over the other windows: never, always, while playing (also in the settings and the context menu) |
 | `Delete` | Remove the selected playlist entries |
 | `Ctrl+F` | Search the playlist |

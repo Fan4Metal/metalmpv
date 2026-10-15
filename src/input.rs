@@ -92,6 +92,8 @@ pub enum Cmd {
     LoopA,
     LoopB,
     LoopClear,
+    /// Save the A-B stretch as a file of its own (`Ctrl+Shift+S`).
+    SaveClip,
     /// A, then B, then none, as mpv's `l` (no key by default).
     CycleLoop,
     /// Over the other windows: never, always, while playing (`Ctrl+T`).

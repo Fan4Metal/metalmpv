@@ -49,6 +49,7 @@ const ON_TOP: &str = "on_top";
 const WINDOW_ON_OPEN: &str = "window_on_open";
 const FRAMES_FOLDER: &str = "frames_folder";
 const FRAMES_FORMAT: &str = "frames_format";
+const CLIP: &str = "clip";
 const INTERFACE: &str = "interface";
 const MEDIA_KEYS: &str = "media_keys";
 const AUDIO_LANGUAGES: &str = "audio_languages";
@@ -513,6 +514,9 @@ pub struct Settings {
     /// Where frames are saved; `None`: Pictures\MetalMPV.
     pub frames_folder: Option<PathBuf>,
     pub frames_format: FrameFormat,
+    /// How an A-B stretch was saved last (`clip.rs`); not a setting of the
+    /// window, Reset keeps it.
+    pub clip: crate::clip::Choice,
     /// What the window shows around the picture (`8`; only the picture, `7`).
     pub interface: Interface,
     /// Which media keys the player takes.
@@ -631,6 +635,7 @@ impl Default for Settings {
             window_on_open: WindowOnOpen::Keep,
             frames_folder: None,
             frames_format: FrameFormat::Png,
+            clip: crate::clip::Choice::default(),
             interface: Interface::Full,
             media_keys: MediaKeys::Always,
             keys: Keymap::default(),
@@ -782,6 +787,9 @@ impl Settings {
                 .as_deref()
                 .and_then(FrameFormat::from_name)
                 .unwrap_or(d.frames_format),
+            clip: get(CLIP)
+                .as_deref()
+                .map_or(d.clip, crate::clip::Choice::from_text),
             interface: get(INTERFACE)
                 .as_deref()
                 .and_then(Interface::from_name)
@@ -1010,6 +1018,7 @@ impl Settings {
                 .unwrap_or_default(),
         );
         storage.set_string(FRAMES_FORMAT, self.frames_format.name().into());
+        storage.set_string(CLIP, self.clip.to_text());
         storage.set_string(INTERFACE, self.interface.name().into());
         storage.set_string(MEDIA_KEYS, self.media_keys.name().into());
         let prefs = &self.track_prefs;
@@ -1157,6 +1166,13 @@ mod tests {
             window_on_open: WindowOnOpen::Fit,
             frames_folder: Some(PathBuf::from(r"D:\Кадры")),
             frames_format: FrameFormat::Jpg,
+            clip: crate::clip::Choice {
+                copy: false,
+                encode: crate::clip::Encode {
+                    nvenc: true,
+                    ..crate::clip::Encode::default()
+                },
+            },
             interface: Interface::Compact,
             media_keys: MediaKeys::Window,
             keys: Keymap::from_setting("pause\tF\nstop\tSpace Ctrl+MouseBack\nmute\t"),

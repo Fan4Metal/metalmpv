@@ -26,6 +26,8 @@ pub enum Ask {
     /// The cover's bytes, as they were when asked.
     SaveCover(Vec<u8>),
     FramesFolder,
+    /// The file an A-B stretch goes to.
+    SaveClip,
 }
 
 impl Ask {
@@ -38,6 +40,7 @@ impl Ask {
             Ask::SavePlaylist => "the playlist",
             Ask::SaveCover(_) => "the cover",
             Ask::FramesFolder => "the frames' folder",
+            Ask::SaveClip => "the stretch",
         }
     }
 }

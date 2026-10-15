@@ -306,6 +306,7 @@ actions! {
     LoopA "loop_a" Playback Cmd::LoopA, [Chord::key(Key::OpenBracket)];
     LoopB "loop_b" Playback Cmd::LoopB, [Chord::key(Key::CloseBracket)];
     LoopClear "loop_clear" Playback Cmd::LoopClear, [Chord::key(Key::Backslash)];
+    SaveClip "save_clip" Files Cmd::SaveClip, [Chord::of(Press::Key(Key::S), true, false, true)];
     LoopCycle "loop_cycle" Playback Cmd::CycleLoop, [];
 
     VolumeUp "volume_up" Sound Cmd::Volume(VOLUME_STEP), [Chord::key(Key::ArrowUp)];
@@ -459,6 +460,7 @@ impl Action {
             Action::LoopA => tr!("A-B repeat: start here", "Повтор A-B: начало здесь"),
             Action::LoopB => tr!("A-B repeat: end here", "Повтор A-B: конец здесь"),
             Action::LoopClear => tr!("A-B repeat off", "Выключить повтор A-B"),
+            Action::SaveClip => tr!("Save the A-B stretch", "Сохранить фрагмент A-B"),
             Action::LoopCycle => tr!(
                 "A-B repeat: start, end, off",
                 "Повтор A-B: начало, конец, выключить"

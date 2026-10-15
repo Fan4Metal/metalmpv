@@ -79,6 +79,7 @@ pub struct App {
     /// The address to play (`Ctrl+U`).
     url_dialog: ui::url::UrlDialog,
     goto_dialog: ui::goto::GoToDialog,
+    clip_dialog: ui::clip::ClipDialog,
     /// The Video, sound and subtitles panel (`U`, `F7`) and the picture's adjustments it edits.
     video_panel: VideoPanel,
     /// Where the control bar drew the panel's button this frame.
@@ -346,6 +347,7 @@ impl App {
             info: InfoWindow::default(),
             url_dialog: ui::url::UrlDialog::default(),
             goto_dialog: ui::goto::GoToDialog::default(),
+            clip_dialog: ui::clip::ClipDialog::default(),
             video_panel: VideoPanel::default(),
             panel_button: None,
             tracks_window: ui::tracks::TracksWindow::default(),
@@ -877,6 +879,71 @@ impl App {
         self.ask(ctx, Ask::SaveCover(bytes), make, dialog::save_file);
     }
 
+    /// Open the Save the A-B stretch window for the file playing, its
+    /// tracks shown and the subtitles' look.
+    fn save_clip(&mut self, state: &State) {
+        let (Some(from), Some(to)) = (state.loop_a, state.loop_b) else {
+            self.osd.show(Osd::Text(
+                tr!(
+                    "[ Set the A-B repeat's start and end first ]",
+                    "[ Сначала задайте начало и конец повтора A-B ]"
+                )
+                .to_owned(),
+            ));
+            return;
+        };
+        let Some(input) = self.playlist.current_path().filter(|_| !state.idle) else {
+            return;
+        };
+        let sub = tracks::selected(&state.tracks, Kind::Sub);
+        let subs = match sub {
+            None => crate::clip::Subs::None,
+            Some(t) => match t.external_filename.as_deref().filter(|_| t.external) {
+                Some(path) => crate::clip::Subs::File {
+                    path: PathBuf::from(path),
+                    embedded: state
+                        .tracks
+                        .iter()
+                        .filter(|t| t.kind == Kind::Sub && !t.external)
+                        .count() as i64,
+                },
+                None => crate::clip::Subs::Own(t.id),
+            },
+        };
+        let folder = self
+            .current_folder()
+            .or_else(|| self.settings.frames_dir())
+            .unwrap_or_else(std::env::temp_dir);
+        let stretch = ui::clip::Stretch {
+            input: input.to_path_buf(),
+            from,
+            to,
+            audio: tracks::selected(&state.tracks, Kind::Audio).map(|t| t.id),
+            subs,
+            sub_style: self.settings.sub.options().to_vec(),
+            folder,
+        };
+        self.clip_dialog.open(stretch, self.settings.clip);
+    }
+
+    /// The Save dialog of the stretch's file, starting at `path`.
+    fn browse_clip(&mut self, ctx: &egui::Context, path: PathBuf) {
+        let extension = self.settings.clip.mode().extension();
+        let make = move || {
+            let mut dialog = rfd::FileDialog::new()
+                .set_title(tr!("Save the A-B stretch", "Сохранить фрагмент A-B"))
+                .add_filter(extension.to_uppercase(), &[extension]);
+            if let Some(name) = path.file_name() {
+                dialog = dialog.set_file_name(name.to_string_lossy());
+            }
+            match path.parent().filter(|p| p.is_dir()) {
+                Some(dir) => dialog.set_directory(dir),
+                None => dialog,
+            }
+        };
+        self.ask(ctx, Ask::SaveClip, make, dialog::save_file);
+    }
+
     /// Do what a file dialog was opened for with the paths chosen.
     fn answer(&mut self, answer: dialog::Answer) {
         let Some(path) = answer.paths.first().cloned() else {
@@ -901,6 +968,7 @@ impl App {
                 }
             }
             Ask::FramesFolder => self.settings.frames_folder = Some(path),
+            Ask::SaveClip => self.clip_dialog.set_path(&path),
         }
     }
 
@@ -1428,6 +1496,7 @@ impl App {
                 self.osd.show(Osd::OnTop(on_top));
             }
             Cmd::CycleRepeat => self.run(ctx, frame, Cmd::SetRepeat(self.settings.repeat.next())),
+            Cmd::SaveClip => self.save_clip(&state),
             Cmd::LoopA | Cmd::LoopB | Cmd::LoopClear | Cmd::CycleLoop => {
                 self.ab_loop(cmd, &state);
             }
@@ -3442,6 +3511,12 @@ fn loop_menu(ui: &mut egui::Ui, state: &State, out: &mut Vec<Cmd>) {
                 state.loop_a.is_some() || state.loop_b.is_some(),
                 None,
             ),
+            (
+                Cmd::SaveClip,
+                tr!("Save the stretch…", "Сохранить фрагмент…"),
+                state.loop_a.is_some() && state.loop_b.is_some(),
+                None,
+            ),
         ];
         for (cmd, text, enabled, at) in items {
             let text = match at {
@@ -3677,7 +3752,8 @@ impl eframe::App for App {
             && !self.about.open
             && !self.settings_dialog.open
             && !self.url_dialog.is_open()
-            && !self.goto_dialog.is_open();
+            && !self.goto_dialog.is_open()
+            && !self.clip_dialog.is_open();
         if keys && !egui::Popup::is_any_open(&ctx) {
             if let Some(id) = ctx.memory(|m| m.focused()) {
                 ctx.memory_mut(|m| m.surrender_focus(id));
@@ -3867,6 +3943,20 @@ impl eframe::App for App {
         if let Some(url) = self.url_dialog.show(&ctx) {
             self.open(vec![PathBuf::from(url)]);
         }
+        match self.clip_dialog.show(&ctx, &mut self.settings.clip) {
+            Some(ui::clip::Action::Browse(path)) => self.browse_clip(&ctx, path),
+            Some(ui::clip::Action::Saved(path)) => {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                self.osd.show(Osd::Text(tr!(
+                    format!("[ Stretch saved: {name} ]"),
+                    format!("[ Фрагмент сохранён: {name} ]")
+                )));
+            }
+            None => {}
+        }
         if let Some(time) = self.goto_dialog.show(&ctx, state.time, state.duration) {
             // Exact: the time typed is the frame wanted.
             self.seek_to(time, Seek::Exact);
@@ -4054,6 +4144,8 @@ impl eframe::App for App {
     /// The render context goes first, while the OpenGL context lives, then
     /// the core.
     fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
+        // A stretch half saved is deleted by its thread.
+        self.clip_dialog.cancel();
         if let Some(video) = &mut self.video {
             video.free(gl);
         }
