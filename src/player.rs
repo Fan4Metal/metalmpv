@@ -798,6 +798,10 @@ pub struct Player {
     /// goes on from here (the data there was played; the download may
     /// have gone on meanwhile), not from the start.
     data_end_at: Option<f64>,
+    /// Where the data ran out, kept when that end is taken as the file's
+    /// (`forget_data_end`): the position remembered there, not the file
+    /// watched to its end. Until the next load.
+    ran_out_at: Option<f64>,
 }
 
 impl Player {
@@ -831,6 +835,7 @@ impl Player {
             subs_off: false,
             last_seek: None,
             data_end_at: None,
+            ran_out_at: None,
             af: String::new(),
             af_before: String::new(),
         };
@@ -931,6 +936,7 @@ impl Player {
                                             DataEnd::Seek(_) => seek.map(|s| s.from),
                                             DataEnd::Played(t) => Some(t),
                                         };
+                                        self.ran_out_at = self.data_end_at;
                                         out.push(Happened::NoData(end));
                                     }
                                     None => out.push(Happened::Eof),
@@ -1107,12 +1113,14 @@ impl Player {
         self.stopped = false;
         self.last_seek = None;
         self.data_end_at = None;
+        self.ran_out_at = None;
     }
 
-    /// Where the file's data ran out, while playback stays there (mpv's
-    /// position then may be the duration).
-    pub fn data_end_at(&self) -> Option<f64> {
-        self.data_end_at.filter(|_| self.state.eof)
+    /// Where the data ran out while playback stays at the end (mpv's
+    /// position then may be the duration), even when that end was taken as
+    /// the file's; `None` at the file's own end.
+    pub fn ran_out_at(&self) -> Option<f64> {
+        self.ran_out_at.filter(|_| self.state.eof)
     }
 
     /// The end of the data taken as the file's end: Play starts it again.
@@ -1670,6 +1678,7 @@ mod tests {
             subs_off: false,
             last_seek: None,
             data_end_at: None,
+            ran_out_at: None,
             af: String::new(),
             af_before: String::new(),
         };
@@ -1760,6 +1769,7 @@ mod tests {
             subs_off: false,
             last_seek: None,
             data_end_at: None,
+            ran_out_at: None,
             af: String::new(),
             af_before: String::new(),
         };
@@ -1885,6 +1895,7 @@ mod tests {
                 subs_off: false,
                 last_seek: None,
                 data_end_at: None,
+                ran_out_at: None,
                 af: String::new(),
                 af_before: String::new(),
             };
@@ -1966,6 +1977,7 @@ mod tests {
             subs_off: false,
             last_seek: None,
             data_end_at: None,
+            ran_out_at: None,
             af: String::new(),
             af_before: String::new(),
         };
@@ -2091,6 +2103,7 @@ mod tests {
             subs_off: false,
             last_seek: None,
             data_end_at: None,
+            ran_out_at: None,
             af: String::new(),
             af_before: String::new(),
         };
@@ -2174,6 +2187,7 @@ mod tests {
             subs_off: false,
             last_seek: None,
             data_end_at: None,
+            ran_out_at: None,
             af: String::new(),
             af_before: String::new(),
         };
@@ -2269,6 +2283,7 @@ mod tests {
             subs_off: false,
             last_seek: None,
             data_end_at: None,
+            ran_out_at: None,
             af: String::new(),
             af_before: String::new(),
         };
@@ -2498,6 +2513,7 @@ mod tests {
             subs_off: false,
             last_seek: None,
             data_end_at: None,
+            ran_out_at: None,
             af: String::new(),
             af_before: String::new(),
         };
@@ -2871,6 +2887,7 @@ mod tests {
             subs_off: false,
             last_seek: None,
             data_end_at: None,
+            ran_out_at: None,
             af: String::new(),
             af_before: String::new(),
         };

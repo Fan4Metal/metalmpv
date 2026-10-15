@@ -563,8 +563,15 @@ impl App {
             return;
         }
         // Stopped where the data ran out: there, not mpv's position (an MP4
-        // gives the duration after a seek past the data).
-        let time = player.data_end_at().or(state.time);
+        // gives the duration after a seek past the data). At the file's own
+        // end, watched, even before its duration: one estimated too long
+        // (a VBR MP3 without its Xing header) left it 10 minutes short of
+        // it, and it came back at its end.
+        let time = match player.ran_out_at() {
+            Some(at) => Some(at),
+            None if state.eof => state.duration,
+            None => state.time,
+        };
         let (Some(path), Some(time), Some(duration)) = (&state.path, time, state.duration) else {
             return;
         };
