@@ -479,7 +479,7 @@ impl App {
             self.settings.playlist_visible && self.interface() != Interface::Bare
         };
         if added > 0 && !shown {
-            self.osd.show(Osd::Text(tr!(
+            self.osd.show_always(Osd::Text(tr!(
                 format!("[ Added to the playlist: {added} ]"),
                 format!("[ Добавлено в плейлист: {added} ]")
             )));
@@ -773,19 +773,30 @@ impl App {
         }
     }
 
-    /// Save the cover of the file playing where the user says.
-    /// Save the frame on screen into Pictures\MetalMPV as
-    /// `<file> <position>.png`, never over another.
+    /// Save the frame on screen into the frames' folder (Pictures\MetalMPV
+    /// unless chosen) as `<file> <position>.<png|jpg>`, never over another;
+    /// what stops it is said on the OSD.
     fn save_frame(&mut self, state: &State) {
         let ext = self.settings.frames_format.name();
         let (Some(player), Some(dir)) = (&mut self.player, self.settings.frames_dir()) else {
             return;
         };
+        if state.idle {
+            return;
+        }
         if video_size(state).is_none() {
+            self.osd.show_always(Osd::Text(
+                tr!(
+                    "[ No picture to save ]",
+                    "[ Нет изображения для сохранения ]"
+                )
+                .to_owned(),
+            ));
             return;
         }
         if let Err(e) = std::fs::create_dir_all(&dir) {
             log::warn!("cannot make {}: {e}", dir.display());
+            self.osd.show_always(Osd::Text(folder_missing(&dir)));
             return;
         }
         // A channel's name (a stream's file is all "index"), else the
@@ -820,7 +831,7 @@ impl App {
             .and_then(Path::file_name)
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
-        self.osd.show(Osd::Text(match error {
+        self.osd.show_always(Osd::Text(match error {
             None => tr!(
                 format!("[ Frame saved: {name} ]"),
                 format!("[ Кадр сохранён: {name} ]")
@@ -942,7 +953,7 @@ impl App {
             return;
         }
         let (Some(from), Some(to)) = (state.loop_a, state.loop_b) else {
-            self.osd.show(Osd::Text(
+            self.osd.show_always(Osd::Text(
                 tr!(
                     "[ Set the A-B repeat's start and end first ]",
                     "[ Сначала задайте начало и конец повтора A-B ]"
@@ -1035,7 +1046,7 @@ impl App {
             Ask::SavePlaylist => {
                 if let Err(e) = std::fs::write(&path, playlist::m3u_text(&self.playlist)) {
                     log::warn!("cannot save the playlist to {}: {e}", path.display());
-                    self.osd.show(Osd::Text(tr!(
+                    self.osd.show_always(Osd::Text(tr!(
                         format!("Cannot save the playlist: {e}"),
                         format!("Не удалось сохранить плейлист: {e}")
                     )));
@@ -1457,7 +1468,7 @@ impl App {
                         self.open(vec![path]);
                     } else {
                         self.settings.recent.remove(i);
-                        self.osd.show(Osd::Text(tr!(
+                        self.osd.show_always(Osd::Text(tr!(
                             format!("Not found: {}", path.display()),
                             format!("Не найден: {}", path.display())
                         )));
@@ -1467,8 +1478,12 @@ impl App {
             Cmd::ClearRecent => self.settings.recent.clear(),
             Cmd::ShowFrames => {
                 if let Some(dir) = self.settings.frames_dir() {
-                    let _ = std::fs::create_dir_all(&dir);
-                    win::shell_open(&dir);
+                    match std::fs::create_dir_all(&dir) {
+                        Ok(()) => {
+                            win::shell_open(&dir);
+                        }
+                        Err(_) => self.osd.show_always(Osd::Text(folder_missing(&dir))),
+                    }
                 }
             }
             Cmd::SaveCover => self.save_cover(ctx),
@@ -1677,11 +1692,16 @@ impl App {
                 ctx.request_repaint();
             }
             Cmd::ChapterStep(step) => {
-                if !state.idle
-                    && let Some(i) =
-                        crate::chapters::step(&state.chapters, state.time.unwrap_or(0.0), step > 0)
-                {
-                    self.run(ctx, frame, Cmd::Chapter(i));
+                if !state.idle && !state.chapters.is_empty() {
+                    let time = state.time.unwrap_or(0.0);
+                    match crate::chapters::step(&state.chapters, time, step > 0) {
+                        Some(i) => self.run(ctx, frame, Cmd::Chapter(i)),
+                        // Before the first chapter: the file's start.
+                        None if step < 0 => self.seek_to(0.0, Seek::Exact),
+                        None => self.osd.show(Osd::Text(
+                            tr!("[ The last chapter ]", "[ Это последняя глава ]").to_owned(),
+                        )),
+                    }
                 }
             }
             Cmd::Rotate => {
@@ -1830,10 +1850,6 @@ impl App {
         }
     }
 
-    /// The picture filling the screen, cropped, or whole (`fill`).
-    /// The picture's size as shown: the video's display size, turned by
-    /// the Video panel's rotation (done when the picture is drawn, so not
-    /// in mpv's `dwidth`/`dheight`).
     /// The window for a file just loaded, as `window_on_open` says, once
     /// its picture's size is known; not maximized or in fullscreen, nor for
     /// sound alone.
@@ -1869,6 +1885,9 @@ impl App {
         self.size_window(ctx, frame, target);
     }
 
+    /// The picture's size as shown: the video's display size, turned by
+    /// the Video panel's rotation (done when the picture is drawn, so not
+    /// in mpv's `dwidth`/`dheight`).
     fn picture_size(&self, state: &State) -> Option<[f64; 2]> {
         let [w, h] = video_size(state)?;
         Some(if self.adjust.rotate % 180 == 90 {
@@ -2074,6 +2093,7 @@ impl App {
         }
     }
 
+    /// The picture filling the screen, cropped, or whole (`fill`).
     fn set_fill(&mut self, on: bool) {
         self.fill = on;
         if let Some(player) = &mut self.player {
@@ -2568,7 +2588,7 @@ impl App {
                         .map(|n| n.to_string_lossy().into_owned())
                         .unwrap_or_default();
                     log::warn!("cannot play {name}: {e}");
-                    self.osd.show(Osd::Text(tr!(
+                    self.osd.show_always(Osd::Text(tr!(
                         format!("Cannot play {name}: {e}"),
                         format!("Не удалось воспроизвести {name}: {e}")
                     )));
@@ -2580,6 +2600,9 @@ impl App {
                 }
                 Happened::Restarted => {}
                 Happened::FrameSaved(error) => self.frame_saved(error),
+                // The names asked for would wait for good, and the next
+                // answers would be taken for them.
+                Happened::RepliesLost => self.frames_saving.clear(),
                 Happened::SubStepped(delay) => self.osd.show(match delay {
                     Some(delay) => Osd::SubDelay(delay),
                     None => Osd::NoSubLine,
@@ -3278,6 +3301,15 @@ struct Panels {
 }
 
 /// The video's display size in pixels, `None` without a picture.
+/// The OSD's line for a frames' folder that is not there and cannot be
+/// made (a drive taken out).
+fn folder_missing(dir: &Path) -> String {
+    tr!(
+        format!("[ The folder {} is not available ]", dir.display()),
+        format!("[ Папка {} недоступна ]", dir.display())
+    )
+}
+
 fn video_size(state: &State) -> Option<[f64; 2]> {
     match (state.width, state.height) {
         (Some(w), Some(h)) => Some([w as f64, h as f64]),
@@ -4086,12 +4118,14 @@ impl eframe::App for App {
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_default();
-                self.osd.show(Osd::Text(tr!(
+                self.osd.show_always(Osd::Text(tr!(
                     format!("[ Stretch saved: {name} ]"),
                     format!("[ Фрагмент сохранён: {name} ]")
                 )));
             }
-            Some(ui::clip::Action::Failed(why)) => self.osd.show(Osd::Text(format!("[ {why} ]"))),
+            Some(ui::clip::Action::Failed(why)) => {
+                self.osd.show_always(Osd::Text(format!("[ {why} ]")))
+            }
             None => {}
         }
         if let Some(time) = self.goto_dialog.show(&ctx, state.time, state.duration) {

@@ -467,7 +467,7 @@ pub struct Settings {
     pub check_updates: bool,
     /// Unix seconds of the last update check that got an answer.
     pub last_update_check: u64,
-    /// 0 to 100.
+    /// 0 to 200 (`audio::MAX_VOLUME`), at most `volume_max`.
     pub volume: f64,
     pub mute: bool,
     /// The step of Left and Right, in seconds (keyframe seek).

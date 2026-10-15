@@ -67,7 +67,8 @@ const BACK_THRESHOLD: f64 = 5.0;
 /// The chapter a step from `time` goes to: forward, the next one (the
 /// first before any has started); back, the start of the one playing, or
 /// the one before within [`BACK_THRESHOLD`] of its start (the first
-/// stays the first). `None` past the last or without chapters.
+/// stays the first). `None` forward past the last, back before the first
+/// (the file's start is there), or without chapters.
 pub fn step(chapters: &[Chapter], time: f64, forward: bool) -> Option<usize> {
     if chapters.is_empty() {
         return None;
@@ -79,7 +80,7 @@ pub fn step(chapters: &[Chapter], time: f64, forward: bool) -> Option<usize> {
         match now {
             Some(i) if time - chapters[i].time > BACK_THRESHOLD => i,
             Some(i) => i.saturating_sub(1),
-            None => 0,
+            None => return None,
         }
     };
     (target < chapters.len()).then_some(target)
@@ -110,9 +111,9 @@ mod tests {
     fn steps_between_chapters() {
         let at = |time| Chapter { time, title: None };
         let list = [at(10.0), at(100.0), at(200.0)];
-        // Before the first: forward to it, back to it.
+        // Before the first: forward to it; back, none (the file's start).
         assert_eq!(step(&list, 3.0, true), Some(0));
-        assert_eq!(step(&list, 3.0, false), Some(0));
+        assert_eq!(step(&list, 3.0, false), None);
         assert_eq!(step(&list, 150.0, true), Some(2));
         // Well into a chapter: back to its start; just after it: the one
         // before; the first stays.

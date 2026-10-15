@@ -1392,8 +1392,8 @@ fn osd_section(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                 ui,
                 tr!("Show messages", "Показывать сообщения"),
                 Some(tr!(
-                    "The line in the top left corner after a seek, a volume change and the like. Off, only the line saying where the data of an incomplete file ends is shown.",
-                    "Строка в левом верхнем углу после перемотки, смены громкости и т. п. Если выключено, показывается только строка о том, где кончаются данные недокачанного файла."
+                    "The line in the top left corner after a seek, a volume change and the like. Off, only errors, files saved and the line saying where the data of an incomplete file ends are shown.",
+                    "Строка в левом верхнем углу после перемотки, смены громкости и т. п. Если выключено, показываются только ошибки, сообщения о сохранённых файлах и строка о том, где кончаются данные недокачанного файла."
                 )),
                 50.0,
                 |ui| switch(ui, &mut settings.osd),

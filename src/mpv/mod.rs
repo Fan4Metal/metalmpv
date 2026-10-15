@@ -258,6 +258,14 @@ impl Mpv {
         self.sets.lock().map_or(0, |sets| sets.names.len())
     }
 
+    /// The sets waiting for a reply, forgotten: their replies were lost
+    /// (the event queue overflowed).
+    pub fn forget_sets(&self) {
+        if let Ok(mut sets) = self.sets.lock() {
+            sets.names.clear();
+        }
+    }
+
     /// The name of the property set with reply `id`, forgotten.
     fn set_answered(&self, id: u64) -> Option<String> {
         self.sets.lock().ok()?.names.remove(&id)

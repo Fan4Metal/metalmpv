@@ -478,7 +478,7 @@ impl Action {
             Action::LoadSubs => tr!("Load subtitles from a file", "Загрузить субтитры из файла"),
             Action::SubsLater => tr!("Subtitles later by 100 ms", "Субтитры позже на 100 мс"),
             Action::SubsEarlier => tr!("Subtitles earlier by 100 ms", "Субтитры раньше на 100 мс"),
-            Action::SubsInSync => tr!("Subtitles as they were", "Субтитры как было"),
+            Action::SubsInSync => tr!("Subtitles as they were", "Субтитры как были"),
             Action::SubStepBack => tr!(
                 "Subtitles: the previous line now",
                 "Субтитры: предыдущую реплику сейчас"
@@ -489,7 +489,7 @@ impl Action {
             ),
             Action::SoundLater => tr!("Sound later by 100 ms", "Звук позже на 100 мс"),
             Action::SoundEarlier => tr!("Sound earlier by 100 ms", "Звук раньше на 100 мс"),
-            Action::SoundInSync => tr!("Sound as it was", "Звук как было"),
+            Action::SoundInSync => tr!("Sound as it was", "Звук как был"),
             Action::ResetSubStyle => tr!("Reset the subtitles' look", "Сбросить вид субтитров"),
             Action::ResetEqualizer => tr!(
                 "Reset the equalizer (flat, off)",
@@ -504,18 +504,21 @@ impl Action {
                 "Close what is open, leave fullscreen, bring the interface back; else close the program",
                 "Закрыть открытое, выйти из полноэкранного режима, вернуть интерфейс; иначе закрыть программу"
             ),
-            Action::Scale50 => tr!("Window for 50% of the video", "Окно под 50% размера видео"),
+            Action::Scale50 => tr!(
+                "Window for 50 % of the video",
+                "Окно под 50 % размера видео"
+            ),
             Action::Scale100 => tr!(
-                "Window for 100% of the video",
-                "Окно под 100% размера видео"
+                "Window for 100 % of the video",
+                "Окно под 100 % размера видео"
             ),
             Action::Scale150 => tr!(
-                "Window for 150% of the video",
-                "Окно под 150% размера видео"
+                "Window for 150 % of the video",
+                "Окно под 150 % размера видео"
             ),
             Action::Scale200 => tr!(
-                "Window for 200% of the video",
-                "Окно под 200% размера видео"
+                "Window for 200 % of the video",
+                "Окно под 200 % размера видео"
             ),
             Action::FitScreen => tr!("Window to the screen", "Окно по экрану"),
             Action::FitWindow => tr!("Window to the picture", "Окно по размеру картинки"),
@@ -552,7 +555,7 @@ impl Action {
             Action::PanDown => tr!("Move the picture down", "Сдвинуть изображение вниз"),
             Action::ZoomReset => tr!(
                 "Zoom and position as they were",
-                "Масштаб и положение как было"
+                "Масштаб и положение как были"
             ),
             Action::Interface => tr!(
                 "Only the picture / the interface again",

@@ -615,6 +615,13 @@ fn aspect_in(lang: Lang, aspect: f64) -> String {
     if let Some((w, h)) = NAMED.iter().find(|(w, h)| (aspect - w / h).abs() < 0.01) {
         return format!("{w}:{h}");
     }
+    // Upright (a phone's video): "9:16", else "1:1,78".
+    if aspect > 0.0 && aspect < 1.0 {
+        if let Some((w, h)) = NAMED.iter().find(|(w, h)| (aspect - h / w).abs() < 0.01) {
+            return format!("{h}:{w}");
+        }
+        return format!("1:{}", decimal_in(lang, 1.0 / aspect, 2));
+    }
     let text = decimal_in(lang, aspect, 2);
     format!("{text}:1")
 }
@@ -1032,7 +1039,11 @@ pub fn chips_in(lang: Lang, s: &Subject) -> Vec<Vec<Chip>> {
         let params = state.video_params.as_ref().filter(|_| track.selected);
         if let (Some(w), Some(h)) = (track.width, track.height) {
             picture.push(Chip::new(format!("{w}×{h}")));
-            let aspect = display_aspect(params, w, h, track.par.unwrap_or(1.0));
+            let mut aspect = display_aspect(params, w, h, track.par.unwrap_or(1.0));
+            // A phone's video turned a quarter plays upright: 9:16.
+            if track.rotation.is_some_and(|r| r.rem_euclid(180) == 90) && aspect > 0.0 {
+                aspect = 1.0 / aspect;
+            }
             picture.push(Chip::new(aspect_in(lang, aspect)).tip(if ru {
                 "Соотношение сторон"
             } else {
@@ -1306,6 +1317,8 @@ mod tests {
         assert_eq!(aspect_in(Lang::Ru, 1920.0 / 1080.0), "16:9");
         assert_eq!(aspect_in(Lang::En, 2.0), "2:1");
         assert_eq!(aspect_in(Lang::Ru, 2.39), "2,39:1");
+        assert_eq!(aspect_in(Lang::En, 1080.0 / 1920.0), "9:16");
+        assert_eq!(aspect_in(Lang::Ru, 1.0 / 2.39), "1:2,39");
     }
 
     /// The rows' values by their English labels.

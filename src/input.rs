@@ -43,8 +43,10 @@ pub enum Cmd {
     /// The playback speed itself (the context menu).
     SetSpeed(f64),
     ToggleFullscreen,
-    /// Close the information window, else leave fullscreen, else close
-    /// the program.
+    /// Close the information window (its big cover first), else the
+    /// tracks window, else the panel, else the fullscreen playlist, else
+    /// leave fullscreen, else bring the interface back after `7`, else
+    /// close the program.
     Escape,
     Next,
     Prev,

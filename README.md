@@ -133,7 +133,7 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | General | Snap to the screen's centre | on | While the window is moved, its centre is drawn to the screen's centre, across or up and down, when it comes within 8 pixels of it; moved on, it comes away |
 | General | Add the folder's files | off | One opened file brings the media files of its folder into the playlist |
 | General | Channel logos | on | The pictures an IPTV list gives its channels are fetched from their sites for the visible rows of the playlist, only over HTTPS and never from the local network, at most 512 KB each, PNG or JPEG only, and kept for 30 days in the `logos` folder next to the settings |
-| General | On-screen messages: show messages | on | The line in the top left corner after a seek, a volume change and the like; off, only the line saying where the data of an incomplete file ends is shown |
+| General | On-screen messages: show messages | on | The line in the top left corner after a seek, a volume change and the like; off, only errors, files saved and the line saying where the data of an incomplete file ends are shown |
 | General | On-screen messages: font | default | A font installed in Windows, for the line in the top left corner |
 | General | On-screen messages: size | 100 % | 50–200 % of the usual size, which follows the height of the picture |
 | General | On-screen messages: shown for | 2 s | How long a message stays on the screen (0.5–10 s); it fades out in its last 0.4 s |
@@ -172,14 +172,14 @@ The keys below are the defaults. In the settings, the **Keyboard shortcuts** cat
 | `Shift+←` / `Shift+→` | Back / forward by 1 s to the exact frame |
 | `,` / `.` (or `D` / `F`) | Previous / next frame |
 | `Home` / `End` | Start / end of the file |
-| `Ctrl+Page Up` / `Ctrl+Page Down` | Previous / next chapter (more than 5 s into a chapter, back to its start) |
+| `Ctrl+Page Up` / `Ctrl+Page Down` | Previous / next chapter (more than 5 s into a chapter, back to its start; before the first, the file's start; past the last, a message says so) |
 | `↑` / `↓`, mouse wheel | Volume up / down |
 | `M` | Mute |
 | `T` | The audio and subtitles window |
 | `I` | The file information window |
 | `U`, `F7` | The Video, sound and subtitles panel |
 | `Ctrl+E` | Save the frame (into Pictures\MetalMPV unless another folder is chosen) |
-| `Tab` | Shows the position, the duration and the chapter playing on the screen |
+| `Tab` | Shows the position, the duration and the chapter playing on the screen, going on while it is shown |
 | `Ctrl+G` | Go to time: a window for a time in the file |
 | `Ctrl+B` | Add a bookmark at the position playing (the **Bookmarks** submenu of the context menu) |
 | `A` | Next audio track |

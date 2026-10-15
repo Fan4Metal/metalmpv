@@ -59,6 +59,9 @@ pub struct OsdLine {
     /// the file (why it stopped: the data ran out); a passing line covers
     /// it for its while.
     at_end: Option<Osd>,
+    /// The line is an error or says something was done: shown with the
+    /// OSD turned off too.
+    always: bool,
 }
 
 impl Default for OsdLine {
@@ -67,6 +70,7 @@ impl Default for OsdLine {
             line: None,
             shown: Duration::from_millis(2000),
             at_end: None,
+            always: false,
         }
     }
 }
@@ -82,6 +86,14 @@ impl OsdLine {
 
     pub fn show(&mut self, osd: Osd) {
         self.line = Some((osd, Instant::now()));
+        self.always = false;
+    }
+
+    /// Show `osd` even with the OSD turned off: an error, or a file saved
+    /// (nothing else would say it).
+    pub fn show_always(&mut self, osd: Osd) {
+        self.show(osd);
+        self.always = true;
     }
 
     /// Show `osd` until playback leaves the end of the file.
@@ -98,7 +110,7 @@ impl OsdLine {
     /// (which follows the picture's height). A seek's line shows where
     /// playback actually landed (a keyframe seek lands near, not on, the
     /// target) once mpv has finished the seek. With `passing` off (the OSD
-    /// turned off) only the line at the end is shown.
+    /// turned off) only the line at the end and those shown always are.
     pub fn paint(
         &mut self,
         ctx: &egui::Context,
@@ -111,7 +123,7 @@ impl OsdLine {
         if !state.eof || state.idle {
             self.at_end = None;
         }
-        if !passing {
+        if !passing && !self.always {
             self.line = None;
         }
         let total = self.shown;
@@ -135,6 +147,17 @@ impl OsdLine {
                 Osd::Seek { time, duration, .. } | Osd::Jump { time, duration } => {
                     *time = t;
                     *duration = state.duration;
+                }
+                // Tab's line goes on with playback while it is shown.
+                Osd::Position {
+                    time,
+                    duration,
+                    chapter,
+                } => {
+                    *time = t;
+                    *duration = state.duration;
+                    *chapter = crate::chapters::current(&state.chapters, t)
+                        .map(|i| (i + 1, state.chapters[i].title.clone()));
                 }
                 _ => {}
             }

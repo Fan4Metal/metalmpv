@@ -653,6 +653,9 @@ pub enum Happened {
     /// [`Player::sub_step`] set the subtitle delay to this, or found no
     /// line there.
     SubStepped(Option<f64>),
+    /// mpv's queue overflowed: replies were lost (the frames asked for
+    /// are not answered).
+    RepliesLost,
     Shutdown,
 }
 
@@ -996,6 +999,8 @@ impl Player {
                     log::warn!("mpv event queue overflowed; asking for the properties again");
                     self.state.scan = None;
                     self.scan_asked = None;
+                    self.mpv.forget_sets();
+                    out.push(Happened::RepliesLost);
                     for (i, (_, name, format)) in PROPS.iter().enumerate() {
                         self.mpv.get(i as u64 + 1, name, *format);
                     }

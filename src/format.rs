@@ -148,7 +148,6 @@ pub fn time_line(mode: TimeMode, time_pos: Option<f64>, duration: Option<f64>) -
     }
 }
 
-/// The OSD's clock: always `HH:MM:SS`.
 /// `HH:MM:SS.t`, the tenths after the decimal sign of `lang` (the A-B
 /// repeat's points, set to a frame).
 pub fn clock_tenths_in(lang: Lang, seconds: f64) -> String {
@@ -157,6 +156,7 @@ pub fn clock_tenths_in(lang: Lang, seconds: f64) -> String {
     format!("{}{sign}{}", clock((tenths / 10) as f64), tenths % 10)
 }
 
+/// The OSD's clock: always `HH:MM:SS`.
 pub fn clock(seconds: f64) -> String {
     let total = seconds.max(0.0) as u64;
     format!(
