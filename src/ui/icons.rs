@@ -323,35 +323,31 @@ pub fn save(p: &Painter, o: Pos2, s: f32, c: Color32) {
 /// A loop with an arrow: repeat; with `one`, a 1 inside (the file).
 pub fn repeat(p: &Painter, o: Pos2, s: f32, c: Color32, one: bool) {
     let stroke = Stroke::new(1.4, c);
-    let at = |x: f32, y: f32| o + vec2(x, y) * s;
-    // Round from the gap at the top left, clockwise, to the arrow's tip.
-    p.add(Shape::line(
-        vec![
-            at(0.15, -0.6),
-            at(0.75, -0.6),
-            at(1.0, -0.35),
-            at(1.0, 0.35),
-            at(0.75, 0.6),
-            at(-0.75, 0.6),
-            at(-1.0, 0.35),
-            at(-1.0, -0.35),
-            at(-0.75, -0.6),
-            at(-0.1, -0.6),
-        ],
-        stroke,
-    ));
-    p.add(Shape::line(
-        vec![at(-0.4, -0.88), at(-0.1, -0.6), at(-0.4, -0.32)],
-        stroke,
-    ));
+    // Two arrows round a loop, as Material's: the top one up the left side
+    // and to the right, the bottom one the same turned half round.
+    const Y: f32 = 0.62;
+    const R: f32 = 0.3;
+    for k in [1.0, -1.0] {
+        let at = |x: f32, y: f32| o + vec2(x, y) * (s * k);
+        let mut line = vec![at(-1.0, 0.15)];
+        line.extend((0..=4).map(|i| {
+            let a = std::f32::consts::PI * (1.0 + i as f32 / 8.0);
+            at(-1.0 + R + R * a.cos(), -Y + R + R * a.sin())
+        }));
+        line.push(at(0.9, -Y));
+        p.add(Shape::line(line, stroke));
+        p.add(Shape::line(
+            vec![at(0.62, -Y - 0.28), at(0.9, -Y), at(0.62, -Y + 0.28)],
+            stroke,
+        ));
+    }
+    // A "1" of lines between them: text of this size sat on the loop.
     if one {
-        p.text(
-            at(0.0, 0.08),
-            egui::Align2::CENTER_CENTER,
-            "1",
-            egui::FontId::proportional(s * 1.3),
-            c,
-        );
+        let at = |x: f32, y: f32| o + vec2(x, y) * s;
+        p.add(Shape::line(
+            vec![at(-0.2, -0.16), at(0.04, -0.36), at(0.04, 0.36)],
+            Stroke::new(1.2, c),
+        ));
     }
 }
 
