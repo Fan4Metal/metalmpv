@@ -361,14 +361,14 @@ mod tests {
         use crate::adjust::Color;
         let ctrl = Modifiers::COMMAND;
         let alt = Modifiers::ALT;
-        // mpv's colour keys, with Ctrl: the digits alone size the window.
+        // Colour keys with Ctrl: the digits alone size the window.
         assert_eq!(
             default_command(Key::Num1, ctrl, false),
-            Some(Cmd::Color(Color::Contrast, -2))
+            Some(Cmd::Color(Color::Brightness, -2))
         );
         assert_eq!(
             default_command(Key::Num4, ctrl, true),
-            Some(Cmd::Color(Color::Brightness, 2))
+            Some(Cmd::Color(Color::Contrast, 2))
         );
         assert_eq!(default_command(Key::Equals, alt, true), Some(Cmd::Zoom(10)));
         assert_eq!(

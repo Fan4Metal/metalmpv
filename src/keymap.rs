@@ -345,13 +345,13 @@ actions! {
     Rotate "rotate" Window Cmd::Rotate, [Chord::ctrl(Key::R)];
     Aspect "aspect" Window Cmd::CycleAspect, [Chord::ctrl(Key::A)];
     Deinterlace "deinterlace" Window Cmd::CycleDeinterlace, [Chord::ctrl(Key::D)];
-    ContrastDown "contrast_down" Window Cmd::Color(Color::Contrast, -COLOR_STEP),
-        [Chord::ctrl(Key::Num1)];
-    ContrastUp "contrast_up" Window Cmd::Color(Color::Contrast, COLOR_STEP),
-        [Chord::ctrl(Key::Num2)];
     BrightnessDown "brightness_down" Window Cmd::Color(Color::Brightness, -COLOR_STEP),
-        [Chord::ctrl(Key::Num3)];
+        [Chord::ctrl(Key::Num1)];
     BrightnessUp "brightness_up" Window Cmd::Color(Color::Brightness, COLOR_STEP),
+        [Chord::ctrl(Key::Num2)];
+    ContrastDown "contrast_down" Window Cmd::Color(Color::Contrast, -COLOR_STEP),
+        [Chord::ctrl(Key::Num3)];
+    ContrastUp "contrast_up" Window Cmd::Color(Color::Contrast, COLOR_STEP),
         [Chord::ctrl(Key::Num4)];
     GammaDown "gamma_down" Window Cmd::Color(Color::Gamma, -COLOR_STEP), [Chord::ctrl(Key::Num5)];
     GammaUp "gamma_up" Window Cmd::Color(Color::Gamma, COLOR_STEP), [Chord::ctrl(Key::Num6)];

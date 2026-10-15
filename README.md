@@ -200,7 +200,7 @@ The keys below are the defaults. In the settings, the **Keyboard shortcuts** cat
 | `Ctrl+R` | Turn the picture 90° clockwise |
 | `Ctrl+A` | Aspect ratio in turn: as in the file, 4:3, 16:9, 16:10, 1.85:1, 2.35:1, 2.39:1 |
 | `Ctrl+D` | Deinterlacing: auto, on, off |
-| `Ctrl+1` / `Ctrl+2` | Contrast down / up (as mpv's `1`/`2`); `Ctrl+3`/`Ctrl+4` brightness, `Ctrl+5`/`Ctrl+6` gamma, `Ctrl+7`/`Ctrl+8` saturation |
+| `Ctrl+1` / `Ctrl+2` | Brightness down / up; `Ctrl+3`/`Ctrl+4` contrast, `Ctrl+5`/`Ctrl+6` gamma, `Ctrl+7`/`Ctrl+8` saturation |
 | `Alt+=` / `Alt+-` | Zoom the picture in / out |
 | `Alt+arrows` | Move the picture |
 | `Alt+Backspace` | The picture's zoom and position as they were |
