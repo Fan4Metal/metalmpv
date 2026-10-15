@@ -657,8 +657,26 @@ fn sparkline(ui: &mut Ui, history: &[f32]) {
                 (n, crate::i18n::Lang::En) => format!("{n} s ago"),
                 (n, crate::i18n::Lang::Ru) => format!("{n} с назад"),
             };
+            // On the graph beside the line, not in a tooltip: egui's waits
+            // for the pointer to rest, and a pointer moving along the graph
+            // never showed it.
             let text = format!("{} · {when}", info::bitrate_in(lang, f64::from(history[i])));
-            response.on_hover_text_at_pointer(text);
+            let galley = painter.layout_no_wrap(
+                text,
+                egui::TextStyle::Small.resolve(ui.style()),
+                style::TEXT_BRIGHT,
+            );
+            let pad = vec2(5.0, 2.0);
+            let size = galley.size() + pad * 2.0;
+            // Right of the line, else left of it where it would run out.
+            let x = if at.x + 8.0 + size.x <= rect.right() {
+                at.x + 8.0
+            } else {
+                (at.x - 8.0 - size.x).max(rect.left())
+            };
+            let label = Rect::from_min_size(egui::pos2(x, rect.top()), size);
+            painter.rect_filled(label, 3.0, Color32::from_black_alpha(200));
+            painter.galley(label.min + pad, galley, style::TEXT_BRIGHT);
         }
     }
     let most = info::bitrate_in(lang, f64::from(max));
