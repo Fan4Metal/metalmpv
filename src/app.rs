@@ -1439,12 +1439,7 @@ impl App {
             Cmd::About => self.about.toggle(),
             Cmd::Settings => self.settings_dialog.toggle(),
             Cmd::Delete => {
-                let shown = if frameless::is_fullscreen(ctx) {
-                    self.fullscreen_playlist
-                } else {
-                    self.settings.playlist_visible && self.interface() != Interface::Bare
-                };
-                if shown {
+                if self.playlist_shown(ctx) {
                     self.playlist.remove_selected();
                 }
             }
@@ -1460,12 +1455,7 @@ impl App {
             }
             Cmd::PlaylistSearch => {
                 // Shown first, where it is shown now.
-                let shown = if frameless::is_fullscreen(ctx) {
-                    self.fullscreen_playlist
-                } else {
-                    self.settings.playlist_visible && self.interface() != Interface::Bare
-                };
-                if !shown {
+                if !self.playlist_shown(ctx) {
                     self.run(ctx, frame, Cmd::TogglePlaylist);
                 }
                 self.list_state.search();
@@ -2192,6 +2182,16 @@ impl App {
     /// The interface shown.
     fn interface(&self) -> Interface {
         self.settings.interface
+    }
+
+    /// The playlist is shown: over the picture in fullscreen, else docked
+    /// or in its window (not in only the picture).
+    fn playlist_shown(&self, ctx: &egui::Context) -> bool {
+        if frameless::is_fullscreen(ctx) {
+            self.fullscreen_playlist
+        } else {
+            self.settings.playlist_visible && self.interface() != Interface::Bare
+        }
     }
 
     /// What `interface` takes around the picture in a window, in points

@@ -37,10 +37,13 @@ const HEADER: f32 = 26.0;
 /// The search field's id: while it has the focus, the keys are its own.
 const SEARCH_ID: &str = "playlist_search";
 
-/// The search field has the focus (in the viewport of `ctx`): the player's
-/// keys wait.
+/// The search field has the focus (in the viewport of `ctx`), or had it
+/// in the frame before: the player's keys wait. egui takes the focus away
+/// on Esc as the frame starts, before the keys are read, and that Esc,
+/// which closes the field, would also have reached the player.
 pub fn typing(ctx: &egui::Context) -> bool {
-    ctx.memory(|m| m.focused()) == Some(egui::Id::new(SEARCH_ID))
+    let id = egui::Id::new(SEARCH_ID);
+    ctx.memory(|m| m.focused() == Some(id) || m.had_focus_last_frame(id))
 }
 
 /// What the panel keeps between frames, one for all the places it is
@@ -360,8 +363,7 @@ pub fn panel(ui: &mut Ui, panel: Panel<'_>) -> Vec<Cmd> {
 }
 
 /// The search field with a cross that closes it, while it is shown. Esc
-/// clears it, and closes it when empty; Enter plays the first entry found
-/// (true).
+/// in it closes it; Enter plays the first entry found (true).
 fn search_row(ui: &mut Ui, state: &mut ListState) -> bool {
     let focus = std::mem::take(&mut state.focus_search);
     let Some(text) = state.search.as_mut() else {
@@ -391,12 +393,7 @@ fn search_row(ui: &mut Ui, state: &mut ListState) -> bool {
             )
         });
         if response.lost_focus() && esc {
-            if text.is_empty() {
-                close = true;
-            } else {
-                text.clear();
-                response.request_focus();
-            }
+            close = true;
         }
         play = response.lost_focus() && enter;
         let cross = tr!("Close the search", "Закрыть поиск");
