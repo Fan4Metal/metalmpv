@@ -908,6 +908,10 @@ impl Player {
                 }
                 Event::Property { id, value } => {
                     if let Some(prop) = Prop::of(id) {
+                        // The file before's, or an answer asked for it.
+                        if self.loading && matches!(prop, Prop::Width | Prop::Height) {
+                            continue;
+                        }
                         let was_eof = self.state.eof;
                         self.state.apply(prop, &value);
                         if prop == Prop::EofReached && self.state.eof && !was_eof {
@@ -959,7 +963,13 @@ impl Player {
                     self.scan_asked = None;
                     self.state.live = Live::default();
                     self.live_asked = None;
+                    // Cleared by `load`; the same file again has the same.
+                    self.ask(Prop::TrackList);
                     out.push(Happened::FileLoaded);
+                }
+                Event::VideoReconfig => {
+                    self.ask(Prop::Width);
+                    self.ask(Prop::Height);
                 }
                 Event::PlaybackRestart => out.push(Happened::Restarted),
                 Event::StartFile => self.starts_due = self.starts_due.saturating_sub(1),
@@ -1001,8 +1011,8 @@ impl Player {
                     self.scan_asked = None;
                     self.mpv.forget_sets();
                     out.push(Happened::RepliesLost);
-                    for (i, (_, name, format)) in PROPS.iter().enumerate() {
-                        self.mpv.get(i as u64 + 1, name, *format);
+                    for (prop, _, _) in PROPS {
+                        self.ask(prop);
                     }
                 }
                 Event::CommandReply {
@@ -1070,6 +1080,14 @@ impl Player {
     /// Ask how the picture is scanned, until it is known (the reply comes
     /// with the events; a file without a frame yet is asked again after a
     /// while).
+    /// Ask for an observed property now; the answer comes as its change.
+    fn ask(&self, prop: Prop) {
+        if let Some(i) = PROPS.iter().position(|(p, _, _)| *p == prop) {
+            let (_, name, format) = PROPS[i];
+            self.mpv.get(i as u64 + 1, name, format);
+        }
+    }
+
     pub fn ask_scan(&mut self) {
         if self.state.scan.is_some() || self.state.video().is_none() {
             return;
@@ -1151,7 +1169,11 @@ impl Player {
         self.state.eof = false;
         // Not the file before's: what waits for the new file's tracks and
         // size (the like tracks, the window fitted to the picture, the
-        // remembered subtitle file) would take them.
+        // remembered subtitle file) would take them. mpv tells an observed
+        // property only when it differs from what it told last, and a file
+        // replaced quickly may never show it unset: the new file's are
+        // asked for (`FileLoaded`, `VideoReconfig`), else a picture of the
+        // same width or height stayed unknown and was not shown.
         self.state.tracks.clear();
         self.state.width = None;
         self.state.height = None;

@@ -41,6 +41,7 @@ pub const MPV_EVENT_COMMAND_REPLY: mpv_event_id = 5;
 pub const MPV_EVENT_START_FILE: mpv_event_id = 6;
 pub const MPV_EVENT_END_FILE: mpv_event_id = 7;
 pub const MPV_EVENT_FILE_LOADED: mpv_event_id = 8;
+pub const MPV_EVENT_VIDEO_RECONFIG: mpv_event_id = 17;
 pub const MPV_EVENT_SEEK: mpv_event_id = 20;
 pub const MPV_EVENT_PLAYBACK_RESTART: mpv_event_id = 21;
 pub const MPV_EVENT_PROPERTY_CHANGE: mpv_event_id = 22;

@@ -116,6 +116,8 @@ pub enum Event {
     },
     Seek,
     PlaybackRestart,
+    /// The video output was (re)configured: the picture's size is known.
+    VideoReconfig,
     /// Events were lost: observed properties must be asked for again.
     QueueOverflow,
     Other(i32),
@@ -357,6 +359,7 @@ impl Mpv {
             }
             sys::MPV_EVENT_SEEK => Event::Seek,
             sys::MPV_EVENT_PLAYBACK_RESTART => Event::PlaybackRestart,
+            sys::MPV_EVENT_VIDEO_RECONFIG => Event::VideoReconfig,
             sys::MPV_EVENT_QUEUE_OVERFLOW => Event::QueueOverflow,
             other => Event::Other(other),
         }
