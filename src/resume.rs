@@ -14,7 +14,8 @@
 //! The most recent first, at most [`CAPACITY`]; stored as lines of
 //! `seconds<TAB>audio<TAB>subtitles<TAB>duration<TAB>path`, `end` for the
 //! seconds of a file watched, `-` for what is not kept and `no` for a track
-//! turned off (lines of `seconds<TAB>audio<TAB>subtitles<TAB>path` and
+//! turned off, `@` and its path for subtitles of a file of their own
+//! (lines of `seconds<TAB>audio<TAB>subtitles<TAB>path` and
 //! `seconds<TAB>path` are read too).
 
 use std::collections::HashMap;
@@ -30,11 +31,15 @@ const END_MARGIN: f64 = 30.0;
 const CAPACITY: usize = 500;
 
 /// The tracks a file played: mpv's track ids, `None` for none (subtitles
-/// off).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// off); subtitles of a file of their own by that file (`sub_file`, `sub`
+/// then `None`): their id is their place among the files loaded, which
+/// another subtitle file in the folder changes, and one loaded by hand is
+/// not there the next time.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Tracks {
     pub audio: Option<i64>,
     pub sub: Option<i64>,
+    pub sub_file: Option<PathBuf>,
 }
 
 /// What is kept of a file.
@@ -162,9 +167,17 @@ impl Positions {
                 };
                 let tracks = match tracks {
                     ("-", "-") => None,
-                    (audio, sub) => Some(Tracks {
-                        audio: id(audio)?,
-                        sub: id(sub)?,
+                    (audio, sub) => Some(match sub.strip_prefix('@') {
+                        Some(file) if !file.is_empty() => Tracks {
+                            audio: id(audio)?,
+                            sub: None,
+                            sub_file: Some(PathBuf::from(file)),
+                        },
+                        _ => Tracks {
+                            audio: id(audio)?,
+                            sub: id(sub)?,
+                            sub_file: None,
+                        },
                     }),
                 };
                 let seconds = |s: &str| match s {
@@ -204,8 +217,11 @@ impl Positions {
                     None => "-".into(),
                 };
                 let duration = left.duration.map_or("-".into(), |d| format!("{d:.1}"));
-                let (audio, sub) = match left.tracks {
-                    Some(t) => (id(t.audio), id(t.sub)),
+                let (audio, sub) = match &left.tracks {
+                    Some(t) => match &t.sub_file {
+                        Some(file) => (id(t.audio), format!("@{}", file.display())),
+                        None => (id(t.audio), id(t.sub)),
+                    },
                     None => ("-".into(), "-".into()),
                 };
                 format!("{time}\t{audio}\t{sub}\t{duration}\t{}", p.display())
@@ -255,9 +271,10 @@ mod tests {
         let tracks = Tracks {
             audio: Some(3),
             sub: None,
+            sub_file: None,
         };
         // Watched to the end: the tracks stay, the position does not.
-        p.remember(film, Some((8590.0, 8600.0)), Some(tracks));
+        p.remember(film, Some((8590.0, 8600.0)), Some(tracks.clone()));
         assert_eq!(
             p.get(film),
             Some(&Left {
@@ -269,6 +286,19 @@ mod tests {
         let back = Positions::parse(&p.to_text());
         assert_eq!(back, p);
         assert_eq!(p.to_text(), "end\t3\tno\t-\tD:\\Films\\Brazil.mkv");
+        // Subtitles of a file of their own, by that file.
+        let srt = Tracks {
+            audio: Some(1),
+            sub: None,
+            sub_file: Some(PathBuf::from(r"D:\Films\Subs\Brazil.en.srt")),
+        };
+        p.remember(film, Some((600.0, 8600.0)), Some(srt.clone()));
+        assert_eq!(
+            p.to_text(),
+            "600.0\t1\t@D:\\Films\\Subs\\Brazil.en.srt\t8600.0\tD:\\Films\\Brazil.mkv"
+        );
+        let back = Positions::parse(&p.to_text());
+        assert_eq!(back.get(film).unwrap().tracks, Some(srt));
     }
 
     #[test]
@@ -278,6 +308,7 @@ mod tests {
             let tracks = (i % 2 == 0).then_some(Tracks {
                 audio: Some(2),
                 sub: Some(1),
+                sub_file: None,
             });
             p.remember(
                 Path::new(&format!(r"D:\{i}.mkv")),
@@ -317,7 +348,8 @@ mod tests {
                         time: Some(9.0),
                         tracks: Some(Tracks {
                             audio: Some(2),
-                            sub: None
+                            sub: None,
+                            sub_file: None,
                         }),
                         ..Left::default()
                     }

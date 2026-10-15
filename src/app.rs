@@ -489,7 +489,7 @@ impl App {
             .and_then(|l| l.time)
             .filter(|_| self.settings.resume_playback && !again));
         let tracks = left
-            .and_then(|l| l.tracks)
+            .and_then(|l| l.tracks.clone())
             .filter(|_| self.settings.remember_tracks);
         log::debug!(
             "loading {} at {:.0} ms",
@@ -585,16 +585,23 @@ impl App {
             None if !tracks::of_kind(&state.tracks, Kind::Audio).is_empty() => self
                 .positions
                 .get(Path::new(path))
-                .and_then(|left| left.tracks)
+                .and_then(|left| left.tracks.as_ref())
                 .map(|t| t.audio),
             None => Some(None),
         };
+        let sub = tracks::selected(&state.tracks, Kind::Sub);
+        // Subtitles of a file of their own by that file: their id changes.
+        let sub_file = sub
+            .filter(|t| t.external)
+            .and_then(|t| t.external_filename.as_deref())
+            .map(PathBuf::from);
         let chosen = (tracks && choice)
             .then_some(audio)
             .flatten()
             .map(|audio| Tracks {
                 audio,
-                sub: tracks::selected(&state.tracks, Kind::Sub).map(|t| t.id),
+                sub: sub.filter(|_| sub_file.is_none()).map(|t| t.id),
+                sub_file,
             });
         let time = resume.then_some((time, duration));
         self.positions.remember(Path::new(path), time, chosen);

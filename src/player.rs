@@ -7,7 +7,7 @@
 //! waits for the core, and the core works through the commands in the order
 //! they were given, so a volume set before `loadfile` applies to that file.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::adjust::{Adjust, Color};
 use crate::audio::{self, Channels, Device, Passthrough};
@@ -789,6 +789,9 @@ pub struct Player {
     filters_on: bool,
     /// A new file starts without subtitles (`tracks::SubMode::Off`).
     subs_off: bool,
+    /// Subtitles of a file of their own remembered for the file loading,
+    /// chosen once its tracks are known (`select_sub_file`).
+    sub_file: Option<PathBuf>,
     last_seek: Option<SeekMark>,
     /// The audio filters mpv has, and those before the last change
     /// ([`Player::resync_audio`]).
@@ -833,6 +836,7 @@ impl Player {
             hwdec_copy: false,
             filters_on: false,
             subs_off: false,
+            sub_file: None,
             last_seek: None,
             data_end_at: None,
             ran_out_at: None,
@@ -1027,7 +1031,35 @@ impl Player {
                 _ => {}
             }
         }
+        self.select_sub_file();
         out
+    }
+
+    /// Once the file loaded with remembered subtitles of a file of their
+    /// own has its tracks: those subtitles, found by their file among the
+    /// tracks mpv loaded itself, else loaded; nothing if the file is gone.
+    fn select_sub_file(&mut self) {
+        if self.loading || self.state.tracks.is_empty() {
+            return;
+        }
+        let Some(file) = self.sub_file.take() else {
+            return;
+        };
+        let key = crate::resume::key(&file);
+        let loaded = self.state.tracks.iter().find(|t| {
+            t.kind == Kind::Sub
+                && t.external_filename
+                    .as_deref()
+                    .is_some_and(|f| crate::resume::key(Path::new(f)) == key)
+        });
+        match loaded {
+            Some(t) => {
+                let id = t.id;
+                self.select_track(Kind::Sub, Some(id));
+            }
+            None if file.is_file() => self.add_subtitles(&file),
+            None => log::info!("remembered subtitles {} are gone", file.display()),
+        }
     }
 
     /// Ask how the picture is scanned, until it is known (the reply comes
@@ -1087,10 +1119,14 @@ impl Player {
         // Always given: setting `aid`/`sid`/`vid` during a file sets mpv's
         // option too, and the next file would start with that track number
         // (or none) instead of mpv's choice.
+        self.sub_file = None;
         match tracks {
             Some(t) => {
                 options.push(format!("aid={}", id(t.audio)));
+                // Subtitles of a file of their own: none until they are
+                // found among the tracks or loaded.
                 options.push(format!("sid={}", id(t.sub)));
+                self.sub_file = t.sub_file;
             }
             None => {
                 let sid = if self.subs_off { "no" } else { "auto" };
@@ -1108,6 +1144,12 @@ impl Player {
             .command(LOAD, &["loadfile", &path, "replace", "-1", &options]);
         self.state.paused = false;
         self.state.eof = false;
+        // Not the file before's: what waits for the new file's tracks and
+        // size (the like tracks, the window fitted to the picture, the
+        // remembered subtitle file) would take them.
+        self.state.tracks.clear();
+        self.state.width = None;
+        self.state.height = None;
         self.loading = true;
         self.starts_due += 1;
         self.stopped = false;
@@ -1676,6 +1718,7 @@ mod tests {
             hwdec_copy: false,
             filters_on: false,
             subs_off: false,
+            sub_file: None,
             last_seek: None,
             data_end_at: None,
             ran_out_at: None,
@@ -1767,6 +1810,7 @@ mod tests {
             hwdec_copy: false,
             filters_on: false,
             subs_off: false,
+            sub_file: None,
             last_seek: None,
             data_end_at: None,
             ran_out_at: None,
@@ -1893,6 +1937,7 @@ mod tests {
                 hwdec_copy: false,
                 filters_on: false,
                 subs_off: false,
+                sub_file: None,
                 last_seek: None,
                 data_end_at: None,
                 ran_out_at: None,
@@ -1975,6 +2020,7 @@ mod tests {
             hwdec_copy: false,
             filters_on: false,
             subs_off: false,
+            sub_file: None,
             last_seek: None,
             data_end_at: None,
             ran_out_at: None,
@@ -2101,6 +2147,7 @@ mod tests {
             hwdec_copy: false,
             filters_on: false,
             subs_off: false,
+            sub_file: None,
             last_seek: None,
             data_end_at: None,
             ran_out_at: None,
@@ -2185,6 +2232,7 @@ mod tests {
             hwdec_copy: false,
             filters_on: false,
             subs_off: false,
+            sub_file: None,
             last_seek: None,
             data_end_at: None,
             ran_out_at: None,
@@ -2215,6 +2263,27 @@ mod tests {
                 && tracks::selected(&s.tracks, Kind::Video).is_some()),
             "the next file kept the tracks turned off"
         );
+        // Subtitles of a file of their own remembered by that file: chosen
+        // once the tracks are in, the next file loading them by itself.
+        let dir = std::env::temp_dir().join(format!("metalmpv_sub_file_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let srt = dir.join("remembered.srt");
+        std::fs::write(&srt, "1\n00:00:01,000 --> 00:00:03,000\nRemembered\n").unwrap();
+        let remembered = Tracks {
+            audio: Some(1),
+            sub: None,
+            sub_file: Some(srt.clone()),
+        };
+        player.load(Path::new(&sample), None, Some(remembered));
+        let shown = |s: &State| {
+            tracks::selected(&s.tracks, Kind::Sub).is_some_and(|t| {
+                t.external_filename
+                    .as_deref()
+                    .is_some_and(|f| crate::resume::key(Path::new(f)) == crate::resume::key(&srt))
+            })
+        };
+        assert!(wait(&mut player, &shown), "the remembered subtitle file");
+        std::fs::remove_dir_all(&dir).unwrap();
         // A file that cannot be opened fails, once the start of it is in.
         player.load(Path::new("D:/metalmpv-missing/none.mkv"), None, None);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -2281,6 +2350,7 @@ mod tests {
             hwdec_copy: false,
             filters_on: false,
             subs_off: false,
+            sub_file: None,
             last_seek: None,
             data_end_at: None,
             ran_out_at: None,
@@ -2511,6 +2581,7 @@ mod tests {
             hwdec_copy: false,
             filters_on: false,
             subs_off: false,
+            sub_file: None,
             last_seek: None,
             data_end_at: None,
             ran_out_at: None,
@@ -2885,6 +2956,7 @@ mod tests {
             hwdec_copy: false,
             filters_on: false,
             subs_off: false,
+            sub_file: None,
             last_seek: None,
             data_end_at: None,
             ran_out_at: None,
