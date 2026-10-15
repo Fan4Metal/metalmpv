@@ -21,14 +21,16 @@ pub struct Bookmark {
 }
 
 impl Bookmark {
-    /// What the menu shows: the file's name (an address's last part) and
+    /// What the menu shows: `title` (an IPTV channel's name, while its list
+    /// is the playlist), else the file's name (an address's last part), and
     /// the time.
-    pub fn label(&self) -> String {
-        let name = self
-            .path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| self.path.to_string_lossy().into_owned());
+    pub fn label(&self, title: Option<&str>) -> String {
+        let name = title.map(str::to_owned).unwrap_or_else(|| {
+            self.path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| self.path.to_string_lossy().into_owned())
+        });
         format!("{name} — {}", crate::format::time(Some(self.time), false))
     }
 
@@ -125,7 +127,8 @@ mod tests {
         );
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].time, 600.4);
-        assert_eq!(list[1].label(), "Other.mkv — 00:30");
+        assert_eq!(list[1].label(None), "Other.mkv — 00:30");
+        assert_eq!(list[1].label(Some("Channel One")), "Channel One — 00:30");
         assert!((list[0].share().unwrap() - 0.25).abs() < 0.001);
         assert_eq!(list[1].share(), None);
         let text = to_text(&list);

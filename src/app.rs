@@ -459,6 +459,7 @@ impl App {
     fn add(&mut self, paths: Vec<PathBuf>) {
         let (paths, channels) = playlist::expand_lists(paths);
         self.playlist.describe(channels);
+        let before = self.playlist.len();
         let first = self.playlist.add(paths);
         let busy = self
             .player
@@ -468,6 +469,20 @@ impl App {
             && !busy
         {
             self.play(first);
+            return;
+        }
+        // Only added, out of sight: said, else nothing seemed to happen.
+        let added = self.playlist.len() - before;
+        let shown = if self.fullscreen {
+            self.fullscreen_playlist
+        } else {
+            self.settings.playlist_visible && self.interface() != Interface::Bare
+        };
+        if added > 0 && !shown {
+            self.osd.show(Osd::Text(tr!(
+                format!("[ Added to the playlist: {added} ]"),
+                format!("[ Добавлено в плейлист: {added} ]")
+            )));
         }
     }
 
@@ -479,8 +494,9 @@ impl App {
             return;
         };
         // The entry playing is selected, unless several are (to be moved or
-        // removed: the next file coming should not undo that).
-        if self.playlist.selection().len() <= 1 {
+        // removed: the next file coming should not undo that) or one is
+        // being dragged (the drop would move the one playing).
+        if self.playlist.selection().len() <= 1 && !self.list_state.dragging() {
             self.playlist.select(index);
         }
         self.file_error = None;
@@ -1524,6 +1540,14 @@ impl App {
                     self.run(ctx, frame, Cmd::TogglePlaylist);
                 }
                 self.list_state.search();
+                // In its own window the field takes the keys only once that
+                // window has Windows' focus: else they went to the player.
+                if self.settings.playlist_detached && !frameless::is_fullscreen(ctx) {
+                    ctx.send_viewport_cmd_to(
+                        egui::ViewportId::from_hash_of("playlist_window"),
+                        egui::ViewportCommand::Focus,
+                    );
+                }
             }
             Cmd::ShowEntryInFolder(i) => {
                 if let Some(path) = self
@@ -2066,11 +2090,12 @@ impl App {
     /// go with it, the others are added to the playlist (opened when it is
     /// empty).
     fn drop_files(&mut self, dropped: Vec<PathBuf>, state: &State) {
-        let (subs, media): (Vec<PathBuf>, Vec<PathBuf>) = dropped
-            .into_iter()
-            .partition(|p| tracks::is_subtitles(p) && !state.idle);
-        for sub in &subs {
-            self.add_subtitles(sub);
+        let (subs, media): (Vec<PathBuf>, Vec<PathBuf>) =
+            dropped.into_iter().partition(|p| tracks::is_subtitles(p));
+        if !state.idle {
+            for sub in &subs {
+                self.add_subtitles(sub);
+            }
         }
         // Into an empty playlist as opened (the folder filled in when the
         // setting says so); else added to it, played if nothing plays.
@@ -2081,6 +2106,14 @@ impl App {
             self.open(media);
         } else {
             self.add(media);
+        }
+        // Subtitles dropped with a video while nothing played: for the
+        // video that starts, not entries of the playlist.
+        if state.idle
+            && let Some(sub) = subs.into_iter().next()
+            && let Some(player) = self.player.as_mut().filter(|p| p.loading())
+        {
+            player.subtitles_once_loaded(sub);
         }
     }
 
@@ -2713,7 +2746,11 @@ impl App {
                         let duration = state.duration.filter(|d| here && *d > 0.0)?;
                         Some((b.time / duration).clamp(0.0, 1.0) as f32)
                     });
-                    (b.label(), here, share)
+                    let title = self
+                        .playlist
+                        .channel(&b.path)
+                        .and_then(|c| c.title.as_deref());
+                    (b.label(title), here, share)
                 })
                 .collect(),
         };

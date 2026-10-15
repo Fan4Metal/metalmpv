@@ -1163,6 +1163,12 @@ impl Player {
         self.loading
     }
 
+    /// Show the subtitles of `file` in the file loading, once its tracks
+    /// are in (dropped with it).
+    pub fn subtitles_once_loaded(&mut self, file: PathBuf) {
+        self.sub_file = Some(file);
+    }
+
     /// Where the data ran out while playback stays at the end (mpv's
     /// position then may be the duration), even when that end was taken as
     /// the file's; `None` at the file's own end.

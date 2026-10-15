@@ -57,8 +57,10 @@ pub struct ListState {
     folded: HashSet<String>,
     folds: u64,
     view: Option<View>,
-    /// A drag of the selected entries: the slot they would go to.
+    /// A drag of the selected entries: the slot they would go to, and the
+    /// entry it started on.
     drag: Option<Option<usize>>,
+    drag_from: Option<usize>,
     /// The current entry each list (the panel, its window, the fullscreen
     /// one) was last scrolled to.
     scrolled: HashMap<egui::Id, Option<PathBuf>>,
@@ -73,6 +75,11 @@ impl ListState {
         self.search.get_or_insert_with(String::new);
         self.focus_search = true;
     }
+
+    /// Selected entries are being dragged.
+    pub fn dragging(&self) -> bool {
+        self.drag.is_some()
+    }
 }
 
 /// The rows of the list: the entries found, under their groups.
@@ -85,6 +92,12 @@ struct View {
     has_groups: bool,
     /// All the entries in the list's order: they can be dragged.
     plain: bool,
+    /// The entries shown, in the view's order: what Shift+click and
+    /// Select all take.
+    entries: Vec<usize>,
+    /// Their files, when the view leaves some out or folds them: what may
+    /// stay selected.
+    shown: Option<HashSet<PathBuf>>,
 }
 
 enum Row {
@@ -309,12 +322,34 @@ pub fn panel(ui: &mut Ui, panel: Panel<'_>) -> Vec<Cmd> {
         let rows = View::make(playlist, &made_of.1, &state.folded, groups);
         let plain = made_of.1.trim().is_empty() && rows.len() == playlist.len();
         let plain = plain && rows.iter().all(|r| matches!(r, Row::Entry(_)));
+        let entries: Vec<usize> = rows
+            .iter()
+            .filter_map(|r| match r {
+                Row::Entry(i) => Some(*i),
+                Row::Group { .. } => None,
+            })
+            .collect();
+        let shown = (entries.len() < playlist.len()).then(|| {
+            entries
+                .iter()
+                .map(|&i| playlist.items()[i].clone())
+                .collect()
+        });
         state.view = Some(View {
             made_of,
             rows,
             has_groups: View::has_groups(playlist),
             plain,
+            entries,
+            shown,
         });
+    }
+    // Nothing selected out of sight: Delete would remove it unseen (the
+    // entry after one removed, the playing one selected by play).
+    if let Some(shown) = state.view.as_ref().and_then(|v| v.shown.as_ref())
+        && playlist.has_selection()
+    {
+        playlist.keep_selected(|p| shown.contains(p));
     }
     if state
         .marks
@@ -323,14 +358,7 @@ pub fn panel(ui: &mut Ui, panel: Panel<'_>) -> Vec<Cmd> {
     {
         state.marks = Some((positions.revision(), positions.by_key()));
     }
-    if play_first
-        && let Some(i) = state.view.as_ref().and_then(|v| {
-            v.rows.iter().find_map(|r| match r {
-                Row::Entry(i) => Some(*i),
-                Row::Group { .. } => None,
-            })
-        })
-    {
+    if play_first && let Some(i) = state.view.as_ref().and_then(|v| v.entries.first().copied()) {
         out.push(Cmd::PlayIndex(i));
     }
     // The chapters take up to half of the height, the files the rest.
@@ -428,6 +456,7 @@ fn files_list(
         folds,
         view,
         drag,
+        drag_from,
         scrolled,
         marks,
         ..
@@ -470,6 +499,7 @@ fn files_list(
         };
         let all_folded = names().all(|n| folded.contains(n));
         let any_folded = names().any(|n| folded.contains(n));
+        let searching = !view.made_of.1.trim().is_empty();
         // The entries drawn, for the slot a drag would drop them in.
         let mut drawn: Vec<(usize, Rect)> = Vec::new();
         let output = egui::ScrollArea::vertical()
@@ -484,13 +514,15 @@ fn files_list(
                             folded,
                         } => {
                             let response = group_header(ui, name, *count, *folded);
-                            if response.clicked() {
+                            // Searching, the groups found are all open: a
+                            // fold would show only once the search closes.
+                            if response.clicked() && !searching {
                                 fold = Some(name.clone());
                             }
                             response.context_menu(|ui| {
                                 let fold = tr!("Fold all groups", "Свернуть все группы");
                                 if ui
-                                    .add_enabled(!all_folded, egui::Button::new(fold))
+                                    .add_enabled(!all_folded && !searching, egui::Button::new(fold))
                                     .clicked()
                                 {
                                     fold_all = Some(true);
@@ -498,7 +530,10 @@ fn files_list(
                                 }
                                 let unfold = tr!("Unfold all groups", "Развернуть все группы");
                                 if ui
-                                    .add_enabled(any_folded, egui::Button::new(unfold))
+                                    .add_enabled(
+                                        any_folded && !searching,
+                                        egui::Button::new(unfold),
+                                    )
                                     .clicked()
                                 {
                                     fold_all = Some(false);
@@ -524,8 +559,11 @@ fn files_list(
                     let watched_part = if !progress {
                         None
                     } else if current == Some(i) {
+                        // Live while it plays; what is kept after Stop or
+                        // while it loads.
                         now.filter(|(_, d)| *d >= resume::MIN_DURATION)
                             .map(|(t, d)| (t / d).clamp(0.0, 1.0) as f32)
+                            .or_else(|| left.and_then(Left::progress))
                     } else {
                         left.and_then(Left::progress)
                     };
@@ -558,7 +596,7 @@ fn files_list(
                         if modifiers.command {
                             playlist.toggle_selected(i);
                         } else if modifiers.shift {
-                            playlist.select_range(i);
+                            playlist.select_range(i, &view.entries);
                         } else {
                             playlist.select(i);
                         }
@@ -568,9 +606,10 @@ fn files_list(
                             playlist.select(i);
                         }
                         *drag = Some(None);
+                        *drag_from = Some(i);
                     }
                     response.context_menu(|ui| {
-                        entry_menu(ui, playlist, i, out);
+                        entry_menu(ui, playlist, i, &view.entries, out);
                         ui.separator();
                         let mut on = progress;
                         let text = tr!("Show how far files went", "Показывать полосы просмотра");
@@ -603,10 +642,15 @@ fn files_list(
             }
             None => {}
         }
-        // Let go: dropped where the line was (taken in any case).
+        // Let go: dropped where the line was (taken in any case), unless
+        // beside the entry it started on: a slow click (egui counts a press
+        // held long as a drag) would gather a selection there.
         if drag.is_some()
             && !ui.input(|i| i.pointer.primary_down())
             && let Some(Some(slot)) = drag.take()
+            && drag_from
+                .take()
+                .is_none_or(|from| slot != from && slot != from + 1)
         {
             out.push(Cmd::PlaylistMove(slot));
         }
@@ -620,6 +664,9 @@ fn files_list(
                     .position(|r| matches!(r, Row::Entry(i) if *i == c))
             });
             if let Some(row) = row {
+                // Kept as scrolled to only when shown: a search or a fold
+                // that hid it scrolls to it once it is shown again.
+                scrolled.insert(output.id, current_path.clone());
                 let step = ROW + ui.spacing().item_spacing.y;
                 let top = row as f32 * step;
                 let height = output.inner_rect.height();
@@ -630,8 +677,9 @@ fn files_list(
                     scroll.store(ui.ctx(), output.id);
                     ui.ctx().request_repaint();
                 }
+            } else if current.is_none() {
+                scrolled.insert(output.id, None);
             }
-            scrolled.insert(output.id, current_path);
         }
     });
 }
@@ -761,7 +809,7 @@ fn drop_slot(ui: &Ui, drawn: &[(usize, Rect)], pos: Pos2) -> Option<usize> {
 /// The menu of entry `index` (selected with the right button): play it,
 /// show it in its folder, copy the paths of those selected, select them
 /// all, remove those selected.
-fn entry_menu(ui: &mut Ui, list: &mut Playlist, index: usize, out: &mut Vec<Cmd>) {
+fn entry_menu(ui: &mut Ui, list: &mut Playlist, index: usize, shown: &[usize], out: &mut Vec<Cmd>) {
     let path = list.items()[index].clone();
     let address = playlist::is_url(&path);
     if ui.button(tr!("Play", "Воспроизвести")).clicked() {
@@ -795,7 +843,7 @@ fn entry_menu(ui: &mut Ui, list: &mut Playlist, index: usize, out: &mut Vec<Cmd>
     }
     ui.separator();
     if ui.button(tr!("Select all", "Выделить все")).clicked() {
-        list.select_all();
+        list.select_all(shown);
         ui.close();
     }
     let remove = if many > 1 {

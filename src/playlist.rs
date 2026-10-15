@@ -466,28 +466,38 @@ impl Playlist {
         }
     }
 
-    /// Select the entries from the anchor to `index` (Shift+click), or
-    /// `index` alone without one.
-    pub fn select_range(&mut self, index: usize) {
-        let from = self
-            .anchor
-            .as_ref()
-            .and_then(|a| self.items.iter().position(|p| p == a));
-        let Some(from) = from else {
+    /// Select the entries from the anchor to `index` (Shift+click) as
+    /// `shown` lists them (the view's entries in its order: a search leaves
+    /// some out, groups put them in another order), or `index` alone when
+    /// the anchor is not shown.
+    pub fn select_range(&mut self, index: usize, shown: &[usize]) {
+        let anchor = self.anchor.as_ref();
+        let from = shown
+            .iter()
+            .position(|&i| anchor.is_some_and(|a| self.items.get(i) == Some(a)));
+        let to = shown.iter().position(|&i| i == index);
+        let (Some(from), Some(to)) = (from, to) else {
             self.select(index);
             return;
         };
-        if index >= self.items.len() {
-            return;
-        }
-        self.selected = self.items[from.min(index)..=from.max(index)]
+        self.selected = shown[from.min(to)..=from.max(to)]
             .iter()
-            .cloned()
+            .filter_map(|&i| self.items.get(i).cloned())
             .collect();
     }
 
-    pub fn select_all(&mut self) {
-        self.selected = self.items.iter().cloned().collect();
+    /// Select the entries `shown`.
+    pub fn select_all(&mut self, shown: &[usize]) {
+        self.selected = shown
+            .iter()
+            .filter_map(|&i| self.items.get(i).cloned())
+            .collect();
+    }
+
+    /// Unselect what `shown` says is not in sight (a search, a group
+    /// folded): Delete would remove what cannot be seen.
+    pub fn keep_selected(&mut self, shown: impl Fn(&Path) -> bool) {
+        self.selected.retain(|p| shown(p));
     }
 
     /// Replace the list with `paths` (folders give their media files);
@@ -1125,9 +1135,22 @@ mod tests {
     #[test]
     fn several_selected() {
         let mut p = list(&["a", "b", "c", "d", "e"]);
+        let all: Vec<usize> = (0..5).collect();
         p.select(1);
-        p.select_range(3);
+        p.select_range(3, &all);
         assert_eq!(p.selection(), [1, 2, 3]);
+        // As a view shows them: a search left "c" out.
+        p.select(1);
+        p.select_range(3, &[0, 1, 3, 4]);
+        assert_eq!(p.selection(), [1, 3]);
+        // In a view's own order (groups).
+        p.select(4);
+        p.select_range(0, &[4, 2, 0, 1, 3]);
+        assert_eq!(p.selection(), [0, 2, 4]);
+        p.keep_selected(|path| path != Path::new("c"));
+        assert_eq!(p.selection(), [0, 4]);
+        p.select(1);
+        p.select_range(3, &all);
         p.toggle_selected(2);
         assert_eq!(p.selection(), [1, 3]);
         // The selection follows its files.
@@ -1145,8 +1168,10 @@ mod tests {
         assert_eq!(items, ["a", "c", "e"]);
         // The entry in the place of the first removed is selected.
         assert_eq!(p.selection(), [1]);
-        p.select_all();
+        p.select_all(&[0, 1, 2]);
         assert_eq!(p.selection(), [0, 1, 2]);
+        p.select_all(&[2]);
+        assert_eq!(p.selection(), [2]);
     }
 
     #[test]
