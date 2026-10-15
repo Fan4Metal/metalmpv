@@ -72,6 +72,8 @@ pub enum Cmd {
     PlaylistMove(usize),
     /// Show the search field of the playlist (`Ctrl+F`).
     PlaylistSearch,
+    /// Show an IPTV list's entries under their groups, or not.
+    TogglePlaylistGroups,
     PlaylistSort,
     PlaylistClear,
     /// Write the playlist to an M3U8 file.

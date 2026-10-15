@@ -1349,6 +1349,9 @@ impl App {
             Cmd::PlaylistAdd => self.pick_files(ctx, true),
             Cmd::PlaylistRemoveSelected => self.playlist.remove_selected(),
             Cmd::PlaylistMove(slot) => self.playlist.move_selected(slot),
+            Cmd::TogglePlaylistGroups => {
+                self.settings.playlist_groups = !self.settings.playlist_groups;
+            }
             Cmd::PlaylistSearch => {
                 // Shown first, where it is shown now.
                 let shown = if frameless::is_fullscreen(ctx) {
@@ -1993,6 +1996,7 @@ impl App {
                             positions: &self.positions,
                             logos,
                             repeat: self.settings.repeat,
+                            groups: self.settings.playlist_groups,
                             chapters: &state.chapters,
                             time: state.time,
                             duration: state.duration,
@@ -2932,6 +2936,7 @@ impl App {
         let rect = Rect::from_min_max(egui::pos2(screen.right() - width, screen.top()), screen.max);
         let logos = self.settings.channel_logos.then_some(&mut self.logos);
         let (playlist, repeat) = (&mut self.playlist, self.settings.repeat);
+        let groups = self.settings.playlist_groups;
         let (list_state, positions) = (&mut self.list_state, &self.positions);
         egui::Area::new(egui::Id::new("fullscreen_playlist"))
             .order(egui::Order::Foreground)
@@ -2949,6 +2954,7 @@ impl App {
                             positions,
                             logos,
                             repeat,
+                            groups,
                             chapters: &state.chapters,
                             time: state.time,
                             duration: state.duration,
@@ -3664,6 +3670,7 @@ impl eframe::App for App {
                                 positions: &self.positions,
                                 logos,
                                 repeat: self.settings.repeat,
+                                groups: self.settings.playlist_groups,
                                 chapters: &state.chapters,
                                 time: state.time,
                                 duration: state.duration,

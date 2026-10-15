@@ -8,7 +8,8 @@
 //! the selected entries (not while searching or in groups). A thin line
 //! under an entry shows how far it was watched, a tick that it was watched
 //! to its end (`resume.rs`). An IPTV list's entries go under their groups,
-//! which fold. The list scrolls to the current entry when it changes.
+//! which fold, unless turned off in the entries' and the groups' menu.
+//! The list scrolls to the current entry when it changes.
 //! Under it, when the playing file has chapters, a section of them that
 //! folds: a click goes to a chapter.
 
@@ -72,9 +73,12 @@ impl ListState {
 
 /// The rows of the list: the entries found, under their groups.
 struct View {
-    /// The playlist's revision, the search and the folds' count.
-    made_of: (u64, String, u64),
+    /// The playlist's revision, the search, the folds' count and whether
+    /// the groups are shown.
+    made_of: (u64, String, u64, bool),
     rows: Vec<Row>,
+    /// The list has groups (whether shown or not).
+    has_groups: bool,
     /// All the entries in the list's order: they can be dragged.
     plain: bool,
 }
@@ -89,7 +93,17 @@ enum Row {
 }
 
 impl View {
-    fn make(list: &Playlist, query: &str, folded: &HashSet<String>) -> Vec<Row> {
+    /// The list has entries in groups.
+    fn has_groups(list: &Playlist) -> bool {
+        list.items().iter().any(|p| {
+            list.channel(p)
+                .and_then(|c| c.group.as_deref())
+                .is_some_and(|g| !g.is_empty())
+        })
+    }
+
+    /// The rows; with `groups`, an IPTV list's entries under their groups.
+    fn make(list: &Playlist, query: &str, folded: &HashSet<String>, groups: bool) -> Vec<Row> {
         let query = query.trim().to_lowercase();
         let found = |i: &usize| {
             query.is_empty()
@@ -103,7 +117,7 @@ impl View {
                 .and_then(|c| c.group.as_deref())
                 .filter(|g| !g.is_empty())
         };
-        if !(0..list.len()).any(|i| group_of(i).is_some()) {
+        if !groups || !Self::has_groups(list) {
             return (0..list.len()).filter(found).map(Row::Entry).collect();
         }
         // The groups in the order they first come, each with its entries.
@@ -146,6 +160,8 @@ pub struct Panel<'a> {
     /// Pictures the channels of an IPTV list, when they are fetched.
     pub logos: Option<&'a mut Logos>,
     pub repeat: Repeat,
+    /// An IPTV list's entries under their groups.
+    pub groups: bool,
     /// The playing file's chapters, position and duration.
     pub chapters: &'a [Chapter],
     pub time: Option<f64>,
@@ -161,6 +177,7 @@ pub fn panel(ui: &mut Ui, panel: Panel<'_>) -> Vec<Cmd> {
         positions,
         logos,
         repeat,
+        groups,
         chapters,
         time,
         duration,
@@ -279,14 +296,16 @@ pub fn panel(ui: &mut Ui, panel: Panel<'_>) -> Vec<Cmd> {
         playlist.revision(),
         state.search.clone().unwrap_or_default(),
         state.folds,
+        groups,
     );
     if state.view.as_ref().is_none_or(|v| v.made_of != made_of) {
-        let rows = View::make(playlist, &made_of.1, &state.folded);
+        let rows = View::make(playlist, &made_of.1, &state.folded, groups);
         let plain = made_of.1.trim().is_empty() && rows.len() == playlist.len();
         let plain = plain && rows.iter().all(|r| matches!(r, Row::Entry(_)));
         state.view = Some(View {
             made_of,
             rows,
+            has_groups: View::has_groups(playlist),
             plain,
         });
     }
@@ -415,6 +434,8 @@ fn files_list(
         return;
     };
     let marks = marks.as_ref().map(|(_, m)| m);
+    // The menus' switch of the groups, for a list that has them.
+    let groups = view.has_groups.then_some(view.made_of.3);
     frame.show(ui, |ui| {
         ui.set_min_size(ui.available_size());
         if playlist.is_empty() || view.rows.is_empty() {
@@ -450,9 +471,11 @@ fn files_list(
                             count,
                             folded,
                         } => {
-                            if group_header(ui, name, *count, *folded).clicked() {
+                            let response = group_header(ui, name, *count, *folded);
+                            if response.clicked() {
                                 fold = Some(name.clone());
                             }
+                            response.context_menu(|ui| groups_item(ui, groups, out));
                             continue;
                         }
                         Row::Entry(i) => *i,
@@ -513,7 +536,10 @@ fn files_list(
                         }
                         *drag = Some(None);
                     }
-                    response.context_menu(|ui| entry_menu(ui, playlist, i, out));
+                    response.context_menu(|ui| {
+                        entry_menu(ui, playlist, i, out);
+                        groups_item(ui, groups, out);
+                    });
                 }
                 if let (Some(slot), Some(pos)) = (drag.as_mut(), pointer) {
                     *slot = drop_slot(ui, &drawn, pos);
@@ -735,6 +761,23 @@ fn entry_menu(ui: &mut Ui, list: &mut Playlist, index: usize, out: &mut Vec<Cmd>
     }
 }
 
+/// The switch of the groups in a menu, while the list has them (`groups`,
+/// whether they are shown).
+fn groups_item(ui: &mut Ui, groups: Option<bool>, out: &mut Vec<Cmd>) {
+    let Some(shown) = groups else {
+        return;
+    };
+    ui.separator();
+    let mut on = shown;
+    if ui
+        .checkbox(&mut on, tr!("Show the groups", "Показывать группы"))
+        .clicked()
+    {
+        out.push(Cmd::TogglePlaylistGroups);
+        ui.close();
+    }
+}
+
 /// An arrow, down while `open`: a section that folds.
 fn fold_arrow(painter: &Painter, o: Pos2, open: bool) {
     let s = 3.5;
@@ -920,7 +963,7 @@ mod tests {
         };
         // No group yet: the entries as they are.
         assert_eq!(
-            entries(&View::make(&list, "", &HashSet::new())),
+            entries(&View::make(&list, "", &HashSet::new(), true)),
             ["0", "1", "2", "3", "4"]
         );
         list.describe(HashMap::from([
@@ -931,19 +974,24 @@ mod tests {
         ]));
         // The groups in the order they first come; one without a group.
         assert_eq!(
-            entries(&View::make(&list, "", &HashSet::new())),
+            entries(&View::make(&list, "", &HashSet::new(), true)),
             ["[News 2]", "0", "2", "[Films 1]", "1", "[ 2]", "3", "4"]
+        );
+        // Turned off: the entries as they are.
+        assert_eq!(
+            entries(&View::make(&list, "", &HashSet::new(), false)),
+            ["0", "1", "2", "3", "4"]
         );
         let folded = HashSet::from(["News".to_owned()]);
         assert_eq!(
-            entries(&View::make(&list, "", &folded)),
+            entries(&View::make(&list, "", &folded, true)),
             ["[News 2]", "[Films 1]", "1", "[ 2]", "3", "4"]
         );
         // Searching: the groups found, open, with what was found.
         assert_eq!(
-            entries(&View::make(&list, " news ", &folded)),
+            entries(&View::make(&list, " news ", &folded, true)),
             ["[News 2]", "0", "2"]
         );
-        assert!(View::make(&list, "nothing", &folded).is_empty());
+        assert!(View::make(&list, "nothing", &folded, true).is_empty());
     }
 }
