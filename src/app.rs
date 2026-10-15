@@ -1745,7 +1745,31 @@ impl App {
             Cmd::ClearBookmarks => self.settings.bookmarks.clear(),
             Cmd::ToggleUpmix => {
                 self.settings.upmix = !self.settings.upmix;
-                self.osd.show(Osd::Upmix(self.settings.upmix));
+                // On, but doing nothing now: say why, not only "on".
+                let stereo = self
+                    .player
+                    .as_ref()
+                    .and_then(|p| tracks::selected(&p.state.tracks, Kind::Audio))
+                    .map(crate::audio::stereo_track);
+                let why = if !self.settings.upmix {
+                    None
+                } else if !self.settings.audio_channels.takes_upmix() {
+                    Some(tr!(
+                        "[ Stereo to 5.1 on, but Channels makes the sound mono or stereo ]",
+                        "[ Стерео в 5.1 включено, но «Каналы» сводят звук в моно или стерео ]"
+                    ))
+                } else if stereo == Some(false) {
+                    Some(tr!(
+                        "[ Stereo to 5.1 on, for stereo tracks; this one is not ]",
+                        "[ Стерео в 5.1 включено, для стереодорожек; эта не стерео ]"
+                    ))
+                } else {
+                    None
+                };
+                match why {
+                    Some(why) => self.osd.show(Osd::Text(why.to_owned())),
+                    None => self.osd.show(Osd::Upmix(self.settings.upmix)),
+                }
                 ctx.request_repaint();
             }
             Cmd::ToggleInterface => {
@@ -4088,6 +4112,9 @@ impl eframe::App for App {
             self.settings.passthrough,
         );
         let voice_boost = self.settings.voice_boost;
+        let upmix = self.settings.upmix
+            && self.settings.audio_channels.takes_upmix()
+            && tracks::selected(&state.tracks, Kind::Audio).is_some_and(crate::audio::stereo_track);
         let kept = ui::picture::Kept {
             audio_device: &mut self.settings.audio_device,
             devices: &state.audio_devices,
@@ -4121,6 +4148,7 @@ impl eframe::App for App {
                 audio_out: state.live.audio_out.as_ref(),
                 audio_bitrate: state.live.audio_bitrate,
                 voice_boost,
+                upmix,
                 time: state.time.filter(|_| !state.idle),
                 sub_lines: self.sub_lines.as_ref().and_then(|s| s.lines.as_deref()),
                 subs_on: tracks::selected(&state.tracks, Kind::Sub).is_some(),

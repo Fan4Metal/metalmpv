@@ -135,6 +135,8 @@ pub struct Now<'a> {
     /// Clearer speech is on: in stereo its filter adds a centre, and the
     /// device gets three channels.
     pub voice_boost: bool,
+    /// Stereo to 5.1 is on and takes the track: the device gets six.
+    pub upmix: bool,
     /// The position, the lines of the subtitle file shown (one of its own)
     /// and whether subtitles are shown: the timeline of the delay.
     pub time: Option<f64>,
@@ -766,7 +768,12 @@ fn now_playing(ui: &mut Ui, now: &Now<'_>) {
             let layout = out.and_then(|o| o.channels.as_deref());
             arrow(ui, 50.0 * scale);
             let name = layout.map_or_else(|| n.to_string(), str::to_owned);
-            speakers(ui, n, layout, scale).on_hover_text(if now.voice_boost && channels == 2 {
+            speakers(ui, n, layout, scale).on_hover_text(if now.upmix && channels == 2 {
+                tr!(
+                    format!("{name} for the device: Stereo to 5.1 spreads the track"),
+                    format!("{name} для устройства: «Стерео в 5.1» раскладывает дорожку")
+                )
+            } else if now.voice_boost && channels == 2 {
                 tr!(
                     format!("{name} for the device: Clearer speech adds a centre"),
                     format!("{name} для устройства: «Усилить речь» добавляет центр")
