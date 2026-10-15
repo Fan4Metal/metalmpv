@@ -1158,6 +1158,11 @@ impl Player {
         self.ran_out_at = None;
     }
 
+    /// A file was asked for and has not loaded or failed yet.
+    pub fn loading(&self) -> bool {
+        self.loading
+    }
+
     /// Where the data ran out while playback stays at the end (mpv's
     /// position then may be the duration), even when that end was taken as
     /// the file's; `None` at the file's own end.

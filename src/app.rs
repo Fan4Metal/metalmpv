@@ -451,14 +451,20 @@ impl App {
         self.play(index);
     }
 
-    /// Append `paths` to the playlist; play the first of them if nothing
-    /// is playing.
+    /// Append `paths` to the playlist; play the first of them (also one
+    /// already listed) if nothing is playing or loading: the files of
+    /// other starts of a selection in Explorer come while the start's own
+    /// is loading, mpv still idle, and replaced it.
     fn add(&mut self, paths: Vec<PathBuf>) {
         let (paths, channels) = playlist::expand_lists(paths);
         self.playlist.describe(channels);
         let first = self.playlist.add(paths);
+        let busy = self
+            .player
+            .as_ref()
+            .is_some_and(|p| !p.state.idle || p.loading());
         if let Some(first) = first
-            && self.state().idle
+            && !busy
         {
             self.play(first);
         }

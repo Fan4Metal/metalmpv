@@ -508,18 +508,26 @@ impl Playlist {
     }
 
     /// Append `paths` (folders give their media files), leaving out those
-    /// already listed; the index of the first one added.
+    /// already listed; the index of the first of them, added or already
+    /// there (a file dropped again plays when nothing does).
     pub fn add(&mut self, paths: Vec<PathBuf>) -> Option<usize> {
-        let first = self.items.len();
-        // A set, not `contains`: an IPTV list has thousands of entries.
-        let mut listed: HashSet<PathBuf> = self.items.iter().cloned().collect();
+        // A map, not `position`: an IPTV list has thousands of entries.
+        let mut listed: HashMap<PathBuf, usize> = self
+            .items
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (p.clone(), i))
+            .collect();
+        let mut first = None;
         for path in expand(paths) {
-            if listed.insert(path.clone()) {
+            let at = *listed.entry(path.clone()).or_insert_with(|| {
                 self.items.push(path);
-            }
+                self.items.len() - 1
+            });
+            first.get_or_insert(at);
         }
         self.changed();
-        (self.items.len() > first).then_some(first)
+        first
     }
 
     /// Put `entries` (a list mpv opened, with the titles it gave them) in
@@ -1035,12 +1043,16 @@ mod tests {
         assert_eq!(p.current(), Some(0));
         assert_eq!(p.prev(), None);
         assert_eq!(p.next(), Some(1));
-        assert_eq!(p.add(vec!["b.mkv".into(), "c.mkv".into()]), Some(2));
+        // The first of them, already listed: its place.
+        assert_eq!(p.add(vec!["b.mkv".into(), "c.mkv".into()]), Some(1));
         assert_eq!(p.len(), 3);
-        assert_eq!(p.add(vec!["a.mkv".into()]), None);
-        p.set_current(2);
+        assert_eq!(p.add(vec!["d.mkv".into(), "a.mkv".into()]), Some(3));
+        assert_eq!(p.add(vec!["a.mkv".into()]), Some(0));
+        assert_eq!(p.len(), 4);
+        assert_eq!(p.add(Vec::new()), None);
+        p.set_current(3);
         assert_eq!(p.next(), None);
-        assert_eq!(p.prev(), Some(1));
+        assert_eq!(p.prev(), Some(2));
     }
 
     #[test]
