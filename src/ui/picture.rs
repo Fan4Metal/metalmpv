@@ -344,167 +344,173 @@ fn tab_contents(
 }
 
 fn video_tab(ui: &mut Ui, adjust: &mut Adjust, keep: &mut bool) {
-    heading(ui, tr!("Colour", "Цвет"));
-    for c in Color::ALL {
-        let mut value = adjust.get(c);
-        int_row(
-            ui,
-            c.label(),
-            &mut value,
-            &Spec::centred(-100.0..=100.0, 0.0),
-        );
-        adjust.set(c, value);
+    if section(ui, "video_colour", tr!("Colour", "Цвет"), "") {
+        for c in Color::ALL {
+            let mut value = adjust.get(c);
+            int_row(
+                ui,
+                c.label(),
+                &mut value,
+                &Spec::centred(-100.0..=100.0, 0.0),
+            );
+            adjust.set(c, value);
+        }
     }
 
-    heading(ui, tr!("Zoom and pan", "Масштаб и сдвиг"));
-    let zoom = Spec {
-        step: 5.0,
-        suffix: "%",
-        ..Spec::centred(range_of(adjust::ZOOM_RANGE), 100.0)
-    };
-    int_row(ui, tr!("Zoom", "Масштаб"), &mut adjust.zoom, &zoom);
-    let pan = |tip| Spec {
-        suffix: "%",
-        tip: Some(tip),
-        ..Spec::centred(range_of(adjust::PAN_RANGE), 0.0)
-    };
-    int_row(
-        ui,
-        tr!("Across", "По горизонтали"),
-        &mut adjust.pan_x,
-        &pan(tr!("Right when positive", "Положительный — вправо")),
-    );
-    int_row(
-        ui,
-        tr!("Up and down", "По вертикали"),
-        &mut adjust.pan_y,
-        &pan(tr!("Down when positive", "Положительный — вниз")),
-    );
+    if section(ui, "video_zoom", tr!("Zoom and pan", "Масштаб и сдвиг"), "") {
+        let zoom = Spec {
+            step: 5.0,
+            suffix: "%",
+            ..Spec::centred(range_of(adjust::ZOOM_RANGE), 100.0)
+        };
+        int_row(ui, tr!("Zoom", "Масштаб"), &mut adjust.zoom, &zoom);
+        let pan = |tip| Spec {
+            suffix: "%",
+            tip: Some(tip),
+            ..Spec::centred(range_of(adjust::PAN_RANGE), 0.0)
+        };
+        int_row(
+            ui,
+            tr!("Across", "По горизонтали"),
+            &mut adjust.pan_x,
+            &pan(tr!("Right when positive", "Положительный — вправо")),
+        );
+        int_row(
+            ui,
+            tr!("Up and down", "По вертикали"),
+            &mut adjust.pan_y,
+            &pan(tr!("Down when positive", "Положительный — вниз")),
+        );
+    }
 
-    heading(ui, tr!("Enhancement", "Улучшение"));
-    let strength = |tip| Spec {
-        suffix: "%",
-        tip: Some(tip),
-        ..Spec::centred(0.0..=100.0, 0.0)
-    };
-    int_row(
-        ui,
-        tr!("Sharpness", "Резкость"),
-        &mut adjust.sharpen,
-        &strength(tr!(
-            "AMD's contrast adaptive sharpening (CAS), on the processor: hardware decoding then copies each frame back for it",
-            "Адаптивная резкость AMD (CAS), на процессоре: при аппаратном декодировании кадры для неё копируются обратно в память"
-        )),
-    );
-    int_row(
-        ui,
-        tr!("Noise reduction", "Шумоподавление"),
-        &mut adjust.denoise,
-        &strength(tr!(
-            "Smooths out grain and compression noise (hqdn3d); 40% is FFmpeg's usual strength, more blurs. On the processor, as the sharpness",
-            "Сглаживает зерно и шум сжатия (hqdn3d); 40 % — обычная сила FFmpeg, больше — размывает. На процессоре, как резкость"
-        )),
-    );
-    switch_line(
-        ui,
-        &mut adjust.deband,
-        tr!("Smooth gradient banding", "Сглаживание полос градиента"),
-        Some(tr!(
-            "Removes the steps in skies and dark scenes, on the graphics card",
-            "Убирает ступеньки на небе и в тёмных сценах, на видеокарте"
-        )),
-    );
+    if section(ui, "video_enhancement", tr!("Enhancement", "Улучшение"), "") {
+        let strength = |tip| Spec {
+            suffix: "%",
+            tip: Some(tip),
+            ..Spec::centred(0.0..=100.0, 0.0)
+        };
+        int_row(
+            ui,
+            tr!("Sharpness", "Резкость"),
+            &mut adjust.sharpen,
+            &strength(tr!(
+                "AMD's contrast adaptive sharpening (CAS), on the processor: hardware decoding then copies each frame back for it",
+                "Адаптивная резкость AMD (CAS), на процессоре: при аппаратном декодировании кадры для неё копируются обратно в память"
+            )),
+        );
+        int_row(
+            ui,
+            tr!("Noise reduction", "Шумоподавление"),
+            &mut adjust.denoise,
+            &strength(tr!(
+                "Smooths out grain and compression noise (hqdn3d); 40% is FFmpeg's usual strength, more blurs. On the processor, as the sharpness",
+                "Сглаживает зерно и шум сжатия (hqdn3d); 40 % — обычная сила FFmpeg, больше — размывает. На процессоре, как резкость"
+            )),
+        );
+        switch_line(
+            ui,
+            &mut adjust.deband,
+            tr!("Smooth gradient banding", "Сглаживание полос градиента"),
+            Some(tr!(
+                "Removes the steps in skies and dark scenes, on the graphics card",
+                "Убирает ступеньки на небе и в тёмных сценах, на видеокарте"
+            )),
+        );
+    }
 
-    heading(ui, tr!("Picture", "Изображение"));
-    combo_row(
-        ui,
-        tr!("Shape", "Форма кадра"),
-        "video_aspect",
-        adjust.aspect.label(),
-        None,
-        |ui| {
-            for a in Aspect::ALL {
-                ui.selectable_value(&mut adjust.aspect, a, a.label());
-            }
-        },
-    );
-    combo_row(
-        ui,
-        tr!("Deinterlacing", "Чересстрочность"),
-        "video_deinterlace",
-        adjust.deinterlace.label(),
-        Some(tr!(
-            "Weaves interlaced pictures (TV recordings) into whole frames; Auto: the frames marked interlaced",
-            "Сшивает чересстрочные кадры (ТВ-записи) в целые; «Авто» — только помеченные как чересстрочные"
-        )),
-        |ui| {
-            for d in Deinterlace::ALL {
-                ui.selectable_value(&mut adjust.deinterlace, d, d.label());
-            }
-        },
-    );
-    combo_row(
-        ui,
-        tr!("HDR on SDR", "HDR на SDR"),
-        "video_tone_map",
-        adjust.tone_map.label(),
-        Some(tr!(
-            "How an HDR picture is brought down to an ordinary screen",
-            "Как HDR-изображение приводится к обычному экрану"
-        )),
-        |ui| {
-            for t in ToneMap::ALL {
-                ui.selectable_value(&mut adjust.tone_map, t, t.label());
-            }
-        },
-    );
+    if section(ui, "video_picture", tr!("Picture", "Изображение"), "") {
+        combo_row(
+            ui,
+            tr!("Shape", "Форма кадра"),
+            "video_aspect",
+            adjust.aspect.label(),
+            None,
+            |ui| {
+                for a in Aspect::ALL {
+                    ui.selectable_value(&mut adjust.aspect, a, a.label());
+                }
+            },
+        );
+        combo_row(
+            ui,
+            tr!("Deinterlacing", "Чересстрочность"),
+            "video_deinterlace",
+            adjust.deinterlace.label(),
+            Some(tr!(
+                "Weaves interlaced pictures (TV recordings) into whole frames; Auto: the frames marked interlaced",
+                "Сшивает чересстрочные кадры (ТВ-записи) в целые; «Авто» — только помеченные как чересстрочные"
+            )),
+            |ui| {
+                for d in Deinterlace::ALL {
+                    ui.selectable_value(&mut adjust.deinterlace, d, d.label());
+                }
+            },
+        );
+        combo_row(
+            ui,
+            tr!("HDR on SDR", "HDR на SDR"),
+            "video_tone_map",
+            adjust.tone_map.label(),
+            Some(tr!(
+                "How an HDR picture is brought down to an ordinary screen",
+                "Как HDR-изображение приводится к обычному экрану"
+            )),
+            |ui| {
+                for t in ToneMap::ALL {
+                    ui.selectable_value(&mut adjust.tone_map, t, t.label());
+                }
+            },
+        );
+    }
 
-    heading_with(
+    if section(
         ui,
+        "video_rotation",
         tr!("Rotation and flips", "Поворот и отражение"),
         &format!("{}°", adjust.rotate),
-    );
-    // Four icons in a row, named in their tooltips: the turns, then the
-    // flips (lit while on).
-    let (flipped, mirrored) = (adjust.flip, adjust.mirror);
-    let size = Some(vec2(52.0, 28.0));
-    ui.horizontal(|ui| {
-        let left = |p: &_, o, s, c| icons::turn(p, o, s, c, false);
-        let right = |p: &_, o, s, c| icons::turn(p, o, s, c, true);
-        let flip = |p: &_, o, s, c| icons::flip(p, o, s, c, false);
-        let mirror = |p: &_, o, s, c| icons::flip(p, o, s, c, true);
-        if icon_button(ui, left, "", size, |b| b)
-            .on_hover_text(tr!("Turn left by 90°", "Повернуть влево на 90°"))
-            .clicked()
-        {
-            adjust.turn(-1);
-        }
-        if icon_button(ui, right, "", size, |b| b)
-            .on_hover_text(tr!("Turn right by 90°", "Повернуть вправо на 90°"))
-            .clicked()
-        {
-            adjust.turn(1);
-        }
-        ui.add_space(12.0);
-        if icon_button(ui, flip, "", size, |b| b.selected(flipped))
-            .on_hover_text(tr!(
-                "Upside down (on the processor)",
-                "Перевернуть вертикально (на процессоре)"
-            ))
-            .clicked()
-        {
-            adjust.flip = !adjust.flip;
-        }
-        if icon_button(ui, mirror, "", size, |b| b.selected(mirrored))
-            .on_hover_text(tr!(
-                "Mirror (on the processor)",
-                "Отразить зеркально (на процессоре)"
-            ))
-            .clicked()
-        {
-            adjust.mirror = !adjust.mirror;
-        }
-    });
+    ) {
+        // Four icons in a row, named in their tooltips: the turns, then the
+        // flips (lit while on).
+        let (flipped, mirrored) = (adjust.flip, adjust.mirror);
+        let size = Some(vec2(52.0, 28.0));
+        ui.horizontal(|ui| {
+            let left = |p: &_, o, s, c| icons::turn(p, o, s, c, false);
+            let right = |p: &_, o, s, c| icons::turn(p, o, s, c, true);
+            let flip = |p: &_, o, s, c| icons::flip(p, o, s, c, false);
+            let mirror = |p: &_, o, s, c| icons::flip(p, o, s, c, true);
+            if icon_button(ui, left, "", size, |b| b)
+                .on_hover_text(tr!("Turn left by 90°", "Повернуть влево на 90°"))
+                .clicked()
+            {
+                adjust.turn(-1);
+            }
+            if icon_button(ui, right, "", size, |b| b)
+                .on_hover_text(tr!("Turn right by 90°", "Повернуть вправо на 90°"))
+                .clicked()
+            {
+                adjust.turn(1);
+            }
+            ui.add_space(12.0);
+            if icon_button(ui, flip, "", size, |b| b.selected(flipped))
+                .on_hover_text(tr!(
+                    "Upside down (on the processor)",
+                    "Перевернуть вертикально (на процессоре)"
+                ))
+                .clicked()
+            {
+                adjust.flip = !adjust.flip;
+            }
+            if icon_button(ui, mirror, "", size, |b| b.selected(mirrored))
+                .on_hover_text(tr!(
+                    "Mirror (on the processor)",
+                    "Отразить зеркально (на процессоре)"
+                ))
+                .clicked()
+            {
+                adjust.mirror = !adjust.mirror;
+            }
+        });
+    }
 
     ui.add_space(10.0);
     ui.horizontal(|ui| {
@@ -532,150 +538,152 @@ fn sound_tab(
     naming: &mut Option<String>,
     out: &mut Vec<Cmd>,
 ) {
-    heading(ui, tr!("Now playing", "Сейчас играет"));
-    now_playing(ui, &now);
+    if section(ui, "sound_now", tr!("Now playing", "Сейчас играет"), "") {
+        now_playing(ui, &now);
+    }
 
-    heading(ui, tr!("Output", "Вывод"));
-    let device_tip = tr!(
-        "The sound moves to it at once; kept between runs.",
-        "Звук переходит на него сразу; запоминается между запусками."
-    );
-    labelled_tip(
-        ui,
-        tr!("Device", "Устройство"),
-        Some(device_tip),
-        |ui| {
-            let width = ui.available_width();
-            super::settings::device_choice(
-                ui,
-                "panel_audio_device",
-                kept.audio_device,
-                kept.devices,
-                width,
-            );
-        },
-    );
-    if !super::settings::device_present(kept.audio_device, kept.devices) {
-        note(
-            ui,
-            tr!(
-                "Not connected: the sound goes to Windows' default until it is back.",
-                "Не подключено: звук идёт через устройство Windows по умолчанию, пока оно не вернётся."
-            ),
+    if section(ui, "sound_output", tr!("Output", "Вывод"), "") {
+        let device_tip = tr!(
+            "The sound moves to it at once; kept between runs.",
+            "Звук переходит на него сразу; запоминается между запусками."
         );
-    }
-    combo_row(
-        ui,
-        tr!("Channels", "Каналы"),
-        "panel_channels",
-        kept.channels.label(),
-        Some(tr!(
-            "Auto: as the device is set up in Windows, more channels mixed down to it; a layout chosen by hand is what the sound is mixed to",
-            "«Авто» — как устройство настроено в Windows, лишние каналы сводятся под него; раскладка, выбранная вручную, — то, под что сводится звук"
-        )),
-        |ui| {
-            for c in Channels::ALL {
-                ui.selectable_value(kept.channels, c, c.label());
-            }
-        },
-    );
-    combo_row(
-        ui,
-        tr!("Receiver", "Ресивер"),
-        "panel_passthrough",
-        kept.passthrough.label(),
-        Some(tr!(
-            "Dolby and DTS sound goes out compressed and the receiver decodes it; the volume, normalization, equalizer and channels here do not apply to it, and Windows gives the device to the player alone. A format the device does not take is decoded as usual",
-            "Звук Dolby и DTS уходит в сжатом виде, его декодирует ресивер; громкость, нормализация, эквалайзер и каналы программы на него не действуют, а Windows отдаёт устройство только плееру. Формат, который устройство не принимает, декодируется как обычно"
-        )),
-        |ui| {
-            for p in Passthrough::ALL {
-                ui.selectable_value(kept.passthrough, p, p.label());
-            }
-        },
-    );
-    let mut delay = now.audio_delay;
-    if value_row(
-        ui,
-        tr!("Delay", "Задержка"),
-        &mut delay,
-        &Spec::delay(&delay_tip(
-            tr!(
-                "Later when positive; not kept between runs.",
-                "Положительная — звук позже; между запусками не запоминается."
-            ),
-            Cmd::AudioDelay(1.0),
-            Cmd::AudioDelay(-1.0),
-        )),
-    ) {
-        out.push(Cmd::SetAudioDelay(delay));
-    }
-
-    heading(ui, tr!("Volume", "Громкость"));
-    combo_row(
-        ui,
-        tr!("Boost", "Усиление"),
-        "panel_volume_max",
-        &audio::boost_label(*kept.volume_max),
-        Some(tr!(
-            "How far the volume goes past 100%; a loud passage may then distort",
-            "Насколько громкость может превышать 100 %; на громких местах возможны искажения"
-        )),
-        |ui| {
-            for b in audio::BOOSTS {
-                ui.selectable_value(kept.volume_max, b, audio::boost_label(b));
-            }
-        },
-    );
-    switch_line(
-        ui,
-        kept.normalize,
-        tr!("Normalization", "Нормализация"),
-        Some(tr!(
-            "Evens out the volume as the film plays: quiet dialogue louder, loud scenes quieter. Not for sound sent to a receiver undecoded",
-            "Выравнивает громкость по ходу фильма: тихие диалоги громче, громкие сцены тише. Не действует на звук, передаваемый на ресивер без декодирования"
-        )),
-    );
-    // A function's settings only while it is on: the tab grew long.
-    if *kept.normalize {
+        labelled_tip(
+            ui,
+            tr!("Device", "Устройство"),
+            Some(device_tip),
+            |ui| {
+                let width = ui.available_width();
+                super::settings::device_choice(
+                    ui,
+                    "panel_audio_device",
+                    kept.audio_device,
+                    kept.devices,
+                    width,
+                );
+            },
+        );
+        if !super::settings::device_present(kept.audio_device, kept.devices) {
+            note(
+                ui,
+                tr!(
+                    "Not connected: the sound goes to Windows' default until it is back.",
+                    "Не подключено: звук идёт через устройство Windows по умолчанию, пока оно не вернётся."
+                ),
+            );
+        }
         combo_row(
             ui,
-            tr!("Strength", "Сила"),
-            "panel_normalize_strength",
-            kept.normalize_strength.label(),
+            tr!("Channels", "Каналы"),
+            "panel_channels",
+            kept.channels.label(),
             Some(tr!(
-                "Soft: raises quiet passages 3 times at most and follows slowly, the change hardly heard. Medium: 5 times. Strong: 10 times and quickly, whispers and blasts alike, for the night",
-                "Мягкая: поднимает тихие места не больше чем в 3 раза и подстраивается медленно, изменения почти не слышны. Средняя: в 5 раз. Сильная: в 10 раз и быстро, шёпот и взрывы почти вровень, для ночного просмотра"
+                "Auto: as the device is set up in Windows, more channels mixed down to it; a layout chosen by hand is what the sound is mixed to",
+                "«Авто» — как устройство настроено в Windows, лишние каналы сводятся под него; раскладка, выбранная вручную, — то, под что сводится звук"
             )),
             |ui| {
-                for n in audio::Normalize::ALL {
-                    ui.selectable_value(kept.normalize_strength, n, n.label());
+                for c in Channels::ALL {
+                    ui.selectable_value(kept.channels, c, c.label());
                 }
             },
         );
-    }
-    switch_line(
-        ui,
-        kept.voice_boost,
-        tr!("Clearer speech", "Усилить речь"),
-        Some(tr!(
-            "Raises the voice over the music: in stereo through FFmpeg's dialogue enhancer, in 5.1 and more through the centre channel; mono stays as it is. Not for sound sent to a receiver undecoded",
-            "Поднимает голос над музыкой: в стерео — фильтром FFmpeg для диалогов, в 5.1 и больше — центральным каналом; моно остаётся как есть. Не действует на звук, передаваемый на ресивер без декодирования"
-        )),
-    );
-    if *kept.voice_boost {
-        let strength = Spec {
-            suffix: tr!(" dB", " дБ"),
-            tip: Some(tr!(
-                "How much louder the voice is than the rest: the centre channel is raised up to 12 dB, past that the other channels are lowered instead, so that a loud voice does not distort; in stereo the dialogue enhancer works as strongly first",
-                "Насколько голос громче остального: центральный канал поднимается до 12 дБ, сильнее — вместо этого приглушаются остальные каналы, чтобы громкий голос не хрипел; в стерео сначала с той же силой работает фильтр для диалогов"
+        combo_row(
+            ui,
+            tr!("Receiver", "Ресивер"),
+            "panel_passthrough",
+            kept.passthrough.label(),
+            Some(tr!(
+                "Dolby and DTS sound goes out compressed and the receiver decodes it; the volume, normalization, equalizer and channels here do not apply to it, and Windows gives the device to the player alone. A format the device does not take is decoded as usual",
+                "Звук Dolby и DTS уходит в сжатом виде, его декодирует ресивер; громкость, нормализация, эквалайзер и каналы программы на него не действуют, а Windows отдаёт устройство только плееру. Формат, который устройство не принимает, декодируется как обычно"
             )),
-            ..Spec::centred(range_of(audio::VOICE_RANGE), audio::VOICE_DEFAULT as f64)
-        };
-        int_row(ui, tr!("Strength", "Сила"), kept.voice_db, &strength);
+            |ui| {
+                for p in Passthrough::ALL {
+                    ui.selectable_value(kept.passthrough, p, p.label());
+                }
+            },
+        );
+        let mut delay = now.audio_delay;
+        if value_row(
+            ui,
+            tr!("Delay", "Задержка"),
+            &mut delay,
+            &Spec::delay(&delay_tip(
+                tr!(
+                    "Later when positive; not kept between runs.",
+                    "Положительная — звук позже; между запусками не запоминается."
+                ),
+                Cmd::AudioDelay(1.0),
+                Cmd::AudioDelay(-1.0),
+            )),
+        ) {
+            out.push(Cmd::SetAudioDelay(delay));
+        }
     }
-    let takes = kept.channels.takes_upmix();
-    ui.add_enabled_ui(takes, |ui| {
+
+    if section(ui, "sound_volume", tr!("Volume", "Громкость"), "") {
+        combo_row(
+            ui,
+            tr!("Boost", "Усиление"),
+            "panel_volume_max",
+            &audio::boost_label(*kept.volume_max),
+            Some(tr!(
+                "How far the volume goes past 100%; a loud passage may then distort",
+                "Насколько громкость может превышать 100 %; на громких местах возможны искажения"
+            )),
+            |ui| {
+                for b in audio::BOOSTS {
+                    ui.selectable_value(kept.volume_max, b, audio::boost_label(b));
+                }
+            },
+        );
+        switch_line(
+            ui,
+            kept.normalize,
+            tr!("Normalization", "Нормализация"),
+            Some(tr!(
+                "Evens out the volume as the film plays: quiet dialogue louder, loud scenes quieter. Not for sound sent to a receiver undecoded",
+                "Выравнивает громкость по ходу фильма: тихие диалоги громче, громкие сцены тише. Не действует на звук, передаваемый на ресивер без декодирования"
+            )),
+        );
+        // A function's settings only while it is on: the tab grew long.
+        if *kept.normalize {
+            combo_row(
+                ui,
+                tr!("Strength", "Сила"),
+                "panel_normalize_strength",
+                kept.normalize_strength.label(),
+                Some(tr!(
+                    "Soft: raises quiet passages 3 times at most and follows slowly, the change hardly heard. Medium: 5 times. Strong: 10 times and quickly, whispers and blasts alike, for the night",
+                    "Мягкая: поднимает тихие места не больше чем в 3 раза и подстраивается медленно, изменения почти не слышны. Средняя: в 5 раз. Сильная: в 10 раз и быстро, шёпот и взрывы почти вровень, для ночного просмотра"
+                )),
+                |ui| {
+                    for n in audio::Normalize::ALL {
+                        ui.selectable_value(kept.normalize_strength, n, n.label());
+                    }
+                },
+            );
+        }
+        switch_line(
+            ui,
+            kept.voice_boost,
+            tr!("Clearer speech", "Усилить речь"),
+            Some(tr!(
+                "Raises the voice over the music: in stereo through FFmpeg's dialogue enhancer, in 5.1 and more through the centre channel; mono stays as it is. Not for sound sent to a receiver undecoded",
+                "Поднимает голос над музыкой: в стерео — фильтром FFmpeg для диалогов, в 5.1 и больше — центральным каналом; моно остаётся как есть. Не действует на звук, передаваемый на ресивер без декодирования"
+            )),
+        );
+        if *kept.voice_boost {
+            let strength = Spec {
+                suffix: tr!(" dB", " дБ"),
+                tip: Some(tr!(
+                    "How much louder the voice is than the rest: the centre channel is raised up to 12 dB, past that the other channels are lowered instead, so that a loud voice does not distort; in stereo the dialogue enhancer works as strongly first",
+                    "Насколько голос громче остального: центральный канал поднимается до 12 дБ, сильнее — вместо этого приглушаются остальные каналы, чтобы громкий голос не хрипел; в стерео сначала с той же силой работает фильтр для диалогов"
+                )),
+                ..Spec::centred(range_of(audio::VOICE_RANGE), audio::VOICE_DEFAULT as f64)
+            };
+            int_row(ui, tr!("Strength", "Сила"), kept.voice_db, &strength);
+        }
+        let takes = kept.channels.takes_upmix();
+        ui.add_enabled_ui(takes, |ui| {
         let tip = if takes {
             tr!(
                 "Spreads a stereo track over 5.1: what both sides share, mostly the voice, to the centre, what differs to the surrounds, the low end to the subwoofer. For speakers that take 5.1 or more (as set up in Windows, or Channels above); other tracks stay as they are, and sound sent to a receiver undecoded too",
@@ -689,80 +697,83 @@ fn sound_tab(
         };
         switch_line(ui, kept.upmix, tr!("Stereo to 5.1", "Стерео в 5.1"), Some(tip));
     });
-    // The subwoofer of the upmix, while it is on.
-    if takes && *kept.upmix {
-        let d = audio::Upmix::default();
-        let cut = Spec {
-            step: 5.0,
-            suffix: tr!(" Hz", " Гц"),
+        // The subwoofer of the upmix, while it is on.
+        if takes && *kept.upmix {
+            let d = audio::Upmix::default();
+            let cut = Spec {
+                step: 5.0,
+                suffix: tr!(" Hz", " Гц"),
+                tip: Some(tr!(
+                    "Below it the low end goes to the subwoofer, fading out up to twice that. 80 Hz is the cinemas' crossover; higher, the bass starts to sound as if it came from the subwoofer",
+                    "Ниже неё низкие частоты уходят на сабвуфер, затухая до удвоенной частоты. 80 Гц — разделение, принятое в кинотеатрах; выше бас начинает звучать так, будто идёт от сабвуфера"
+                )),
+                ..Spec::centred(range_of(audio::LFE_CUT_RANGE), d.lfe_cut as f64)
+            };
+            int_row(
+                ui,
+                tr!("Subwoofer up to", "Сабвуфер до"),
+                &mut kept.upmix_lfe.lfe_cut,
+                &cut,
+            );
+            switch_line(
+                ui,
+                &mut kept.upmix_lfe.bass_only,
+                tr!("Bass to the subwoofer only", "Басы только в сабвуфер"),
+                Some(tr!(
+                    "The low end taken out of the other speakers, not only copied to the subwoofer: for small front speakers",
+                    "Низкие частоты убираются из остальных колонок, а не только дублируются в сабвуфер: для небольших фронтальных колонок"
+                )),
+            );
+        }
+    }
+
+    if section(ui, "sound_subwoofer", tr!("Subwoofer", "Сабвуфер"), "") {
+        let d = audio::Subwoofer::default();
+        let level = Spec {
+            suffix: tr!(" dB", " дБ"),
             tip: Some(tr!(
-                "Below it the low end goes to the subwoofer, fading out up to twice that. 80 Hz is the cinemas' crossover; higher, the bass starts to sound as if it came from the subwoofer",
-                "Ниже неё низкие частоты уходят на сабвуфер, затухая до удвоенной частоты. 80 Гц — разделение, принятое в кинотеатрах; выше бас начинает звучать так, будто идёт от сабвуфера"
+                "The subwoofer channel of 5.1 and 7.1 tracks against the track's own level; with Stereo to 5.1, against the standard one (10 dB under the others: receivers and sound systems play it that much louder). Lower if the bass booms",
+                "Канал сабвуфера дорожек 5.1 и 7.1 относительно уровня в самой дорожке; со «Стерео в 5.1» — относительно стандартного (на 10 дБ ниже остальных: ресиверы и звуковые системы воспроизводят его настолько громче). Если бас бухает, ниже"
             )),
-            ..Spec::centred(range_of(audio::LFE_CUT_RANGE), d.lfe_cut as f64)
+            ..Spec::centred(range_of(audio::LFE_LEVEL_RANGE), d.level as f64)
         };
         int_row(
             ui,
-            tr!("Subwoofer up to", "Сабвуфер до"),
-            &mut kept.upmix_lfe.lfe_cut,
-            &cut,
+            tr!("Level", "Уровень"),
+            &mut kept.subwoofer.level,
+            &level,
         );
         switch_line(
             ui,
-            &mut kept.upmix_lfe.bass_only,
-            tr!("Bass to the subwoofer only", "Басы только в сабвуфер"),
+            &mut kept.subwoofer.infrasonic,
+            tr!("Cut the infrasound", "Срез инфранизких"),
             Some(tr!(
-                "The low end taken out of the other speakers, not only copied to the subwoofer: for small front speakers",
-                "Низкие частоты убираются из остальных колонок, а не только дублируются в сабвуфер: для небольших фронтальных колонок"
+                "Takes out what lies under the frequency below in all channels: a subwoofer hardly plays it, but its cone is driven to the limit, and the bass bubbles and chuffs. Films with deep bass have much of it. Not for sound sent to a receiver undecoded",
+                "Убирает во всех каналах то, что ниже частоты под переключателем: сабвуфер это почти не воспроизводит, но его диффузор доходит до предела хода, и бас булькает и хлопает. В фильмах с глубоким басом такого много. Не действует на звук, передаваемый на ресивер без декодирования"
             )),
         );
+        if kept.subwoofer.infrasonic {
+            let cut = Spec {
+                suffix: tr!(" Hz", " Гц"),
+                tip: Some(tr!(
+                    "Half as loud at it and fading by 24 dB an octave below. Higher for a small subwoofer, lower for a large one",
+                    "На ней звук вдвое тише, ниже затухает на 24 дБ на октаву. Для небольшого сабвуфера выше, для большого ниже"
+                )),
+                ..Spec::centred(range_of(audio::INFRASONIC_RANGE), d.infrasonic_hz as f64)
+            };
+            int_row(
+                ui,
+                tr!("Below", "Ниже"),
+                &mut kept.subwoofer.infrasonic_hz,
+                &cut,
+            );
+        }
     }
 
-    heading(ui, tr!("Subwoofer", "Сабвуфер"));
-    let d = audio::Subwoofer::default();
-    let level = Spec {
-        suffix: tr!(" dB", " дБ"),
-        tip: Some(tr!(
-            "The subwoofer channel of 5.1 and 7.1 tracks against the track's own level; with Stereo to 5.1, against the standard one (10 dB under the others: receivers and sound systems play it that much louder). Lower if the bass booms",
-            "Канал сабвуфера дорожек 5.1 и 7.1 относительно уровня в самой дорожке; со «Стерео в 5.1» — относительно стандартного (на 10 дБ ниже остальных: ресиверы и звуковые системы воспроизводят его настолько громче). Если бас бухает, ниже"
-        )),
-        ..Spec::centred(range_of(audio::LFE_LEVEL_RANGE), d.level as f64)
-    };
-    int_row(
-        ui,
-        tr!("Level", "Уровень"),
-        &mut kept.subwoofer.level,
-        &level,
-    );
-    switch_line(
-        ui,
-        &mut kept.subwoofer.infrasonic,
-        tr!("Cut the infrasound", "Срез инфранизких"),
-        Some(tr!(
-            "Takes out what lies under the frequency below in all channels: a subwoofer hardly plays it, but its cone is driven to the limit, and the bass bubbles and chuffs. Films with deep bass have much of it. Not for sound sent to a receiver undecoded",
-            "Убирает во всех каналах то, что ниже частоты под переключателем: сабвуфер это почти не воспроизводит, но его диффузор доходит до предела хода, и бас булькает и хлопает. В фильмах с глубоким басом такого много. Не действует на звук, передаваемый на ресивер без декодирования"
-        )),
-    );
-    if kept.subwoofer.infrasonic {
-        let cut = Spec {
-            suffix: tr!(" Hz", " Гц"),
-            tip: Some(tr!(
-                "Half as loud at it and fading by 24 dB an octave below. Higher for a small subwoofer, lower for a large one",
-                "На ней звук вдвое тише, ниже затухает на 24 дБ на октаву. Для небольшого сабвуфера выше, для большого ниже"
-            )),
-            ..Spec::centred(range_of(audio::INFRASONIC_RANGE), d.infrasonic_hz as f64)
-        };
-        int_row(
-            ui,
-            tr!("Below", "Ниже"),
-            &mut kept.subwoofer.infrasonic_hz,
-            &cut,
-        );
+    if section(ui, "sound_equalizer", tr!("Equalizer", "Эквалайзер"), "") {
+        eq_head(ui, kept.equalizer, kept.eq_presets, naming);
+        bands(ui, kept.equalizer);
     }
-
-    heading(ui, tr!("Equalizer", "Эквалайзер"));
-    eq_head(ui, kept.equalizer, kept.eq_presets, naming);
-    bands(ui, kept.equalizer);
 }
 
 /// The audio track playing: its channels drawn as speakers round the
@@ -1163,134 +1174,144 @@ fn subtitles_tab(
 ) {
     let style = &mut *kept.subs;
     let d = SubStyle::default();
-    heading(ui, tr!("Style", "Стиль"));
-    looks(ui, style, kept.sub_presets, naming);
-    ui.add_space(4.0);
-    preview(ui, style);
-
-    heading(ui, tr!("Text", "Текст"));
     let text_only = tr!(
         "For text subtitles (SRT and the like), and ASS ones with Style for ASS too",
         "Для текстовых субтитров (SRT и подобных), а со «Стиль и для ASS» — и для ASS"
     );
-    labelled_tip(ui, tr!("Font", "Шрифт"), Some(text_only), |ui| {
-        let width = ui.available_width() - RESET - ui.spacing().item_spacing.x;
-        if let Some(family) = super::settings::font_choice(ui, "panel_sub_font", &style.font, width)
-        {
-            style.font = family.map(|f| f.name.clone()).unwrap_or_default();
-        }
-        if reset(ui, style.font != d.font, tr!("Default", "По умолчанию")) {
-            style.font.clear();
-        }
-    });
-    let size = Spec {
-        step: 5.0,
-        suffix: "%",
-        tip: Some(tr!("For all subtitles", "Для всех субтитров")),
-        ..Spec::centred(sub_style::SCALE_RANGE, d.scale)
-    };
-    value_row(ui, tr!("Size", "Размер"), &mut style.scale, &size);
-    switch_line(ui, &mut style.bold, tr!("Bold", "Жирные"), None);
-
-    heading(ui, tr!("Colour", "Цвет"));
-    color_row(
-        ui,
-        tr!("Letters", "Буквы"),
-        text_only,
-        &mut style.color,
-        d.color,
-    );
-    // With the box, the outline's colour and thickness are the box's
-    // colour and margin.
-    let (outline, thickness) = if style.boxed {
-        (tr!("Box", "Подложка"), tr!("Margin", "Поля"))
-    } else {
-        (tr!("Outline", "Обводка"), tr!("Thickness", "Толщина"))
-    };
-    color_row(
-        ui,
-        outline,
-        text_only,
-        &mut style.outline_color,
-        d.outline_color,
-    );
-    let thick = Spec {
-        step: 0.05,
-        decimals: 2,
-        default: d.outline,
-        ..Spec::centred(sub_style::OUTLINE_RANGE, 0.0)
-    };
-    value_row(ui, thickness, &mut style.outline, &thick);
-    let shadow = Spec {
-        step: 0.25,
-        decimals: 2,
-        ..Spec::centred(sub_style::SHADOW_RANGE, d.shadow)
-    };
-    value_row(ui, tr!("Shadow", "Тень"), &mut style.shadow, &shadow);
-    switch_line(
-        ui,
-        &mut style.boxed,
-        tr!("A box behind the text", "Подложка под текстом"),
-        Some(tr!(
-            "A slightly see-through box behind each line in place of the outline, of the outline's colour",
-            "Полупрозрачная плашка под каждой строкой вместо обводки, цвета обводки"
-        )),
-    );
-
-    heading(ui, tr!("Place and timing", "Положение и время"));
-    let height = Spec {
-        tip: Some(tr!(
-            "For all subtitles; 100 is the bottom",
-            "Для всех субтитров; 100 — внизу"
-        )),
-        ..Spec::centred(sub_style::POS_RANGE, d.pos)
-    };
-    value_row(ui, tr!("Height", "Высота"), &mut style.pos, &height);
-    let mut delay = now.sub_delay;
-    if value_row(
-        ui,
-        tr!("Delay", "Задержка"),
-        &mut delay,
-        &Spec::delay(&delay_tip(
-            tr!(
-                "Later when positive; not kept between runs.",
-                "Положительная — субтитры позже; между запусками не запоминается."
-            ),
-            Cmd::SubDelay(1.0),
-            Cmd::SubDelay(-1.0),
-        )),
-    ) {
-        out.push(Cmd::SetSubDelay(delay));
+    if section(ui, "subs_style", tr!("Style", "Стиль"), "") {
+        looks(ui, style, kept.sub_presets, naming);
+        ui.add_space(4.0);
+        preview(ui, style);
     }
-    super::sub_timeline::show(
+
+    if section(ui, "subs_text", tr!("Text", "Текст"), "") {
+        labelled_tip(ui, tr!("Font", "Шрифт"), Some(text_only), |ui| {
+            let width = ui.available_width() - RESET - ui.spacing().item_spacing.x;
+            if let Some(family) =
+                super::settings::font_choice(ui, "panel_sub_font", &style.font, width)
+            {
+                style.font = family.map(|f| f.name.clone()).unwrap_or_default();
+            }
+            if reset(ui, style.font != d.font, tr!("Default", "По умолчанию")) {
+                style.font.clear();
+            }
+        });
+        let size = Spec {
+            step: 5.0,
+            suffix: "%",
+            tip: Some(tr!("For all subtitles", "Для всех субтитров")),
+            ..Spec::centred(sub_style::SCALE_RANGE, d.scale)
+        };
+        value_row(ui, tr!("Size", "Размер"), &mut style.scale, &size);
+        switch_line(ui, &mut style.bold, tr!("Bold", "Жирные"), None);
+    }
+
+    if section(ui, "subs_colour", tr!("Colour", "Цвет"), "") {
+        color_row(
+            ui,
+            tr!("Letters", "Буквы"),
+            text_only,
+            &mut style.color,
+            d.color,
+        );
+        // With the box, the outline's colour and thickness are the box's
+        // colour and margin.
+        let (outline, thickness) = if style.boxed {
+            (tr!("Box", "Подложка"), tr!("Margin", "Поля"))
+        } else {
+            (tr!("Outline", "Обводка"), tr!("Thickness", "Толщина"))
+        };
+        color_row(
+            ui,
+            outline,
+            text_only,
+            &mut style.outline_color,
+            d.outline_color,
+        );
+        let thick = Spec {
+            step: 0.05,
+            decimals: 2,
+            default: d.outline,
+            ..Spec::centred(sub_style::OUTLINE_RANGE, 0.0)
+        };
+        value_row(ui, thickness, &mut style.outline, &thick);
+        let shadow = Spec {
+            step: 0.25,
+            decimals: 2,
+            ..Spec::centred(sub_style::SHADOW_RANGE, d.shadow)
+        };
+        value_row(ui, tr!("Shadow", "Тень"), &mut style.shadow, &shadow);
+        switch_line(
+            ui,
+            &mut style.boxed,
+            tr!("A box behind the text", "Подложка под текстом"),
+            Some(tr!(
+                "A slightly see-through box behind each line in place of the outline, of the outline's colour",
+                "Полупрозрачная плашка под каждой строкой вместо обводки, цвета обводки"
+            )),
+        );
+    }
+
+    if section(
         ui,
-        super::sub_timeline::Timeline {
-            lines: now.sub_lines,
-            time: now.time,
-            delay: now.sub_delay,
-            subs_on: now.subs_on,
-            subs_external: now.subs_external,
-        },
-        out,
-    );
-    switch_line(
-        ui,
-        kept.sub_margins,
-        tr!("In the black bars", "В чёрных полях"),
-        Some(tr!(
-            "Where the picture has black bars, the subtitles go in them, ASS ones too; off, over the picture",
-            "Если у изображения есть чёрные поля, субтитры, в том числе ASS, идут в них; выключено — поверх изображения"
-        )),
-    );
-    switch_line(
-        ui,
-        kept.sub_ass_override,
-        tr!("Style for ASS too", "Стиль и для ASS"),
-        Some(tr!(
-            "The font, the colours and the outline above replace those of ASS subtitles too (their signs and effects lose their look)",
-            "Шрифт, цвета и обводка выше заменяют и стили субтитров ASS (надписи и эффекты в них теряют свой вид)"
-        )),
-    );
+        "subs_place",
+        tr!("Place and timing", "Положение и время"),
+        "",
+    ) {
+        let height = Spec {
+            tip: Some(tr!(
+                "For all subtitles; 100 is the bottom",
+                "Для всех субтитров; 100 — внизу"
+            )),
+            ..Spec::centred(sub_style::POS_RANGE, d.pos)
+        };
+        value_row(ui, tr!("Height", "Высота"), &mut style.pos, &height);
+        let mut delay = now.sub_delay;
+        if value_row(
+            ui,
+            tr!("Delay", "Задержка"),
+            &mut delay,
+            &Spec::delay(&delay_tip(
+                tr!(
+                    "Later when positive; not kept between runs.",
+                    "Положительная — субтитры позже; между запусками не запоминается."
+                ),
+                Cmd::SubDelay(1.0),
+                Cmd::SubDelay(-1.0),
+            )),
+        ) {
+            out.push(Cmd::SetSubDelay(delay));
+        }
+        super::sub_timeline::show(
+            ui,
+            super::sub_timeline::Timeline {
+                lines: now.sub_lines,
+                time: now.time,
+                delay: now.sub_delay,
+                subs_on: now.subs_on,
+                subs_external: now.subs_external,
+            },
+            out,
+        );
+        switch_line(
+            ui,
+            kept.sub_margins,
+            tr!("In the black bars", "В чёрных полях"),
+            Some(tr!(
+                "Where the picture has black bars, the subtitles go in them, ASS ones too; off, over the picture",
+                "Если у изображения есть чёрные поля, субтитры, в том числе ASS, идут в них; выключено — поверх изображения"
+            )),
+        );
+        switch_line(
+            ui,
+            kept.sub_ass_override,
+            tr!("Style for ASS too", "Стиль и для ASS"),
+            Some(tr!(
+                "The font, the colours and the outline above replace those of ASS subtitles too (their signs and effects lose their look)",
+                "Шрифт, цвета и обводка выше заменяют и стили субтитров ASS (надписи и эффекты в них теряют свой вид)"
+            )),
+        );
+    }
 
     ui.add_space(10.0);
     if reset_all(ui, *style != d) {
@@ -1654,22 +1675,57 @@ fn note(ui: &mut Ui, text: &str) {
     ui.label(RichText::new(text).size(12.0).color(style::TEXT_WEAK));
 }
 
-/// A group's title: small and muted, as the tracks' kinds in the
-/// information window, with room above it.
-fn heading(ui: &mut Ui, text: &str) {
-    heading_with(ui, text, "");
-}
-
-/// A group's title with `note` (a value) at the right end of its line.
-fn heading_with(ui: &mut Ui, text: &str, note: &str) {
+/// A group's title, which folds the group (open at first; the state in
+/// egui memory under a global id, so that the tabs laid out unseen to
+/// measure the panel fold alike), with `note` (a value) at the right end of
+/// its line. True while the group is open.
+fn section(ui: &mut Ui, key: &str, text: &str, note: &str) -> bool {
+    let id = egui::Id::new(("panel_section", key));
+    let open = ui.ctx().data_mut(|d| *d.get_persisted_mut_or(id, true));
     ui.add_space(10.0);
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(text).small().strong().color(style::TEXT_WEAK));
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.label(RichText::new(note).small().color(style::TEXT_WEAK));
-        });
-    });
+    let height = 16.0;
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let open = if response.clicked() {
+        ui.ctx().data_mut(|d| d.insert_persisted(id, !open));
+        !open
+    } else {
+        open
+    };
+    let color = if response.hovered() {
+        style::TEXT
+    } else {
+        style::TEXT_WEAK
+    };
+    let painter = ui.painter();
+    // The arrow: right when folded, down when open.
+    let centre = pos2(rect.left() + 4.0, rect.center().y);
+    let points = if open {
+        [vec2(-3.5, -1.75), vec2(0.0, 1.75), vec2(3.5, -1.75)]
+    } else {
+        [vec2(-1.75, -3.5), vec2(1.75, 0.0), vec2(-1.75, 3.5)]
+    }
+    .map(|p| centre + p)
+    .to_vec();
+    painter.add(egui::Shape::line(points, Stroke::new(1.5, color)));
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    painter.text(
+        pos2(rect.left() + 14.0, rect.center().y),
+        Align2::LEFT_CENTER,
+        text,
+        font.clone(),
+        color,
+    );
+    painter.text(
+        pos2(rect.right(), rect.center().y),
+        Align2::RIGHT_CENTER,
+        note,
+        font,
+        style::TEXT_WEAK,
+    );
     ui.add_space(2.0);
+    open
 }
 
 /// Sample text drawn large as the subtitles look, on a ground from dark to
