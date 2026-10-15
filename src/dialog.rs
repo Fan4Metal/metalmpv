@@ -21,7 +21,8 @@ pub enum Ask {
     Open {
         add: bool,
     },
-    Subtitles,
+    /// Subtitles for the file playing when asked: they go to no other.
+    Subtitles(PathBuf),
     SavePlaylist,
     /// The cover's bytes, as they were when asked.
     SaveCover(Vec<u8>),
@@ -36,7 +37,7 @@ impl Ask {
         match self {
             Ask::Open { add: false } => "open",
             Ask::Open { add: true } => "add",
-            Ask::Subtitles => "subtitles",
+            Ask::Subtitles(_) => "subtitles",
             Ask::SavePlaylist => "the playlist",
             Ask::SaveCover(_) => "the cover",
             Ask::FramesFolder => "the frames' folder",

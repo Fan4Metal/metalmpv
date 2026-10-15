@@ -968,7 +968,15 @@ impl App {
         match answer.ask {
             Ask::Open { add: true } => self.add(answer.paths),
             Ask::Open { add: false } => self.open(answer.paths),
-            Ask::Subtitles => self.add_subtitles(&path),
+            Ask::Subtitles(file) => {
+                // Not for another file than the one they were chosen for:
+                // it may have ended, or another been chosen, meanwhile.
+                if !self.state_idle() && self.playlist.current_path() == Some(file.as_path()) {
+                    self.add_subtitles(&path);
+                } else {
+                    log::info!("subtitles for {} dropped: it plays no more", file.display());
+                }
+            }
             Ask::SavePlaylist => {
                 if let Err(e) = std::fs::write(&path, playlist::m3u_text(&self.playlist)) {
                     log::warn!("cannot save the playlist to {}: {e}", path.display());
@@ -1125,9 +1133,10 @@ impl App {
 
     /// Ask for a subtitle file for the playing video.
     fn pick_subtitles(&mut self, ctx: &egui::Context) {
-        if self.state().idle {
+        let Some(file) = self.playlist.current_path().filter(|_| !self.state_idle()) else {
             return;
-        }
+        };
+        let file = file.to_path_buf();
         let dir = self.current_folder();
         let make = move || {
             let dialog = rfd::FileDialog::new()
@@ -1139,7 +1148,7 @@ impl App {
                 None => dialog,
             }
         };
-        self.ask(ctx, Ask::Subtitles, make, dialog::pick_file);
+        self.ask(ctx, Ask::Subtitles(file), make, dialog::pick_file);
     }
 
     /// Ask for the folder Save the frame writes to.
