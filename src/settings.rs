@@ -41,8 +41,9 @@ const FULLSCREEN_TITLE: &str = "fullscreen_title";
 /// Keys of settings there are no more, removed when saving: the panels
 /// could be unpinned (the information window is always pinned now, the
 /// Video, sound and subtitles panel stands over its button), the chips of
-/// the information window could be grey (they are always in colour).
-const DROPPED: [&str; 3] = ["panels_pinned", "info_pinned", "info_colours"];
+/// the information window could be grey (they are always in colour), the
+/// OSD's fading could be set (a fixed 0.4 s within `osd_duration` now).
+const DROPPED: [&str; 4] = ["panels_pinned", "info_pinned", "info_colours", "osd_fade"];
 const SNAP_TO_CENTRE: &str = "snap_to_centre";
 const REPEAT: &str = "repeat";
 const ON_TOP: &str = "on_top";
@@ -319,7 +320,6 @@ const OSD_FONT: &str = "osd_font";
 const OSD_FONT_FILE: &str = "osd_font_file";
 const OSD_SCALE: &str = "osd_scale";
 const OSD_DURATION: &str = "osd_duration";
-const OSD_FADE: &str = "osd_fade";
 const WINDOW_NORMAL: &str = "window_normal";
 const RESUME_PLAYBACK: &str = "resume_playback";
 const REMEMBER_TRACKS: &str = "remember_tracks";
@@ -343,10 +343,9 @@ pub const MAX_STEP: f64 = 3600.0;
 pub const MAX_TRANSPARENCY: f64 = 80.0;
 /// The range of the OSD size, in percent.
 pub const OSD_SCALE_RANGE: std::ops::RangeInclusive<f64> = 50.0..=200.0;
-/// How long the OSD line stays whole, and how long it then fades, in
+/// How long the OSD line stays on the screen, its fade included, in
 /// seconds.
 pub const OSD_DURATION_RANGE: std::ops::RangeInclusive<f64> = 0.5..=10.0;
-pub const OSD_FADE_RANGE: std::ops::RangeInclusive<f64> = 0.0..=3.0;
 
 /// Settings file that makes a copy portable: when it lies next to the exe
 /// (even empty) and can be written, the settings are kept in it instead of
@@ -575,9 +574,8 @@ pub struct Settings {
     pub osd_font_file: Option<(PathBuf, u32)>,
     /// The size of the OSD line, in percent.
     pub osd_scale: f64,
-    /// Seconds the OSD line stays whole, then fades.
+    /// Seconds the OSD line stays on the screen, its fade included.
     pub osd_duration: f64,
-    pub osd_fade: f64,
     /// The window's restored rectangle in pixels (left, top, right,
     /// bottom) while it is maximized: eframe saves the maximized size.
     pub window_normal: Option<[i32; 4]>,
@@ -664,8 +662,7 @@ impl Default for Settings {
             osd_font: String::new(),
             osd_font_file: None,
             osd_scale: 100.0,
-            osd_duration: 1.6,
-            osd_fade: 0.4,
+            osd_duration: 2.0,
             window_normal: None,
             resume_playback: true,
             remember_tracks: true,
@@ -936,7 +933,6 @@ impl Settings {
             osd_font_file: osd_font.map(|(_, file)| file),
             osd_scale: number(OSD_SCALE, OSD_SCALE_RANGE, d.osd_scale),
             osd_duration: number(OSD_DURATION, OSD_DURATION_RANGE, d.osd_duration),
-            osd_fade: number(OSD_FADE, OSD_FADE_RANGE, d.osd_fade),
             window_normal: get(WINDOW_NORMAL).and_then(|v| rect(&v)),
             resume_playback: flag(RESUME_PLAYBACK, d.resume_playback),
             remember_tracks: flag(REMEMBER_TRACKS, d.remember_tracks),
@@ -1083,7 +1079,6 @@ impl Settings {
         storage.set_string(OSD_BOX, look.boxed.to_string());
         storage.set_string(OSD_SCALE, format!("{:.0}", self.osd_scale));
         storage.set_string(OSD_DURATION, format!("{:.1}", self.osd_duration));
-        storage.set_string(OSD_FADE, format!("{:.1}", self.osd_fade));
         match self.window_normal {
             Some(r) => storage.set_string(
                 WINDOW_NORMAL,
@@ -1241,7 +1236,6 @@ mod tests {
             osd_font_file: Some((PathBuf::from(r"C:\Windows\Fonts\segoeui.ttf"), 0)),
             osd_scale: 80.0,
             osd_duration: 3.5,
-            osd_fade: 1.0,
             window_normal: Some([10, 20, 1010, 720]),
             resume_playback: false,
             remember_tracks: false,

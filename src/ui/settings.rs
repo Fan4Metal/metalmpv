@@ -19,7 +19,7 @@ use crate::input::Cmd;
 use crate::keymap::{Action, Chord, Group, Keymap, shortcut};
 use crate::settings::{
     FrameFormat, Interface, MAX_STEP, MAX_TRANSPARENCY, MIN_STEP, MediaKeys, OSD_DURATION_RANGE,
-    OSD_FADE_RANGE, OSD_SCALE_RANGE, OnTop, Settings, WindowOnOpen,
+    OSD_SCALE_RANGE, OnTop, Settings, WindowOnOpen,
 };
 use crate::update::{Status, Updates, release_url, version_of};
 
@@ -1246,8 +1246,15 @@ fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>, chan
                     "The control bar and the file's name over the picture.",
                     "Панель управления и название файла поверх изображения."
                 )),
-                230.0,
+                SLIDER_ROW,
                 |ui| {
+                    let default = Settings::default().fullscreen_transparency;
+                    back_to(
+                        ui,
+                        &mut settings.fullscreen_transparency,
+                        default,
+                        &format!("{default:.0} %"),
+                    );
                     ui.spacing_mut().slider_width = 160.0;
                     ui.add(
                         egui::Slider::new(
@@ -1376,6 +1383,7 @@ fn shorten(text: &str, chars: usize) -> String {
 
 /// The OSD line: on or off, its font, size and look, with a sample.
 fn osd_section(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
+    let d = Settings::default();
     section(
         ui,
         tr!("On-screen messages", "Экранные сообщения"),
@@ -1407,30 +1415,26 @@ fn osd_section(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                     "It also follows the height of the picture.",
                     "Также зависит от высоты изображения."
                 )),
-                230.0,
-                |ui| percent(ui, &mut settings.osd_scale, OSD_SCALE_RANGE),
+                SLIDER_ROW,
+                |ui| percent(ui, &mut settings.osd_scale, OSD_SCALE_RANGE, d.osd_scale),
             );
             divider(ui);
             row(
                 ui,
                 tr!("Shown for", "Время показа"),
                 Some(tr!(
-                    "How long a message stays before it fades.",
-                    "Сколько сообщение держится, прежде чем начнёт гаснуть."
+                    "How long a message stays on the screen; it fades in its last moments.",
+                    "Сколько сообщение остаётся на экране; в последние мгновения оно гаснет."
                 )),
-                230.0,
-                |ui| seconds(ui, &mut settings.osd_duration, OSD_DURATION_RANGE),
-            );
-            divider(ui);
-            row(
-                ui,
-                tr!("Fading", "Затухание"),
-                Some(tr!(
-                    "How long it takes to fade out; 0, it is gone at once.",
-                    "Сколько длится угасание; при 0 сообщение исчезает сразу."
-                )),
-                230.0,
-                |ui| seconds(ui, &mut settings.osd_fade, OSD_FADE_RANGE),
+                SLIDER_ROW,
+                |ui| {
+                    seconds(
+                        ui,
+                        &mut settings.osd_duration,
+                        OSD_DURATION_RANGE,
+                        d.osd_duration,
+                    )
+                },
             );
             divider(ui);
             let summary = if settings.osd_style == OsdStyle::default() {
@@ -1603,7 +1607,13 @@ fn osd_preview(ui: &mut Ui, scale: f64, look: &OsdStyle) {
 }
 
 /// A size in percent.
-fn percent(ui: &mut Ui, value: &mut f64, range: std::ops::RangeInclusive<f64>) -> Response {
+fn percent(
+    ui: &mut Ui,
+    value: &mut f64,
+    range: std::ops::RangeInclusive<f64>,
+    default: f64,
+) -> Response {
+    back_to(ui, value, default, &format!("{default:.0} %"));
     ui.spacing_mut().slider_width = 160.0;
     ui.add(
         egui::Slider::new(value, range)
@@ -1614,14 +1624,39 @@ fn percent(ui: &mut Ui, value: &mut f64, range: std::ops::RangeInclusive<f64>) -
 }
 
 /// A time in seconds, to a tenth.
-fn seconds(ui: &mut Ui, value: &mut f64, range: std::ops::RangeInclusive<f64>) -> Response {
+fn seconds(
+    ui: &mut Ui,
+    value: &mut f64,
+    range: std::ops::RangeInclusive<f64>,
+    default: f64,
+) -> Response {
+    let unit = tr!(" s", " с");
+    back_to(ui, value, default, &format!("{default:.1}{unit}"));
     ui.spacing_mut().slider_width = 160.0;
     ui.add(
         egui::Slider::new(value, range)
             .step_by(0.1)
             .fixed_decimals(1)
-            .suffix(tr!(" s", " с")),
+            .suffix(unit),
     )
+}
+
+/// The width of a row's control that is a slider with its value and the
+/// round arrow back.
+const SLIDER_ROW: f32 = 260.0;
+
+/// The round arrow at the right of a slider (in a right-to-left row) that
+/// puts `value` back to `default`, named `shown` in its tooltip; greyed
+/// while the value is the default.
+fn back_to(ui: &mut Ui, value: &mut f64, default: f64, shown: &str) {
+    let off = (*value - default).abs() > 1e-9;
+    let tip = tr!(
+        format!("Back to the default, {shown}"),
+        format!("Вернуть значение по умолчанию, {shown}")
+    );
+    if super::tool(ui, &tip, off, |p, o, c| super::icons::reset(p, o, 6.0, c)).clicked() {
+        *value = default;
+    }
 }
 
 /// A font family out of the system's, with a filter over the list; `current`
@@ -2152,6 +2187,5 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.osd_font_file = d.osd_font_file;
     settings.osd_scale = d.osd_scale;
     settings.osd_duration = d.osd_duration;
-    settings.osd_fade = d.osd_fade;
     updates.enabled = d.check_updates;
 }

@@ -121,7 +121,7 @@ The installer and other scripts can do the same from the command line: `metalmpv
 
 ### Settings
 
-The settings window (`F5` or the gear button) lists the categories on the left and shows the settings of the chosen one on the right in groups: each row names a setting, explains it underneath and holds its control on the right. **Reset** under the list puts the settings of the window back to their defaults (those of the Video, sound and subtitles panel are reset on the panel); the remembered positions, the recent files, the repeat mode and the playlist's place are kept.
+The settings window (`F5` or the gear button) lists the categories on the left and shows the settings of the chosen one on the right in groups: each row names a setting, explains it underneath and holds its control on the right; the round arrow at the right of a slider puts its value back to the default. **Reset** under the list puts the settings of the window back to their defaults (those of the Video, sound and subtitles panel are reset on the panel); the remembered positions, the recent files, the repeat mode and the playlist's place are kept.
 
 | Category | Setting | Default | Meaning |
 |---|---|---|---|
@@ -136,7 +136,7 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | General | On-screen messages: show messages | on | The line in the top left corner after a seek, a volume change and the like; off, only the line saying where the data of an incomplete file ends is shown |
 | General | On-screen messages: font | default | A font installed in Windows, for the line in the top left corner |
 | General | On-screen messages: size | 100 % | 50–200 % of the usual size, which follows the height of the picture |
-| General | On-screen messages: shown for, fading | 1.6 s, 0.4 s | How long a message stays whole (0.5–10 s), then how long it fades out (0–3 s; 0, it is gone at once) |
+| General | On-screen messages: shown for | 2 s | How long a message stays on the screen (0.5–10 s); it fades out in its last 0.4 s |
 | General | On-screen messages: look | yellow letters, thin black outline, shadow | As for the subtitles: the colour of the letters and of the outline, the outline's thickness (0–4), the shadow (0–4), bold letters, and a slightly see-through box of the outline's colour in place of the outline, the thickness then being its margin; **Default** brings the yellow line back; a sample line under them shows the font, the size and the look |
 | Playback | Go on from where it stopped | on | A file of 5 minutes or more opened again starts where it was left, with a message on the screen; `Home` goes to the beginning. A file watched to its last 30 seconds, or stopped in its first 10 seconds, starts from the beginning. The last 200 files are remembered; **Forget all** clears the list |
 | Playback | Remember the recent files | on | The start screen lists the last thirty files played, those that do not fit scrolling in the list; when off, none are kept and the list is cleared |

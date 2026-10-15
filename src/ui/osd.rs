@@ -52,10 +52,9 @@ impl Default for OsdStyle {
 
 pub struct OsdLine {
     line: Option<(Osd, Instant)>,
-    /// How long a line stays whole, and how long it then fades (the
-    /// settings' `osd_duration` and `osd_fade`).
+    /// How long a line stays on the screen, its fade at the end included
+    /// (the settings' `osd_duration`).
     shown: Duration,
-    fade: Duration,
     /// Shown, without fading, while playback stays stopped at the end of
     /// the file (why it stopped: the data ran out); a passing line covers
     /// it for its while.
@@ -66,18 +65,19 @@ impl Default for OsdLine {
     fn default() -> Self {
         Self {
             line: None,
-            shown: Duration::from_millis(1600),
-            fade: Duration::from_millis(400),
+            shown: Duration::from_millis(2000),
             at_end: None,
         }
     }
 }
 
+/// How long a line fades at the end of its time, at most half of it.
+const FADE: Duration = Duration::from_millis(400);
+
 impl OsdLine {
-    /// How long a line stays whole and fades, in seconds.
-    pub fn set_timing(&mut self, shown: f64, fade: f64) {
-        self.shown = Duration::from_secs_f64(shown.max(0.0));
-        self.fade = Duration::from_secs_f64(fade.max(0.0));
+    /// How long a line stays on the screen, in seconds.
+    pub fn set_duration(&mut self, shown: f64) {
+        self.shown = Duration::from_secs_f64(shown.max(0.1));
     }
 
     pub fn show(&mut self, osd: Osd) {
@@ -114,8 +114,9 @@ impl OsdLine {
         if !passing {
             self.line = None;
         }
-        let (whole, fade) = (self.shown, self.fade);
-        let total = whole + fade;
+        let total = self.shown;
+        let fade = FADE.min(total / 2);
+        let whole = total - fade;
         // The age read once: read again, it could be past the end.
         let age = self.line.as_ref().map(|(_, since)| since.elapsed());
         if age.is_some_and(|age| age >= total) {
