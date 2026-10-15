@@ -1605,7 +1605,7 @@ impl App {
                 if let (false, Some(time), Some(path)) =
                     (state.idle, state.time, self.playlist.current_path())
                 {
-                    crate::bookmarks::add(&mut self.settings.bookmarks, path, time);
+                    crate::bookmarks::add(&mut self.settings.bookmarks, path, time, state.duration);
                     self.osd.show(Osd::Bookmark { added: true, time });
                 }
             }
@@ -2546,7 +2546,13 @@ impl App {
                 .iter()
                 .map(|b| {
                     let here = self.playlist.current_path().is_some_and(|p| b.is_of(p));
-                    (b.label(), here)
+                    // A bookmark of an older version: the duration of its
+                    // file if it plays.
+                    let share = b.share().or_else(|| {
+                        let duration = state.duration.filter(|d| here && *d > 0.0)?;
+                        Some((b.time / duration).clamp(0.0, 1.0) as f32)
+                    });
+                    (b.label(), here, share)
                 })
                 .collect(),
         };
@@ -3266,7 +3272,12 @@ fn context_menu(
 
 /// The bookmarks: add one here, then each (a click goes there, the cross
 /// deletes it; those of the file playing marked), and delete them all.
-fn bookmarks_menu(ui: &mut egui::Ui, state: &State, list: &[(String, bool)], out: &mut Vec<Cmd>) {
+fn bookmarks_menu(
+    ui: &mut egui::Ui,
+    state: &State,
+    list: &[(String, bool, Option<f32>)],
+    out: &mut Vec<Cmd>,
+) {
     ui.menu_button(tr!("Bookmarks", "Закладки"), |ui| {
         let add = egui::Button::new(tr!("Add a bookmark here", "Добавить закладку здесь"))
             .shortcut_text(keymap::shortcut(Cmd::AddBookmark));
@@ -3278,7 +3289,7 @@ fn bookmarks_menu(ui: &mut egui::Ui, state: &State, list: &[(String, bool)], out
         if list.is_empty() {
             ui.weak(tr!("No bookmarks yet", "Закладок пока нет"));
         }
-        for (i, (label, here)) in list.iter().enumerate() {
+        for (i, (label, here, share)) in list.iter().enumerate() {
             ui.horizontal(|ui| {
                 let tip = tr!("Delete the bookmark", "Удалить закладку");
                 let delete = ui::tool(ui, tip, true, |p, o, c| ui::icons::close(p, o, 4.0, c));
@@ -3286,8 +3297,20 @@ fn bookmarks_menu(ui: &mut egui::Ui, state: &State, list: &[(String, bool)], out
                     // The menu stays open: more may go.
                     out.push(Cmd::DeleteBookmark(i));
                 }
-                let go = egui::Button::new(label.as_str()).selected(*here);
-                if ui.add(go).clicked() {
+                let go = ui.add(egui::Button::new(label.as_str()).selected(*here));
+                // Where in the file it is, as the playlist's lines show.
+                if let Some(share) = share {
+                    let rect = go.rect.shrink2(egui::vec2(4.0, 0.0));
+                    let track = Rect::from_min_max(
+                        egui::pos2(rect.left(), rect.bottom() - 2.0),
+                        egui::pos2(rect.right(), rect.bottom() - 0.5),
+                    );
+                    let painter = ui.painter();
+                    painter.rect_filled(track, 0.0, style::TEXT_WEAK.gamma_multiply(0.3));
+                    let done = track.with_max_x(track.left() + track.width() * share);
+                    painter.rect_filled(done, 0.0, style::accent().gamma_multiply(0.85));
+                }
+                if go.clicked() {
                     out.push(Cmd::GoToBookmark(i));
                     ui.close();
                 }
@@ -3329,8 +3352,9 @@ struct Marks {
     repeat: Repeat,
     on_top: OnTop,
     playlist_detached: bool,
-    /// The bookmarks' labels, and whether each is of the file playing.
-    bookmarks: Vec<(String, bool)>,
+    /// The bookmarks' labels, whether each is of the file playing, and
+    /// where in its file it is.
+    bookmarks: Vec<(String, bool, Option<f32>)>,
 }
 
 /// The interfaces, the current marked.

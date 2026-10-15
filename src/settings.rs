@@ -1244,6 +1244,7 @@ mod tests {
             bookmarks: vec![crate::bookmarks::Bookmark {
                 path: PathBuf::from(r"D:\Films\a.mkv"),
                 time: 754.5,
+                duration: Some(5400.0),
             }],
         };
         let mut storage = MemStorage::default();

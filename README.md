@@ -89,7 +89,7 @@ When the file has chapters, the seek bar is cut at the start of each, and the to
 
 ### Bookmarks
 
-`Ctrl+B` or **Bookmarks → Add a bookmark here** in the picture's context menu keeps the file playing and the position. The **Bookmarks** submenu lists them, the latest first, each by the file's name and the time, those of the file playing marked: a click goes there, in the file playing at once, else playing its file from that place (its playlist entry, or the file opened); the cross beside one deletes it, and **Delete all bookmarks** deletes them all. Up to 30 are kept between runs, the oldest giving way; Reset in the settings keeps them.
+`Ctrl+B` or **Bookmarks → Add a bookmark here** in the picture's context menu keeps the file playing and the position. The **Bookmarks** submenu lists them, the latest first, each by the file's name and the time with a thin line under it showing where in the file it is, those of the file playing marked: a click goes there, in the file playing at once, else playing its file from that place (its playlist entry, or the file opened); the cross beside one deletes it, and **Delete all bookmarks** deletes them all. Up to 30 are kept between runs, the oldest giving way; Reset in the settings keeps them.
 
 ### A-B repeat
 
