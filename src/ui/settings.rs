@@ -18,8 +18,8 @@ use crate::i18n::LangChoice;
 use crate::input::Cmd;
 use crate::keymap::{Action, Chord, Group, Keymap, shortcut};
 use crate::settings::{
-    FrameFormat, Interface, MAX_STEP, MAX_TRANSPARENCY, MIN_STEP, MediaKeys, OSD_SCALE_RANGE,
-    OnTop, Settings, WindowOnOpen,
+    FrameFormat, Interface, MAX_STEP, MAX_TRANSPARENCY, MIN_STEP, MediaKeys, OSD_DURATION_RANGE,
+    OSD_FADE_RANGE, OSD_SCALE_RANGE, OnTop, Settings, WindowOnOpen,
 };
 use crate::update::{Status, Updates, release_url, version_of};
 
@@ -1286,6 +1286,28 @@ fn osd_section(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                 |ui| percent(ui, &mut settings.osd_scale, OSD_SCALE_RANGE),
             );
             divider(ui);
+            row(
+                ui,
+                tr!("Shown for", "Время показа"),
+                Some(tr!(
+                    "How long a message stays before it fades.",
+                    "Сколько сообщение держится, прежде чем начнёт гаснуть."
+                )),
+                230.0,
+                |ui| seconds(ui, &mut settings.osd_duration, OSD_DURATION_RANGE),
+            );
+            divider(ui);
+            row(
+                ui,
+                tr!("Fading", "Затухание"),
+                Some(tr!(
+                    "How long it takes to fade out; 0, it is gone at once.",
+                    "Сколько длится угасание; при 0 сообщение исчезает сразу."
+                )),
+                230.0,
+                |ui| seconds(ui, &mut settings.osd_fade, OSD_FADE_RANGE),
+            );
+            divider(ui);
             let summary = if settings.osd_style == OsdStyle::default() {
                 tr!("Default", "По умолчанию")
             } else {
@@ -1463,6 +1485,17 @@ fn percent(ui: &mut Ui, value: &mut f64, range: std::ops::RangeInclusive<f64>) -
             .step_by(5.0)
             .fixed_decimals(0)
             .suffix(" %"),
+    )
+}
+
+/// A time in seconds, to a tenth.
+fn seconds(ui: &mut Ui, value: &mut f64, range: std::ops::RangeInclusive<f64>) -> Response {
+    ui.spacing_mut().slider_width = 160.0;
+    ui.add(
+        egui::Slider::new(value, range)
+            .step_by(0.1)
+            .fixed_decimals(1)
+            .suffix(tr!(" s", " с")),
     )
 }
 
@@ -1993,5 +2026,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.osd_font = d.osd_font;
     settings.osd_font_file = d.osd_font_file;
     settings.osd_scale = d.osd_scale;
+    settings.osd_duration = d.osd_duration;
+    settings.osd_fade = d.osd_fade;
     updates.enabled = d.check_updates;
 }

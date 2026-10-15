@@ -12,10 +12,6 @@ use super::style;
 use crate::format::Osd;
 use crate::player::State;
 
-/// How long a line stays, the fade at its end included.
-const SHOWN: Duration = Duration::from_millis(2000);
-const FADE: Duration = Duration::from_millis(400);
-
 /// The outline's thickness and the shadow's offset, in points of a line
 /// 22 points high (they grow with the line).
 pub const OUTLINE_RANGE: RangeInclusive<f64> = 0.0..=4.0;
@@ -54,16 +50,36 @@ impl Default for OsdStyle {
     }
 }
 
-#[derive(Default)]
 pub struct OsdLine {
     line: Option<(Osd, Instant)>,
+    /// How long a line stays whole, and how long it then fades (the
+    /// settings' `osd_duration` and `osd_fade`).
+    shown: Duration,
+    fade: Duration,
     /// Shown, without fading, while playback stays stopped at the end of
     /// the file (why it stopped: the data ran out); a passing line covers
     /// it for its while.
     at_end: Option<Osd>,
 }
 
+impl Default for OsdLine {
+    fn default() -> Self {
+        Self {
+            line: None,
+            shown: Duration::from_millis(1600),
+            fade: Duration::from_millis(400),
+            at_end: None,
+        }
+    }
+}
+
 impl OsdLine {
+    /// How long a line stays whole and fades, in seconds.
+    pub fn set_timing(&mut self, shown: f64, fade: f64) {
+        self.shown = Duration::from_secs_f64(shown.max(0.0));
+        self.fade = Duration::from_secs_f64(fade.max(0.0));
+    }
+
     pub fn show(&mut self, osd: Osd) {
         self.line = Some((osd, Instant::now()));
     }
@@ -98,9 +114,11 @@ impl OsdLine {
         if !passing {
             self.line = None;
         }
-        // The age read once: read again, it could be past SHOWN.
+        let (whole, fade) = (self.shown, self.fade);
+        let total = whole + fade;
+        // The age read once: read again, it could be past the end.
         let age = self.line.as_ref().map(|(_, since)| since.elapsed());
-        if age.is_some_and(|age| age >= SHOWN) {
+        if age.is_some_and(|age| age >= total) {
             self.line = None;
         }
         let (Some((osd, _)), Some(age)) = (&mut self.line, age) else {
@@ -120,15 +138,15 @@ impl OsdLine {
                 _ => {}
             }
         }
-        let alpha = if age > SHOWN - FADE {
-            SHOWN.saturating_sub(age).as_secs_f32() / FADE.as_secs_f32()
+        let alpha = if age > whole {
+            total.saturating_sub(age).as_secs_f32() / fade.as_secs_f32().max(1e-3)
         } else {
             1.0
         };
         paint_line(ctx, video, &osd.text(), look, scale, alpha);
         // Woken for the fade, then every few frames through it.
-        let next = if age < SHOWN - FADE {
-            SHOWN - FADE - age
+        let next = if age < whole {
+            whole - age
         } else {
             Duration::from_millis(30)
         };

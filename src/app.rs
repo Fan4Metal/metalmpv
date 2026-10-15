@@ -2633,6 +2633,8 @@ impl App {
             rect
         };
         let scale = (self.settings.osd_scale / 100.0) as f32;
+        self.osd
+            .set_timing(self.settings.osd_duration, self.settings.osd_fade);
         let look = &self.settings.osd_style;
         self.osd
             .paint(ui.ctx(), osd_rect, state, look, scale, self.settings.osd);
