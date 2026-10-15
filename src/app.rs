@@ -114,8 +114,9 @@ pub struct App {
     icon: ui::IconCache,
     start_icon: ui::IconCache,
     /// The lines of the subtitle file shown (one of its own), for the
-    /// panel's timeline: the file and what was read of it.
-    sub_lines: Option<(String, Option<Vec<crate::sub_lines::Line>>)>,
+    /// panel's timeline: the file, what was read of it, and the thread
+    /// reading it meanwhile.
+    sub_lines: Option<SubLines>,
     /// The playlist panel's search, folded groups, drag and scrolling.
     list_state: ui::playlist::ListState,
     /// The start screen's recent files while they scroll: the wheel there
@@ -530,7 +531,9 @@ impl App {
     /// Read the lines of the subtitle file shown (one of its own) for the
     /// panel's timeline, once per file, while the panel is open (it lays
     /// the Subtitles tab out even unseen).
-    fn update_sub_lines(&mut self, state: &State) {
+    /// The file (up to 32 MB, maybe on a network share) is read on a thread
+    /// of its own: read here, it held the frame.
+    fn update_sub_lines(&mut self, ctx: &egui::Context, state: &State) {
         if !self.video_panel.open {
             return;
         }
@@ -541,15 +544,31 @@ impl App {
             self.sub_lines = None;
             return;
         };
-        if self.sub_lines.as_ref().is_some_and(|(f, _)| *f == file) {
+        if let Some(slot) = self.sub_lines.as_mut().filter(|s| s.file == file) {
+            if let Some(read) = slot.reading.as_ref().and_then(|rx| rx.try_recv().ok()) {
+                log::debug!(
+                    "subtitle lines of {file}: {}",
+                    read.as_ref().map_or(0, Vec::len)
+                );
+                slot.lines = read;
+                slot.reading = None;
+            }
             return;
         }
-        let lines = crate::sub_lines::read(Path::new(&file));
-        log::debug!(
-            "subtitle lines of {file}: {}",
-            lines.as_ref().map_or(0, Vec::len)
-        );
-        self.sub_lines = Some((file, lines));
+        let (send, reading) = std::sync::mpsc::channel();
+        let (path, wake) = (PathBuf::from(&file), ctx.clone());
+        let started = crate::worker::spawn("subtitle lines", move || {
+            let _ = send.send(crate::sub_lines::read(&path));
+            wake.request_repaint();
+        });
+        if let Err(e) = started {
+            log::warn!("cannot read the subtitle lines: {e}");
+        }
+        self.sub_lines = Some(SubLines {
+            file,
+            lines: None,
+            reading: Some(reading),
+        });
     }
 
     /// Keep where the file playing is now (`resume_playback`) and which
@@ -3219,6 +3238,14 @@ struct CoverSlot {
     loaded: Option<(Cover, TextureHandle)>,
 }
 
+/// The lines of a subtitle file for the panel's timeline.
+struct SubLines {
+    file: String,
+    /// `None` while reading or when the file is not one read.
+    lines: Option<Vec<crate::sub_lines::Line>>,
+    reading: Option<std::sync::mpsc::Receiver<Option<Vec<crate::sub_lines::Line>>>>,
+}
+
 struct FactsSlot {
     path: PathBuf,
     loading: Option<std::sync::mpsc::Receiver<crate::probe::Facts>>,
@@ -4052,7 +4079,7 @@ impl eframe::App for App {
         };
         let info_cmds = self.info.show(&ctx, &subject, cover, channel);
         cmds.extend(info_cmds);
-        self.update_sub_lines(&state);
+        self.update_sub_lines(&ctx, &state);
         let before = self.adjust.clone();
         let subs_before = self.settings.sub.clone();
         let output_before = (
@@ -4095,10 +4122,7 @@ impl eframe::App for App {
                 audio_bitrate: state.live.audio_bitrate,
                 voice_boost,
                 time: state.time.filter(|_| !state.idle),
-                sub_lines: self
-                    .sub_lines
-                    .as_ref()
-                    .and_then(|(_, lines)| lines.as_deref()),
+                sub_lines: self.sub_lines.as_ref().and_then(|s| s.lines.as_deref()),
                 subs_on: tracks::selected(&state.tracks, Kind::Sub).is_some(),
             },
         );
