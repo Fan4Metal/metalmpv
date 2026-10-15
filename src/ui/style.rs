@@ -111,17 +111,15 @@ impl Accent {
         Self::ALL.into_iter().find(|a| a.name() == name)
     }
 
-    /// A colour typed or pasted: six or three hex digits (`#abc` is
-    /// `#aabbcc`), with `#` or without, spaces round them allowed.
+    /// A colour typed or pasted, in any of the forms of [`ColourText`]: six
+    /// or three hex digits (`#abc` is `#aabbcc`), with `#` or without;
+    /// `RGB(r, g, b)`, each 0–255, or the three numbers alone with commas;
+    /// `HSL(h, s%, l%)`. Any case; spaces round them allowed.
     pub fn typed(text: &str) -> Option<Self> {
-        let digits = text.trim();
-        let digits = digits.strip_prefix('#').unwrap_or(digits);
-        let six = match digits.len() {
-            3 => digits.chars().flat_map(|c| [c, c]).collect(),
-            6 => digits.to_owned(),
-            _ => return None,
-        };
-        let [r, g, b] = crate::sub_style::parse_hex(&format!("#{six}"))?;
+        let text = text.trim();
+        let [r, g, b] = hex_typed(text)
+            .or_else(|| rgb_typed(text))
+            .or_else(|| hsl_typed(text))?;
         Some(Accent::Custom(u32::from_be_bytes([0, r, g, b])))
     }
 
@@ -306,9 +304,190 @@ pub fn apply(ctx: &egui::Context) {
     });
 }
 
+/// How the own colour's code is shown: `#RRGGBB`, `RGB(r, g, b)` or
+/// `HSL(h, s%, l%)`; any of them is read back (`Accent::typed`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ColourText {
+    #[default]
+    Hex,
+    Rgb,
+    Hsl,
+}
+
+impl ColourText {
+    pub fn next(self) -> Self {
+        match self {
+            ColourText::Hex => ColourText::Rgb,
+            ColourText::Rgb => ColourText::Hsl,
+            ColourText::Hsl => ColourText::Hex,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            ColourText::Hex => "HEX",
+            ColourText::Rgb => "RGB",
+            ColourText::Hsl => "HSL",
+        }
+    }
+
+    pub fn show(self, [r, g, b]: [u8; 3]) -> String {
+        match self {
+            ColourText::Hex => format!("#{r:02X}{g:02X}{b:02X}"),
+            ColourText::Rgb => format!("RGB({r}, {g}, {b})"),
+            ColourText::Hsl => {
+                let [h, s, l] = hsl_of([r, g, b]);
+                format!(
+                    "HSL({:.0}, {:.0}%, {:.0}%)",
+                    h.round() % 360.0,
+                    s * 100.0,
+                    l * 100.0
+                )
+            }
+        }
+    }
+}
+
+/// Six or three hex digits, `#` before them or not.
+fn hex_typed(text: &str) -> Option<[u8; 3]> {
+    let digits = text.strip_prefix('#').unwrap_or(text);
+    let six = match digits.len() {
+        3 => digits.chars().flat_map(|c| [c, c]).collect(),
+        6 => digits.to_owned(),
+        _ => return None,
+    };
+    crate::sub_style::parse_hex(&format!("#{six}"))
+}
+
+/// The three numbers inside `name(…)` (any case), or the text itself
+/// when it has no such name but commas; units after them are the caller's.
+fn parts<'a>(text: &'a str, name: &str) -> Option<Vec<&'a str>> {
+    let inner = match text.get(..name.len()) {
+        Some(head) if head.eq_ignore_ascii_case(name) => text[name.len()..]
+            .trim()
+            .strip_prefix('(')?
+            .strip_suffix(')')?,
+        _ if text.contains(',') && !text.contains('(') => text,
+        _ => return None,
+    };
+    let parts: Vec<&str> = inner.split(',').map(str::trim).collect();
+    (parts.len() == 3).then_some(parts)
+}
+
+/// `RGB(r, g, b)` or `r, g, b`, each 0–255.
+fn rgb_typed(text: &str) -> Option<[u8; 3]> {
+    let parts = parts(text, "rgb")?;
+    let mut rgb = [0; 3];
+    for (value, part) in rgb.iter_mut().zip(parts) {
+        *value = part.parse().ok()?;
+    }
+    Some(rgb)
+}
+
+/// `HSL(h, s%, l%)`: the hue in degrees (`deg` or `°` after it allowed),
+/// the others in per cent (`%` optional), 0–100.
+fn hsl_typed(text: &str) -> Option<[u8; 3]> {
+    let parts = parts(text, "hsl")?;
+    let number = |part: &str, units: &[&str]| {
+        let part = units
+            .iter()
+            .fold(part, |p, u| p.strip_suffix(u).unwrap_or(p))
+            .trim();
+        part.parse::<f32>().ok().filter(|v| v.is_finite())
+    };
+    let h = number(parts[0], &["deg", "°"])?;
+    let s = number(parts[1], &["%"]).filter(|v| (0.0..=100.0).contains(v))?;
+    let l = number(parts[2], &["%"]).filter(|v| (0.0..=100.0).contains(v))?;
+    Some(rgb_of_hsl(h.rem_euclid(360.0), s / 100.0, l / 100.0))
+}
+
+/// Hue in degrees, saturation and lightness 0–1.
+fn hsl_of([r, g, b]: [u8; 3]) -> [f32; 3] {
+    let [r, g, b] = [r, g, b].map(|c| f32::from(c) / 255.0);
+    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+    let l = (max + min) / 2.0;
+    let d = max - min;
+    if d == 0.0 {
+        return [0.0, 0.0, l];
+    }
+    let s = d / (1.0 - (2.0 * l - 1.0).abs());
+    let h = if max == r {
+        60.0 * ((g - b) / d).rem_euclid(6.0)
+    } else if max == g {
+        60.0 * ((b - r) / d + 2.0)
+    } else {
+        60.0 * ((r - g) / d + 4.0)
+    };
+    [h, s, l]
+}
+
+fn rgb_of_hsl(h: f32, s: f32, l: f32) -> [u8; 3] {
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let x = c * (1.0 - ((h / 60.0).rem_euclid(2.0) - 1.0).abs());
+    let (r, g, b) = match (h / 60.0) as u32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    let m = l - c / 2.0;
+    [r, g, b].map(|v| ((v + m) * 255.0).round().clamp(0.0, 255.0) as u8)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn colour_texts() {
+        let teal = [0x44, 0x99, 0x99];
+        assert_eq!(ColourText::Hex.show(teal), "#449999");
+        assert_eq!(ColourText::Rgb.show(teal), "RGB(68, 153, 153)");
+        assert_eq!(ColourText::Hsl.show(teal), "HSL(180, 38%, 43%)");
+        for mode in [ColourText::Hex, ColourText::Rgb] {
+            assert_eq!(
+                Accent::typed(&mode.show(teal)),
+                Some(Accent::Custom(0x449999))
+            );
+        }
+        // HSL in whole numbers comes back within a step of each part.
+        let Some(Accent::Custom(c)) = Accent::typed(&ColourText::Hsl.show(teal)) else {
+            panic!("HSL not read");
+        };
+        let [_, r, g, b] = c.to_be_bytes();
+        for (got, was) in [r, g, b].into_iter().zip(teal) {
+            assert!(got.abs_diff(was) <= 2, "{got} for {was}");
+        }
+        assert_eq!(
+            Accent::typed("rgb( 255 ,0, 10 )"),
+            Some(Accent::Custom(0xff000a))
+        );
+        assert_eq!(Accent::typed("255, 0, 10"), Some(Accent::Custom(0xff000a)));
+        assert_eq!(Accent::typed("RGB(256, 0, 0)"), None);
+        assert_eq!(Accent::typed("RGB(1, 2)"), None);
+        assert_eq!(
+            Accent::typed("hsl(0, 100%, 50%)"),
+            Some(Accent::Custom(0xff0000))
+        );
+        assert_eq!(
+            Accent::typed("HSL(120deg, 100, 25)"),
+            Some(Accent::Custom(0x008000))
+        );
+        assert_eq!(
+            Accent::typed("hsl(240°, 100%, 50%)"),
+            Some(Accent::Custom(0x0000ff))
+        );
+        assert_eq!(
+            Accent::typed("hsl(0, 0%, 100%)"),
+            Some(Accent::Custom(0xffffff))
+        );
+        assert_eq!(Accent::typed("hsl(0, 120%, 50%)"), None);
+        assert_eq!(ColourText::Hsl.show([255, 255, 255]), "HSL(0, 0%, 100%)");
+        assert_eq!(ColourText::Hsl.show([0, 0, 0]), "HSL(0, 0%, 0%)");
+        assert_eq!(ColourText::Hex.next().next().next(), ColourText::Hex);
+    }
 
     #[test]
     fn accent_names() {
