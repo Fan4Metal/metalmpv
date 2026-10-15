@@ -1244,6 +1244,8 @@ mod tests {
             last_audio: Some(Likeness {
                 lang: Some("russian".into()),
                 title: Some("многоголосый".into()),
+                forced: false,
+                commentary: true,
             }),
             last_sub: Some(None),
             remember_recent: false,

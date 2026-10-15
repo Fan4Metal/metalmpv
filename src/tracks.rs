@@ -173,15 +173,17 @@ fn track_tags(metadata: &Value) -> Vec<(String, String)> {
         .collect()
 }
 
-/// What a track chosen by hand is like: its language and title, to choose
-/// the most alike in a file opened for the first time (the same voice-over
-/// in the next episode of a series; `prefer_last_tracks`).
+/// What a track chosen by hand is like: its language, title and flags, to
+/// choose the most alike in a file opened for the first time (the same
+/// voice-over in the next episode of a series; `prefer_last_tracks`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Likeness {
     /// The language as English names it, in lower case ("russian").
     pub lang: Option<String>,
     /// The title, in lower case.
     pub title: Option<String>,
+    pub forced: bool,
+    pub commentary: bool,
 }
 
 impl Likeness {
@@ -196,33 +198,61 @@ impl Likeness {
                 .as_deref()
                 .map(|t| t.trim().to_lowercase())
                 .filter(|t| !t.is_empty()),
+            forced: track.forced,
+            commentary: track.commentary,
         }
     }
 
-    /// How alike `track` is: the title counts more than the language.
+    /// How alike `track` is: the title counts more than the language; a
+    /// track in another language is not alike at all (titles such as "AC3
+    /// 5.1" are found in every language); the same forced and commentary
+    /// flags count one more among the alike (full subtitles, not forced
+    /// ones of the same language listed first).
     fn score(&self, track: &Track) -> u8 {
         let other = Self::of(track);
+        if self.lang.is_some() && other.lang.is_some() && self.lang != other.lang {
+            return 0;
+        }
         let same = |a: &Option<String>, b: &Option<String>| a.is_some() && a == b;
-        2 * u8::from(same(&self.title, &other.title)) + u8::from(same(&self.lang, &other.lang))
+        let alike =
+            2 * u8::from(same(&self.title, &other.title)) + u8::from(same(&self.lang, &other.lang));
+        let flags = self.forced == other.forced && self.commentary == other.commentary;
+        if alike == 0 {
+            0
+        } else {
+            2 * alike + u8::from(flags)
+        }
     }
 
-    /// `language<TAB>title`, empty for what is not known.
+    /// `language<TAB>title<TAB>flags`, empty for what is not known; the
+    /// flags `forced`, `commentary`, comma-separated.
     pub fn to_text(&self) -> String {
+        let flags: Vec<&str> = [(self.forced, "forced"), (self.commentary, "commentary")]
+            .into_iter()
+            .filter_map(|(on, name)| on.then_some(name))
+            .collect();
         format!(
-            "{}\t{}",
+            "{}\t{}\t{}",
             self.lang.as_deref().unwrap_or_default(),
-            self.title.as_deref().unwrap_or_default()
+            self.title.as_deref().unwrap_or_default(),
+            flags.join(",")
         )
     }
 
+    /// What [`Likeness::to_text`] wrote, also without the flags (as
+    /// written before).
     pub fn parse(text: &str) -> Option<Self> {
-        let (lang, title) = text.split_once('\t')?;
+        let mut fields = text.split('\t');
+        let (lang, title) = (fields.next()?, fields.next()?);
+        let flags = fields.next().unwrap_or_default();
         let known = |s: &str| (!s.is_empty()).then(|| s.to_owned());
         let like = Self {
             lang: known(lang),
             title: known(title),
+            forced: flags.split(',').any(|f| f == "forced"),
+            commentary: flags.split(',').any(|f| f == "commentary"),
         };
-        (like != Self::default()).then_some(like)
+        (like.lang.is_some() || like.title.is_some()).then_some(like)
     }
 }
 
@@ -940,6 +970,42 @@ mod tests {
         let none = episode(&[("eng", None), ("jpn", None)]);
         assert_eq!(most_like(&none, Kind::Audio, &like), None);
         assert_eq!(Likeness::parse("\t"), None);
+        // A title found in every language does not take another language.
+        let ac3 = Likeness::of(&episode(&[("rus", Some("AC3 5.1"))])[0]);
+        let mixed = episode(&[("eng", Some("AC3 5.1")), ("rus", Some("DTS"))]);
+        assert_eq!(most_like(&mixed, Kind::Audio, &ac3), Some(2));
+        // Full subtitles after forced ones of the same language.
+        let subs = |forced: &[bool]| -> Vec<Track> {
+            forced
+                .iter()
+                .enumerate()
+                .map(|(i, forced)| Track {
+                    id: i as i64 + 1,
+                    kind: Kind::Sub,
+                    lang: Some("eng".into()),
+                    forced: *forced,
+                    ..Track::default()
+                })
+                .collect()
+        };
+        let full = Likeness::of(&subs(&[false])[0]);
+        assert_eq!(most_like(&subs(&[true, false]), Kind::Sub, &full), Some(2));
+        let forced = Likeness::of(&subs(&[true])[0]);
+        assert_eq!(forced.to_text(), "english\t\tforced");
+        assert_eq!(Likeness::parse(&forced.to_text()), Some(forced.clone()));
+        assert_eq!(
+            most_like(&subs(&[false, true]), Kind::Sub, &forced),
+            Some(2)
+        );
+        // As written before the flags.
+        assert_eq!(
+            Likeness::parse("russian\tдубляж"),
+            Some(Likeness {
+                lang: Some("russian".into()),
+                title: Some("дубляж".into()),
+                ..Likeness::default()
+            })
+        );
     }
 
     #[test]
