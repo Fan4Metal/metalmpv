@@ -1,5 +1,6 @@
 //! Threads in the background whose panic is theirs alone: a cover, a
-//! container's facts, a logo, the font list, the update check. Their
+//! container's facts, a logo, the font list, the update check, a stretch
+//! saved (`clip.rs`, which deletes its file half written). Their
 //! libraries read other people's files and pictures from the network
 //! (lofty, image), and a panic there is no reason to end the player; the
 //! panic hook (`main::install_panic_hook`) only logs one on such a thread,

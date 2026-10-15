@@ -133,18 +133,27 @@ impl Encode {
 }
 
 /// What to save: `from`..`to` seconds of `input` into `output`, with the
-/// audio track playing (mpv's id; `None` for none) and the subtitles;
-/// `sub_style`, mpv's options of the subtitles' look, for burning them in.
+/// audio track playing (mpv's id; `None` for none; its channels) and the
+/// subtitles; `sub_style`, mpv's options of the subtitles' look, for
+/// burning them in; the delays and the deinterlacing of the player, so that
+/// the stretch is as it was seen.
 #[derive(Clone, Debug)]
 pub struct Request {
     pub input: PathBuf,
     pub from: f64,
     pub to: f64,
     pub output: PathBuf,
+    /// `output` may be written over (its Save dialog asked).
+    pub replace: bool,
     pub encode: Encode,
     pub audio: Option<i64>,
+    pub channels: Option<i64>,
     pub subs: Subs,
     pub sub_style: Vec<(&'static str, String)>,
+    pub audio_delay: f64,
+    pub sub_delay: f64,
+    /// mpv's `deinterlace`.
+    pub deinterlace: &'static str,
 }
 
 /// Why a stretch was not saved.
@@ -170,10 +179,14 @@ impl Job {
         let cancel = Arc::new(AtomicBool::new(false));
         let (send, done) = channel();
         let output = request.output.clone();
+        // A file that was there is not deleted for a failure, unless the
+        // Save dialog asked to replace it (it may be half written over).
+        let ours = request.replace || !output.exists();
         let (p, c) = (progress.clone(), cancel.clone());
         crate::worker::spawn("clip", move || {
-            let result = run(&request, &p, &c, &wake);
-            if result.is_err() {
+            let result = crate::worker::guarded(|| run(&request, &p, &c, &wake))
+                .unwrap_or_else(|| Err(Failure::Mpv("the encoding failed".into())));
+            if result.is_err() && ours {
                 // Nothing half written is left behind.
                 let _ = std::fs::remove_file(&request.output);
             }
@@ -196,6 +209,13 @@ impl Job {
 
     pub fn cancel(&self) {
         self.cancel.store(true, Ordering::Relaxed);
+    }
+
+    /// Cancel it and wait up to `wait` for its thread to delete the file
+    /// half written (the program closes: the process would end first).
+    pub fn cancel_and_wait(&self, wait: Duration) {
+        self.cancel();
+        let _ = self.done.recv_timeout(wait);
     }
 
     /// How it ended, once it has.
@@ -223,6 +243,9 @@ fn quiet() -> Vec<(&'static str, String)> {
         ("audio-display", "no"),
         ("keep-open", "no"),
         ("idle", "yes"),
+        // An encoder that cannot start (NVENC without its card) ends the
+        // file with an error instead of going on without the picture.
+        ("stop-playback-on-init-failure", "yes"),
         // Only the subtitles asked for.
         ("sub-auto", "no"),
     ]
@@ -250,14 +273,23 @@ fn run(
         ("ovc", codec.to_owned()),
         ("ovcopts", codec_options),
         ("oac", "aac".to_owned()),
-        ("oacopts", "b=192k".to_owned()),
+        ("oacopts", format!("b={}k", aac_kbps(request.channels))),
         // Frames decoded on the card come back for the encoder.
         ("hwdec", "auto-copy-safe".to_owned()),
         ("end", format!("{:.3}", request.to)),
+        ("audio-delay", format!("{:.3}", request.audio_delay)),
+        ("deinterlace", request.deinterlace.to_owned()),
     ]);
     let sid = match &request.subs {
         Subs::Own(id) if encode.burn_subs => Some(*id),
         Subs::File { path, embedded } if encode.burn_subs => {
+            // `sub-files` is a list cut at `;` (and `sub-files-append` is
+            // refused as an option): a path with one goes by its short name.
+            let path = if path.to_string_lossy().contains(';') {
+                crate::win::short_path(path).unwrap_or_else(|| path.clone())
+            } else {
+                path.clone()
+            };
             options.push(("sub-files", path.to_string_lossy().into_owned()));
             Some(embedded + 1)
         }
@@ -266,6 +298,7 @@ fn run(
     options.push(("sid", track(sid)));
     if sid.is_some() {
         options.extend(request.sub_style.iter().cloned());
+        options.push(("sub-delay", format!("{:.3}", request.sub_delay)));
     }
     // Even sizes, as the encoders want for 4:2:0 (a picture 1441 wide was
     // refused); for H.264 8 bits, as a 10-bit one plays almost nowhere.
@@ -313,11 +346,21 @@ fn run(
                     reason: EndReason::Error,
                     error,
                 } => return Err(Failure::Mpv(error.unwrap_or_else(|| "cannot open".into()))),
-                Event::EndFile { .. } if loaded => {
+                Event::EndFile {
+                    reason: EndReason::Eof,
+                    ..
+                } if loaded => {
                     // The encoder finishes the file as the core is destroyed.
                     drop(mpv);
+                    let size = std::fs::metadata(&request.output).map_or(0, |m| m.len());
+                    if size == 0 {
+                        return Err(Failure::Mpv("nothing was written".into()));
+                    }
                     set(1.0);
                     return Ok(());
+                }
+                Event::EndFile { reason, .. } if loaded => {
+                    return Err(Failure::Mpv(format!("the file ended ({reason:?})")));
                 }
                 Event::Property {
                     id: TIME_POS,
@@ -340,12 +383,23 @@ fn run(
     }
 }
 
+/// AAC's bitrate for `channels`: 192 kb/s for stereo or mono, 64 kb/s a
+/// channel for more (384 for 5.1, 512 for 7.1).
+fn aac_kbps(channels: Option<i64>) -> i64 {
+    match channels {
+        Some(n) if n > 2 => 64 * n.min(8),
+        _ => 192,
+    }
+}
+
 /// A file for the stretch `from`..`to` of `input` in `folder`: the name
 /// with the times (`Film 0-12-34–0-13-10.mp4`), never one that is there.
+/// What Windows does not take in a name (an address's `?` or `:`) becomes
+/// `_`, and a long name is cut short.
 pub fn file_name(folder: &Path, input: &Path, from: f64, to: f64) -> PathBuf {
     let stem = input
         .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
+        .map(|s| safe_name(&s.to_string_lossy()))
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "clip".into());
     let time = |t: f64| crate::format::time(Some(t), true).replace(':', "-");
@@ -361,6 +415,57 @@ pub fn file_name(folder: &Path, input: &Path, from: f64, to: f64) -> PathBuf {
         })
         .find(|p| !p.exists())
         .expect("a free name")
+}
+
+/// `name` as a file name Windows takes: `<>:"/\|?*` and control characters
+/// as `_`, no dots or spaces at the end, at most 150 characters.
+fn safe_name(name: &str) -> String {
+    let name: String = name
+        .chars()
+        .map(|c| {
+            if c.is_control() || r#"<>:"/\|?*"#.contains(c) {
+                '_'
+            } else {
+                c
+            }
+        })
+        .take(150)
+        .collect();
+    name.trim_end_matches(['.', ' ']).to_owned()
+}
+
+/// The file to write for `typed` (the window's field): a relative path is
+/// taken in `folder`, and `.mp4` is added unless it names MP4, MKV or MOV.
+pub fn output_path(typed: &str, folder: &Path) -> PathBuf {
+    let path = PathBuf::from(typed.trim());
+    let path = if path.is_absolute() {
+        path
+    } else {
+        folder.join(path)
+    };
+    let known = path.extension().is_some_and(|e| {
+        ["mp4", "mkv", "mov"]
+            .iter()
+            .any(|k| e.eq_ignore_ascii_case(k))
+    });
+    if known {
+        path
+    } else {
+        let mut name = path.into_os_string();
+        name.push(".mp4");
+        PathBuf::from(name)
+    }
+}
+
+/// `a` and `b` are the same file (Windows' names regardless of case).
+pub fn same_file(a: &Path, b: &Path) -> bool {
+    let full = |p: &Path| {
+        std::fs::canonicalize(p)
+            .unwrap_or_else(|_| p.to_path_buf())
+            .to_string_lossy()
+            .to_lowercase()
+    };
+    full(a) == full(b)
 }
 
 #[cfg(test)]
@@ -380,7 +485,51 @@ mod tests {
         std::fs::write(&first, b"").unwrap();
         let second = file_name(&dir, film, 754.0, 790.5);
         assert!(second.to_string_lossy().ends_with("(2).mp4"));
+        // An address's name, as Windows takes it.
+        let stream = Path::new("https://cdn.example/live/stream?id=5");
+        let named = file_name(&dir, stream, 0.0, 10.0);
+        assert_eq!(
+            named.file_name().unwrap().to_string_lossy(),
+            "stream_id=5 0-00-00–0-00-10.mp4"
+        );
+        assert_eq!(safe_name("host:8080"), "host_8080");
+        assert_eq!(safe_name("a. . "), "a");
+        assert_eq!(safe_name(&"я".repeat(300)).chars().count(), 150);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_subtitle_path_with_a_semicolon() {
+        let dir = std::env::temp_dir().join(format!("metalmpv a;b {}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let srt = dir.join("x.srt");
+        std::fs::write(&srt, b"").unwrap();
+        // Volumes without short names give none; the path stays as it is.
+        if let Some(short) = crate::win::short_path(&srt) {
+            assert!(
+                !short.to_string_lossy().contains(';'),
+                "{}",
+                short.display()
+            );
+            assert!(short.exists());
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn paths_typed() {
+        let folder = Path::new(r"D:\Clips");
+        assert_eq!(output_path("clip", folder), Path::new(r"D:\Clips\clip.mp4"));
+        assert_eq!(output_path(" a.MKV ", folder), Path::new(r"D:\Clips\a.MKV"));
+        assert_eq!(output_path(r"E:\x.v1", folder), Path::new(r"E:\x.v1.mp4"));
+        assert!(same_file(
+            Path::new(r"C:\NoSuch\A.mp4"),
+            Path::new(r"c:\nosuch\a.MP4")
+        ));
+        assert!(!same_file(Path::new(r"C:\a.mp4"), Path::new(r"C:\b.mp4")));
+        assert_eq!(aac_kbps(Some(2)), 192);
+        assert_eq!(aac_kbps(Some(6)), 384);
+        assert_eq!(aac_kbps(None), 192);
     }
 
     #[test]
@@ -444,10 +593,15 @@ mod tests {
             from,
             to,
             output: output.to_path_buf(),
+            replace: false,
             encode,
             audio: Some(1),
+            channels: Some(2),
             subs,
             sub_style: crate::sub_style::SubStyle::default().options().to_vec(),
+            audio_delay: 0.0,
+            sub_delay: 0.0,
+            deinterlace: "auto",
         };
         let (progress, cancel) = (AtomicU32::new(0), AtomicBool::new(false));
         for (i, encode) in ways.into_iter().enumerate() {

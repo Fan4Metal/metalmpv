@@ -882,6 +882,10 @@ impl App {
     /// Open the Save the A-B stretch window for the file playing, its
     /// tracks shown and the subtitles' look.
     fn save_clip(&mut self, state: &State) {
+        // A stretch being saved, its window hidden: shown again.
+        if self.clip_dialog.reveal() {
+            return;
+        }
         let (Some(from), Some(to)) = (state.loop_a, state.loop_b) else {
             self.osd.show(Osd::Text(
                 tr!(
@@ -914,13 +918,26 @@ impl App {
             .current_folder()
             .or_else(|| self.settings.frames_dir())
             .unwrap_or_else(std::env::temp_dir);
+        // The subtitles as the player draws them.
+        let mut sub_style = self.settings.sub.options().to_vec();
+        let ass = if self.settings.sub_ass_override {
+            "force"
+        } else {
+            "scale"
+        };
+        sub_style.push(("sub-ass-override", ass.to_owned()));
+        let audio = tracks::selected(&state.tracks, Kind::Audio);
         let stretch = ui::clip::Stretch {
             input: input.to_path_buf(),
             from,
             to,
-            audio: tracks::selected(&state.tracks, Kind::Audio).map(|t| t.id),
+            audio: audio.map(|t| t.id),
+            channels: audio.and_then(|t| t.channels),
             subs,
-            sub_style: self.settings.sub.options().to_vec(),
+            sub_style,
+            audio_delay: state.audio_delay,
+            sub_delay: state.sub_delay,
+            deinterlace: self.adjust.deinterlace.option(),
             folder,
         };
         self.clip_dialog.open(stretch);
@@ -3953,6 +3970,7 @@ impl eframe::App for App {
                     format!("[ Фрагмент сохранён: {name} ]")
                 )));
             }
+            Some(ui::clip::Action::Failed(why)) => self.osd.show(Osd::Text(format!("[ {why} ]"))),
             None => {}
         }
         if let Some(time) = self.goto_dialog.show(&ctx, state.time, state.duration) {
@@ -4142,7 +4160,8 @@ impl eframe::App for App {
     /// The render context goes first, while the OpenGL context lives, then
     /// the core.
     fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
-        // A stretch half saved is deleted by its thread.
+        // A stretch being saved is cancelled, and its thread is given a
+        // moment to delete the file half written.
         self.clip_dialog.cancel();
         if let Some(video) = &mut self.video {
             video.free(gl);

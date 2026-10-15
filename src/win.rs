@@ -1184,6 +1184,27 @@ pub fn ansi_text(bytes: &[u8]) -> Option<String> {
     (written > 0).then(|| String::from_utf16_lossy(&wide[..written as usize]))
 }
 
+/// The short (8.3) name of `path`, which has no `;` or spaces; `None` when
+/// the volume keeps no short names or the file is not there.
+pub fn short_path(path: &std::path::Path) -> Option<std::path::PathBuf> {
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    // kernel32 is declared by hand, to spare a `windows-sys` feature.
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetShortPathNameW(long: *const u16, short: *mut u16, len: u32) -> u32;
+    }
+    let long: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    let len = unsafe { GetShortPathNameW(long.as_ptr(), std::ptr::null_mut(), 0) };
+    if len == 0 {
+        return None;
+    }
+    let mut short = vec![0u16; len as usize];
+    let written = unsafe { GetShortPathNameW(long.as_ptr(), short.as_mut_ptr(), len) };
+    (written > 0 && written < len).then(|| {
+        std::path::PathBuf::from(std::ffi::OsString::from_wide(&short[..written as usize]))
+    })
+}
+
 /// `time` in the local time zone, by the zone's rules of that date: the
 /// year, month, day, hour, minute and second. `None` before 1970.
 pub fn local_time(time: std::time::SystemTime) -> Option<[u16; 6]> {
