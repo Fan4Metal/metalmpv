@@ -1186,7 +1186,7 @@ fn language_list(ui: &mut Ui, id: &str, list: &mut Vec<String>) {
             });
             if chosen != list.get(i).cloned().unwrap_or_default() {
                 if chosen.is_empty() {
-                    list.truncate(i);
+                    list.remove(i);
                 } else if i < list.len() {
                     list[i] = chosen;
                 } else {
