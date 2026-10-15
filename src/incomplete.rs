@@ -40,8 +40,10 @@ pub fn unfilled(path: &str, at: f64, duration: f64) -> bool {
 /// Whether local file `path`, of `duration` seconds as mpv says, is
 /// shorter than its header declares: a download cut short, whose
 /// duration the header still gives whole (an MP3's Xing header, or its
-/// ID3 length at its bitrate; a WAV's size).
-pub fn truncated(path: &str, duration: f64) -> bool {
+/// ID3 length at its bitrate; a WAV's size). `mp3`: mpv's `file-format`
+/// says so; the bytes of other formats (AAC, AC3) are not searched for an
+/// MP3 frame, which their data has by chance.
+pub fn truncated(path: &str, duration: f64, mp3: bool) -> bool {
     if crate::playlist::is_url(Path::new(path)) {
         return false;
     }
@@ -71,7 +73,7 @@ pub fn truncated(path: &str, duration: f64) -> bool {
     {
         return false;
     }
-    declared(&head, duration)
+    declared(&head, duration, mp3)
         .is_some_and(|declared| size + (declared / 50).max(4096) < start + declared)
 }
 
@@ -80,7 +82,7 @@ pub fn truncated(path: &str, duration: f64) -> bool {
 /// CBR) or VBRI header, else its first frame's bitrate over `duration`
 /// (from its ID3 length; over-estimated from that bitrate, it gives the
 /// size there is).
-fn declared(head: &[u8], duration: f64) -> Option<u64> {
+fn declared(head: &[u8], duration: f64, mp3: bool) -> Option<u64> {
     let be32 = |at: usize| -> Option<u64> {
         let b = head.get(at..at + 4)?;
         Some(u64::from(u32::from_be_bytes([b[0], b[1], b[2], b[3]])))
@@ -89,6 +91,9 @@ fn declared(head: &[u8], duration: f64) -> Option<u64> {
         let size = u32::from_le_bytes([head[4], head[5], head[6], head[7]]);
         // Written by a stream that did not know its end.
         return (size != 0 && size != u32::MAX).then_some(u64::from(size) + 8);
+    }
+    if !mp3 {
+        return None;
     }
     // The first frame of MPEG audio layer III.
     let frame = (0..head.len().saturating_sub(4)).find(|&i| {
@@ -128,6 +133,18 @@ fn declared(head: &[u8], duration: f64) -> Option<u64> {
     ];
     const MPEG2: [u64; 15] = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160];
     let kbps = if mpeg1 { MPEG1 } else { MPEG2 }[usize::from(head[frame + 2] >> 4)];
+    // A frame header found by chance has no other at its frame's length.
+    let rate = match (head[frame + 1] >> 3) & 3 {
+        3 => [44_100, 48_000, 32_000],
+        2 => [22_050, 24_000, 16_000],
+        _ => [11_025, 12_000, 8_000],
+    }[usize::from((head[frame + 2] >> 2) & 3)];
+    let padding = u64::from((head[frame + 2] >> 1) & 1);
+    let length = (if mpeg1 { 144 } else { 72 } * kbps * 1000 / rate + padding) as usize;
+    let next = head.get(frame + length..frame + length + 2)?;
+    if next[0] != 0xFF || next[1] & 0xE0 != 0xE0 {
+        return None;
+    }
     (duration.is_finite() && duration > 0.0)
         .then(|| frame as u64 + (duration * kbps as f64 * 125.0) as u64)
 }
@@ -137,12 +154,14 @@ mod tests {
     use super::*;
 
     /// An MP3's start: an ID3v2 tag of `tag` bytes, then a MPEG-1 stereo
-    /// frame of 128 kb/s, with a Xing header declaring `bytes` if any.
+    /// frame of 128 kb/s (417 bytes), with a Xing header declaring `bytes`
+    /// if any, and the next frame's header.
     fn mp3_head(tag: usize, bytes: Option<u32>) -> Vec<u8> {
         let mut head = b"ID3\x04\x00\x00".to_vec();
         head.extend([0, 0, (tag >> 7) as u8 & 0x7F, tag as u8 & 0x7F]);
         head.extend(vec![0; tag]);
         // 128 kb/s, 44.1 kHz, stereo.
+        let frame = head.len();
         head.extend([0xFF, 0xFB, 0x90, 0x00]);
         head.extend([0; 32]);
         if let Some(bytes) = bytes {
@@ -151,6 +170,8 @@ mod tests {
             head.extend(1000u32.to_be_bytes());
             head.extend(bytes.to_be_bytes());
         }
+        head.resize(frame + 417, 0);
+        head.extend([0xFF, 0xFB, 0x90, 0x00]);
         head.extend([0; 300]);
         head
     }
@@ -159,24 +180,31 @@ mod tests {
     fn headers_declare_sizes() {
         let after_tag = |head: Vec<u8>| head[210..].to_vec();
         assert_eq!(
-            declared(&after_tag(mp3_head(200, Some(500_000))), 0.0),
+            declared(&after_tag(mp3_head(200, Some(500_000))), 0.0, true),
             Some(500_000)
         );
         // No Xing header: 128 kb/s for 60 s.
         assert_eq!(
-            declared(&after_tag(mp3_head(200, None)), 60.0),
+            declared(&after_tag(mp3_head(200, None)), 60.0, true),
             Some(960_000)
         );
-        assert_eq!(declared(&after_tag(mp3_head(200, None)), 0.0), None);
+        assert_eq!(declared(&after_tag(mp3_head(200, None)), 0.0, true), None);
         let mut wav = b"RIFF".to_vec();
         wav.extend(1_000u32.to_le_bytes());
         wav.extend(b"WAVEfmt ");
-        assert_eq!(declared(&wav, 0.0), Some(1_008));
+        assert_eq!(declared(&wav, 0.0, false), Some(1_008));
         let mut stream = b"RIFF".to_vec();
         stream.extend(u32::MAX.to_le_bytes());
         stream.extend(b"WAVE");
-        assert_eq!(declared(&stream, 0.0), None);
-        assert_eq!(declared(b"not audio", 60.0), None);
+        assert_eq!(declared(&stream, 0.0, false), None);
+        assert_eq!(declared(b"not audio", 60.0, true), None);
+        // Not an MP3 (AAC): its bytes are not searched for a frame.
+        assert_eq!(declared(&after_tag(mp3_head(200, None)), 60.0, false), None);
+        // A frame header by chance, without the next one.
+        let mut chance = vec![0x12u8; 50];
+        chance.extend([0xFF, 0xFB, 0x90, 0x00]);
+        chance.extend(vec![0x34u8; 1000]);
+        assert_eq!(declared(&chance, 60.0, true), None);
     }
 
     #[test]
@@ -186,17 +214,17 @@ mod tests {
         let path = |name: &str| dir.join(name).to_string_lossy().into_owned();
         // Declares 500 KB, has some 4 KB: cut short.
         std::fs::write(path("cut.mp3"), mp3_head(200, Some(500_000))).unwrap();
-        assert!(truncated(&path("cut.mp3"), 30.0));
+        assert!(truncated(&path("cut.mp3"), 30.0, true));
         // Declares what it has.
         let size = mp3_head(200, Some(0)).len() as u32 - 210;
         std::fs::write(path("whole.mp3"), mp3_head(200, Some(size))).unwrap();
-        assert!(!truncated(&path("whole.mp3"), 30.0));
+        assert!(!truncated(&path("whole.mp3"), 30.0, true));
         // No Xing header: 60 s at 128 kb/s are some 940 KB, not 0.5 KB;
         // a duration estimated from the size gives the size.
         std::fs::write(path("cbr.mp3"), mp3_head(200, None)).unwrap();
-        assert!(truncated(&path("cbr.mp3"), 60.0));
+        assert!(truncated(&path("cbr.mp3"), 60.0, true));
         let estimated = (mp3_head(200, None).len() - 210) as f64 * 8.0 / 128_000.0;
-        assert!(!truncated(&path("cbr.mp3"), estimated));
+        assert!(!truncated(&path("cbr.mp3"), estimated, true));
         // Data in the first half, zeros in the second.
         let mut half = vec![0xFFu8; 512 * 1024];
         half.extend(vec![0u8; 512 * 1024]);

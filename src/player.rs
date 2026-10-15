@@ -907,6 +907,7 @@ impl Player {
                                 let s = &self.state;
                                 let path = s.path.clone().unwrap_or_default();
                                 let duration = s.duration.unwrap_or(0.0);
+                                let mp3 = s.file_format.as_deref() == Some("mp3");
                                 let end = data_end(
                                     seek.as_ref(),
                                     std::time::Instant::now(),
@@ -916,7 +917,7 @@ impl Player {
                                     indexed(s.file_format.as_deref()),
                                     &|at| {
                                         incomplete::unfilled(&path, at, duration)
-                                            || incomplete::truncated(&path, duration)
+                                            || incomplete::truncated(&path, duration, mp3)
                                     },
                                 );
                                 match end {
