@@ -1,7 +1,6 @@
 //! The Save the A-B stretch window (`Ctrl+Shift+S`, the A-B repeat
-//! submenu): the file it goes to, the way (as it is, quick and on
-//! keyframes; or encoded, exact, with the codec, the card or the
-//! processor, the quality and the subtitles burnt in), then the progress
+//! submenu): the file it goes to, how it is encoded (the codec, the card or
+//! the processor, the quality, the subtitles burnt in), then the progress
 //! of the saving (`clip.rs`) with Cancel. Playback goes on meanwhile.
 
 use std::path::{Path, PathBuf};
@@ -9,7 +8,7 @@ use std::path::{Path, PathBuf};
 use egui::{RichText, vec2};
 
 use super::style;
-use crate::clip::{Choice, Codec, Failure, Job, QUALITY_RANGE, Request, Subs};
+use crate::clip::{Codec, Encode, Failure, Job, QUALITY_RANGE, Request, Subs};
 
 /// What the window needs of the file playing to make a request.
 pub struct Stretch {
@@ -41,17 +40,12 @@ pub struct ClipDialog {
 }
 
 impl ClipDialog {
-    pub fn open(&mut self, stretch: Stretch, choice: Choice) {
+    pub fn open(&mut self, stretch: Stretch) {
         if self.job.is_some() {
             return;
         }
-        let name = crate::clip::file_name(
-            &stretch.folder,
-            &stretch.input,
-            stretch.from,
-            stretch.to,
-            choice.mode().extension(),
-        );
+        let name =
+            crate::clip::file_name(&stretch.folder, &stretch.input, stretch.from, stretch.to);
         self.path = name.to_string_lossy().into_owned();
         self.stretch = Some(stretch);
         self.error = None;
@@ -73,7 +67,7 @@ impl ClipDialog {
         }
     }
 
-    pub fn show(&mut self, ctx: &egui::Context, choice: &mut Choice) -> Option<Action> {
+    pub fn show(&mut self, ctx: &egui::Context, e: &mut Encode) -> Option<Action> {
         let stretch = self.stretch.as_ref()?;
         let mut action = None;
         if let Some(result) = self.job.as_ref().and_then(Job::take) {
@@ -84,15 +78,6 @@ impl ClipDialog {
                     return Some(Action::Saved(job.output));
                 }
                 Err(Failure::Cancelled) => {}
-                Err(Failure::TooLong) => {
-                    self.error = Some(
-                        tr!(
-                            "The stretch is too long to save as it is: encode it, or make it shorter.",
-                            "Фрагмент слишком длинный, чтобы сохранить его как есть: перекодируйте его или сократите."
-                        )
-                        .to_owned(),
-                    );
-                }
                 Err(Failure::Mpv(e)) => {
                     log::warn!("cannot save the stretch: {e}");
                     self.error = Some(tr!(
@@ -146,101 +131,52 @@ impl ClipDialog {
                 }
             });
             ui.add_space(6.0);
-            let before = choice.mode().extension();
-            ui.radio_value(
-                &mut choice.copy,
-                true,
-                tr!("As it is", "Как есть"),
-            );
-            ui.label(
-                RichText::new(tr!(
-                    "Quick and in the quality it was; it starts and ends on keyframes, a little before and after the points, into an MKV.",
-                    "Быстро и в исходном качестве; начало и конец — по ключевым кадрам, чуть раньше и позже точек, в MKV."
-                ))
-                .size(12.0)
-                .color(style::TEXT_WEAK),
-            );
-            ui.radio_value(
-                &mut choice.copy,
-                false,
-                tr!("Encoded", "Перекодировать"),
-            );
-            ui.label(
-                RichText::new(tr!(
-                    "Exact to the frame, into an MP4; takes longer.",
-                    "Точно по кадрам, в MP4; дольше."
-                ))
-                .size(12.0)
-                .color(style::TEXT_WEAK),
-            );
-            if !choice.copy {
-                ui.add_space(4.0);
-                let e = &mut choice.encode;
-                egui::Grid::new("clip_encode")
-                    .num_columns(2)
-                    .spacing(vec2(12.0, 6.0))
-                    .show(ui, |ui| {
-                        ui.label(tr!("Codec", "Кодек"));
-                        egui::ComboBox::from_id_salt("clip_codec")
-                            .selected_text(e.codec.label())
-                            .show_ui(ui, |ui| {
-                                for codec in Codec::ALL {
-                                    ui.selectable_value(&mut e.codec, codec, codec.label());
-                                }
-                            });
-                        ui.end_row();
-                        ui.label(tr!("Encoder", "Кодировщик"));
-                        ui.horizontal(|ui| {
-                            ui.radio_value(&mut e.nvenc, false, tr!("Processor", "Процессор"));
-                            ui.radio_value(
-                                &mut e.nvenc,
-                                true,
-                                tr!("NVIDIA card (NVENC)", "Видеокарта NVIDIA (NVENC)"),
-                            );
+            egui::Grid::new("clip_encode")
+                .num_columns(2)
+                .spacing(vec2(12.0, 6.0))
+                .show(ui, |ui| {
+                    ui.label(tr!("Codec", "Кодек"));
+                    egui::ComboBox::from_id_salt("clip_codec")
+                        .selected_text(e.codec.label())
+                        .show_ui(ui, |ui| {
+                            for codec in Codec::ALL {
+                                ui.selectable_value(&mut e.codec, codec, codec.label());
+                            }
                         });
-                        ui.end_row();
-                        ui.label(tr!("Quality", "Качество"))
-                            .on_hover_text(tr!(
-                                "x264's and x265's CRF, NVENC's CQ: lower is better and larger",
-                                "CRF у x264 и x265, CQ у NVENC: меньше — лучше и крупнее файл"
-                            ));
-                        ui.add(egui::Slider::new(&mut e.quality, QUALITY_RANGE).text(tr!(
-                            "lower is better",
-                            "меньше — лучше"
-                        )));
-                        ui.end_row();
+                    ui.end_row();
+                    ui.label(tr!("Encoder", "Кодировщик"));
+                    ui.horizontal(|ui| {
+                        ui.radio_value(&mut e.nvenc, false, tr!("Processor", "Процессор"));
+                        ui.radio_value(
+                            &mut e.nvenc,
+                            true,
+                            tr!("NVIDIA card (NVENC)", "Видеокарта NVIDIA (NVENC)"),
+                        );
                     });
-                ui.add_space(2.0);
-                let subs = stretch.subs != Subs::None;
-                ui.add_enabled(
-                    subs,
-                    egui::Checkbox::new(
-                        &mut e.burn_subs,
-                        tr!(
-                            "Burn the subtitles shown into the picture",
-                            "Впечатать показанные субтитры в изображение"
-                        ),
+                    ui.end_row();
+                    ui.label(tr!("Quality", "Качество")).on_hover_text(tr!(
+                        "x264's and x265's CRF, NVENC's CQ: lower is better and larger",
+                        "CRF у x264 и x265, CQ у NVENC: меньше — лучше и крупнее файл"
+                    ));
+                    ui.add(
+                        egui::Slider::new(&mut e.quality, QUALITY_RANGE)
+                            .text(tr!("lower is better", "меньше — лучше")),
+                    );
+                    ui.end_row();
+                });
+            ui.add_space(2.0);
+            let subs = stretch.subs != Subs::None;
+            ui.add_enabled(
+                subs,
+                egui::Checkbox::new(
+                    &mut e.burn_subs,
+                    tr!(
+                        "Burn the subtitles shown into the picture",
+                        "Впечатать показанные субтитры в изображение"
                     ),
-                )
-                .on_disabled_hover_text(tr!("No subtitles are shown", "Субтитры не показаны"));
-            } else if matches!(stretch.subs, Subs::File { .. }) {
-                ui.add_space(2.0);
-                ui.label(
-                    RichText::new(tr!(
-                        "Subtitles from a file of their own are not taken along as it is; encoded, they can be burnt in.",
-                        "Субтитры из отдельного файла при сохранении как есть не попадут; при перекодировании их можно впечатать."
-                    ))
-                    .size(12.0)
-                    .color(style::TEXT_WEAK),
-                );
-            }
-            // The extension follows the way.
-            let after = choice.mode().extension();
-            if after != before
-                && let Some(stem) = self.path.strip_suffix(&format!(".{before}"))
-            {
-                self.path = format!("{stem}.{after}");
-            }
+                ),
+            )
+            .on_disabled_hover_text(tr!("No subtitles are shown", "Субтитры не показаны"));
             if let Some(error) = &self.error {
                 ui.add_space(6.0);
                 ui.label(RichText::new(error).color(style::OSD));
@@ -262,7 +198,7 @@ impl ClipDialog {
                 from: stretch.from,
                 to: stretch.to,
                 output: PathBuf::from(self.path.trim()),
-                mode: choice.mode(),
+                encode: *e,
                 audio: stretch.audio,
                 subs: stretch.subs.clone(),
                 sub_style: stretch.sub_style.clone(),

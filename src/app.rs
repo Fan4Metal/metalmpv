@@ -923,16 +923,15 @@ impl App {
             sub_style: self.settings.sub.options().to_vec(),
             folder,
         };
-        self.clip_dialog.open(stretch, self.settings.clip);
+        self.clip_dialog.open(stretch);
     }
 
     /// The Save dialog of the stretch's file, starting at `path`.
     fn browse_clip(&mut self, ctx: &egui::Context, path: PathBuf) {
-        let extension = self.settings.clip.mode().extension();
         let make = move || {
             let mut dialog = rfd::FileDialog::new()
                 .set_title(tr!("Save the A-B stretch", "Сохранить фрагмент A-B"))
-                .add_filter(extension.to_uppercase(), &[extension]);
+                .add_filter("MP4", &["mp4"]);
             if let Some(name) = path.file_name() {
                 dialog = dialog.set_file_name(name.to_string_lossy());
             }

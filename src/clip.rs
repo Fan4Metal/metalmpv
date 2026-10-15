@@ -1,18 +1,14 @@
 //! Saving a stretch of the file playing (the A-B repeat's) as a file of its
 //! own, by a second mpv core without a window on a thread of its own, while
-//! the player goes on.
+//! the player goes on: mpv's encoding mode (`o`) decodes the stretch and
+//! encodes it, exact to the frame, H.264 or HEVC on the processor (x264,
+//! x265) or on an NVIDIA card (NVENC), AAC sound, in an MP4; the subtitles
+//! shown burnt into the picture when wanted (mpv's encoder draws them).
 //!
-//! As it is ([`Mode::Copy`]): mpv's `dump-cache` writes the packets read
-//! between the points into a Matroska file without decoding them, from the
-//! keyframe at or before the start: quick, in the quality it was. The core
-//! opens the file paused at the start with its cache on and reads ahead to
-//! the end, so the stretch must fit in the cache ([`MAX_CACHE`]).
-//!
-//! Encoded ([`Mode::Encode`]): mpv's encoding mode (`o`) decodes the
-//! stretch and encodes it, exact to the frame: H.264 or HEVC on the
-//! processor (x264, x265) or on an NVIDIA card (NVENC), AAC sound, in an
-//! MP4; the subtitles shown burnt into the picture when wanted (mpv's
-//! encoder draws them).
+//! No copy without encoding: mpv's `dump-cache` and `stream-record` write
+//! through its recorder, which drops the packets without a decoding time,
+//! the B-frames of a Matroska file (a third of the frames, the picture
+//! broken); and no FFmpeg is at hand but inside libmpv.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,9 +17,6 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::time::Duration;
 
 use crate::mpv::{EndReason, Event, Mpv, sys};
-
-/// The most a stretch saved as it is may take in memory.
-const MAX_CACHE: u64 = 3 << 30;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Codec {
@@ -59,7 +52,7 @@ impl Default for Encode {
         Self {
             codec: Codec::H264,
             nvenc: false,
-            quality: 20,
+            quality: 22,
             burn_subs: false,
         }
     }
@@ -81,22 +74,6 @@ impl Encode {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Mode {
-    Copy,
-    Encode(Encode),
-}
-
-impl Mode {
-    /// The extension of the file it writes.
-    pub fn extension(self) -> &'static str {
-        match self {
-            Mode::Copy => "mkv",
-            Mode::Encode(_) => "mp4",
-        }
-    }
-}
-
 /// The subtitles shown in the player.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Subs {
@@ -104,81 +81,53 @@ pub enum Subs {
     /// A track of the file (mpv's id).
     Own(i64),
     /// A file of their own, after the file's `embedded` subtitle tracks
-    /// (its id in a core that loads it alone is the next): saved as it is,
-    /// it is left out; encoded, it can be burnt in.
+    /// (its id in a core that loads it alone is the next).
     File {
         path: PathBuf,
         embedded: i64,
     },
 }
 
-/// The way chosen last, kept in the settings (`clip`): as it is or
-/// encoded, and how it is encoded either way.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Choice {
-    pub copy: bool,
-    pub encode: Encode,
-}
-
-impl Default for Choice {
-    fn default() -> Self {
-        Self {
-            copy: true,
-            encode: Encode::default(),
-        }
-    }
-}
-
-impl Choice {
-    pub fn mode(self) -> Mode {
-        if self.copy {
-            Mode::Copy
-        } else {
-            Mode::Encode(self.encode)
-        }
-    }
-
-    /// `copy|h264|cpu|20|subs`, `encode|hevc|nvenc|24|-`.
+impl Encode {
+    /// The setting `clip`: `h264|cpu|22|subs`, `hevc|nvenc|24|-`.
     pub fn to_text(self) -> String {
-        let e = self.encode;
         format!(
-            "{}|{}|{}|{}|{}",
-            if self.copy { "copy" } else { "encode" },
-            if e.codec == Codec::Hevc {
+            "{}|{}|{}|{}",
+            if self.codec == Codec::Hevc {
                 "hevc"
             } else {
                 "h264"
             },
-            if e.nvenc { "nvenc" } else { "cpu" },
-            e.quality,
-            if e.burn_subs { "subs" } else { "-" }
+            if self.nvenc { "nvenc" } else { "cpu" },
+            self.quality,
+            if self.burn_subs { "subs" } else { "-" }
         )
     }
 
-    /// What [`Choice::to_text`] wrote; the default for what is not
+    /// What [`Encode::to_text`] wrote (and a first field of the way, as a
+    /// version that also copied wrote); the default for what is not
     /// understood.
     pub fn from_text(text: &str) -> Self {
-        let f: Vec<&str> = text.split('|').collect();
-        let [copy, codec, device, quality, subs] = f[..] else {
+        let mut f: Vec<&str> = text.split('|').collect();
+        if f.len() == 5 {
+            f.remove(0);
+        }
+        let [codec, device, quality, subs] = f[..] else {
             return Self::default();
         };
-        let d = Encode::default();
         Self {
-            copy: copy != "encode",
-            encode: Encode {
-                codec: if codec == "hevc" {
-                    Codec::Hevc
-                } else {
-                    Codec::H264
-                },
-                nvenc: device == "nvenc",
-                quality: quality
-                    .parse::<u8>()
-                    .ok()
-                    .filter(|q| QUALITY_RANGE.contains(q))
-                    .unwrap_or(d.quality),
-                burn_subs: subs == "subs",
+            codec: if codec == "hevc" {
+                Codec::Hevc
+            } else {
+                Codec::H264
             },
+            nvenc: device == "nvenc",
+            quality: quality
+                .parse::<u8>()
+                .ok()
+                .filter(|q| QUALITY_RANGE.contains(q))
+                .unwrap_or(Self::default().quality),
+            burn_subs: subs == "subs",
         }
     }
 }
@@ -192,7 +141,7 @@ pub struct Request {
     pub from: f64,
     pub to: f64,
     pub output: PathBuf,
-    pub mode: Mode,
+    pub encode: Encode,
     pub audio: Option<i64>,
     pub subs: Subs,
     pub sub_style: Vec<(&'static str, String)>,
@@ -202,8 +151,6 @@ pub struct Request {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Failure {
     Cancelled,
-    /// Saved as it is, the stretch did not fit in the cache.
-    TooLong,
     /// mpv's reason.
     Mpv(String),
 }
@@ -261,14 +208,11 @@ impl Job {
     }
 }
 
-/// The reply of `loadfile` and of `dump-cache`.
+/// The reply of `loadfile`, and the position observed.
 const LOAD: u64 = 1;
-const DUMP: u64 = 2;
-/// The observed properties.
-const CACHE_STATE: u64 = 10;
-const TIME_POS: u64 = 11;
+const TIME_POS: u64 = 2;
 
-/// The options of both ways: no window, no sound, nothing of the user's.
+/// No window, no sound, nothing of the user's.
 fn quiet() -> Vec<(&'static str, String)> {
     [
         ("terminal", "no"),
@@ -299,71 +243,42 @@ fn run(
     let track = |id: Option<i64>| id.map_or("no".to_owned(), |id| id.to_string());
     let mut options = quiet();
     options.push(("aid", track(request.audio)));
-    match request.mode {
-        Mode::Copy => {
-            // Paused at the start, the cache filled to the end.
-            let ahead = format!("{:.0}", span + 10.0);
-            options.extend([
-                ("vo", "null".to_owned()),
-                ("ao", "null".to_owned()),
-                ("pause", "yes".to_owned()),
-                ("cache", "yes".to_owned()),
-                ("cache-secs", ahead.clone()),
-                ("demuxer-readahead-secs", ahead),
-                ("demuxer-max-bytes", MAX_CACHE.to_string()),
-                // What the decoder took for the first frame stays too.
-                ("demuxer-max-back-bytes", MAX_CACHE.to_string()),
-                // The file's own subtitles go with it; a file of their own
-                // is not in the cache.
-                (
-                    "sid",
-                    track(match request.subs {
-                        Subs::Own(id) => Some(id),
-                        _ => None,
-                    }),
-                ),
-            ]);
+    let encode = request.encode;
+    let (codec, codec_options) = encode.encoder();
+    options.extend([
+        ("o", request.output.to_string_lossy().into_owned()),
+        ("ovc", codec.to_owned()),
+        ("ovcopts", codec_options),
+        ("oac", "aac".to_owned()),
+        ("oacopts", "b=192k".to_owned()),
+        // Frames decoded on the card come back for the encoder.
+        ("hwdec", "auto-copy-safe".to_owned()),
+        ("end", format!("{:.3}", request.to)),
+    ]);
+    let sid = match &request.subs {
+        Subs::Own(id) if encode.burn_subs => Some(*id),
+        Subs::File { path, embedded } if encode.burn_subs => {
+            options.push(("sub-files", path.to_string_lossy().into_owned()));
+            Some(embedded + 1)
         }
-        Mode::Encode(encode) => {
-            let (codec, codec_options) = encode.encoder();
-            options.extend([
-                ("o", request.output.to_string_lossy().into_owned()),
-                ("ovc", codec.to_owned()),
-                ("ovcopts", codec_options),
-                ("oac", "aac".to_owned()),
-                ("oacopts", "b=192k".to_owned()),
-                // Frames decoded on the card come back for the encoder.
-                ("hwdec", "auto-copy-safe".to_owned()),
-                ("end", format!("{:.3}", request.to)),
-            ]);
-            let sid = match &request.subs {
-                Subs::Own(id) if encode.burn_subs => Some(*id),
-                Subs::File { path, embedded } if encode.burn_subs => {
-                    options.push(("sub-files", path.to_string_lossy().into_owned()));
-                    Some(embedded + 1)
-                }
-                _ => None,
-            };
-            options.push(("sid", track(sid)));
-            if sid.is_some() {
-                options.extend(request.sub_style.iter().cloned());
-            }
-            // Even sizes, as the encoders want for 4:2:0 (a picture 1441
-            // wide was refused); for H.264 8 bits, as a 10-bit one plays
-            // almost nowhere.
-            let even = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
-            let graph = if encode.codec == Codec::H264 {
-                format!("lavfi=[{even},format=yuv420p]")
-            } else {
-                format!("lavfi=[{even}]")
-            };
-            options.push(("vf", graph));
-        }
+        _ => None,
+    };
+    options.push(("sid", track(sid)));
+    if sid.is_some() {
+        options.extend(request.sub_style.iter().cloned());
     }
+    // Even sizes, as the encoders want for 4:2:0 (a picture 1441 wide was
+    // refused); for H.264 8 bits, as a 10-bit one plays almost nowhere.
+    let even = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
+    let graph = if encode.codec == Codec::H264 {
+        format!("lavfi=[{even},format=yuv420p]")
+    } else {
+        format!("lavfi=[{even}]")
+    };
+    options.push(("vf", graph));
     let options: Vec<(&str, &str)> = options.iter().map(|(n, v)| (*n, v.as_str())).collect();
     let mut mpv = Mpv::new(api, &options).map_err(Failure::Mpv)?;
     mpv.request_log_messages("info");
-    mpv.observe(CACHE_STATE, "demuxer-cache-state", sys::MPV_FORMAT_NODE);
     mpv.observe(TIME_POS, "time-pos", sys::MPV_FORMAT_DOUBLE);
     let input = request.input.to_string_lossy();
     let start = format!("start={:.3}", request.from);
@@ -373,7 +288,7 @@ fn run(
         request.from,
         request.to,
         request.input.display(),
-        request.mode,
+        request.encode,
         request.output.display()
     );
     let set = |share: f64| {
@@ -383,7 +298,6 @@ fn run(
         }
     };
     let mut loaded = false;
-    let mut dumping = false;
     loop {
         if cancel.load(Ordering::Relaxed) {
             return Err(Failure::Cancelled);
@@ -392,48 +306,24 @@ fn run(
             match event {
                 Event::FileLoaded => loaded = true,
                 Event::CommandReply {
-                    id: LOAD | DUMP,
+                    id: LOAD,
                     error: Some(e),
                 } => return Err(Failure::Mpv(e)),
-                Event::CommandReply { id: DUMP, .. } => {
-                    set(1.0);
-                    return Ok(());
-                }
                 Event::EndFile {
                     reason: EndReason::Error,
                     error,
                 } => return Err(Failure::Mpv(error.unwrap_or_else(|| "cannot open".into()))),
-                Event::EndFile { .. } if matches!(request.mode, Mode::Encode(_)) && loaded => {
+                Event::EndFile { .. } if loaded => {
                     // The encoder finishes the file as the core is destroyed.
                     drop(mpv);
                     set(1.0);
                     return Ok(());
                 }
                 Event::Property {
-                    id: CACHE_STATE,
-                    value,
-                } if request.mode == Mode::Copy && loaded && !dumping => {
-                    let end = value.get("cache-end").and_then(|v| v.double());
-                    let eof = value.get("eof").is_some_and(|v| v.flag());
-                    let bytes = value.get("total-bytes").and_then(|v| v.int()).unwrap_or(0);
-                    if let Some(end) = end {
-                        set((end - request.from) / span * 0.95);
-                    }
-                    if eof || end.is_some_and(|e| e >= request.to) {
-                        dumping = true;
-                        let (from, to) =
-                            (format!("{:.3}", request.from), format!("{:.3}", request.to));
-                        let output = request.output.to_string_lossy();
-                        mpv.command(DUMP, &["dump-cache", &from, &to, &output]);
-                    } else if bytes as u64 >= MAX_CACHE / 100 * 95 {
-                        return Err(Failure::TooLong);
-                    }
-                }
-                Event::Property {
                     id: TIME_POS,
                     value,
                 } => {
-                    if let (Mode::Encode(_), Some(t)) = (request.mode, value.double()) {
+                    if let Some(t) = value.double() {
                         set((t - request.from) / span);
                     }
                 }
@@ -441,9 +331,7 @@ fn run(
                     prefix,
                     level,
                     text,
-                } => {
-                    log::info!("clip mpv {level} [{prefix}] {}", text.trim_end());
-                }
+                } => log::info!("clip mpv {level} [{prefix}] {}", text.trim_end()),
                 Event::Shutdown => return Err(Failure::Mpv("the core stopped".into())),
                 _ => {}
             }
@@ -453,8 +341,8 @@ fn run(
 }
 
 /// A file for the stretch `from`..`to` of `input` in `folder`: the name
-/// with the times (`Film 00-12-34–00-13-10.mkv`), never one that is there.
-pub fn file_name(folder: &Path, input: &Path, from: f64, to: f64, extension: &str) -> PathBuf {
+/// with the times (`Film 0-12-34–0-13-10.mp4`), never one that is there.
+pub fn file_name(folder: &Path, input: &Path, from: f64, to: f64) -> PathBuf {
     let stem = input
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
@@ -465,9 +353,9 @@ pub fn file_name(folder: &Path, input: &Path, from: f64, to: f64, extension: &st
     (1..)
         .map(|n| {
             let name = if n == 1 {
-                format!("{base}.{extension}")
+                format!("{base}.mp4")
             } else {
-                format!("{base} ({n}).{extension}")
+                format!("{base} ({n}).mp4")
             };
             folder.join(name)
         })
@@ -484,32 +372,31 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("metalmpv_clip_names_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let film = Path::new(r"D:\Films\Film.mkv");
-        let first = file_name(&dir, film, 754.0, 790.5, "mkv");
+        let first = file_name(&dir, film, 754.0, 790.5);
         assert_eq!(
             first.file_name().unwrap().to_string_lossy(),
-            "Film 0-12-34–0-13-10.mkv"
+            "Film 0-12-34–0-13-10.mp4"
         );
         std::fs::write(&first, b"").unwrap();
-        let second = file_name(&dir, film, 754.0, 790.5, "mkv");
-        assert!(second.to_string_lossy().ends_with("(2).mkv"));
+        let second = file_name(&dir, film, 754.0, 790.5);
+        assert!(second.to_string_lossy().ends_with("(2).mp4"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
-    fn choice_kept() {
-        let c = Choice {
-            copy: false,
-            encode: Encode {
-                codec: Codec::Hevc,
-                nvenc: true,
-                quality: 24,
-                burn_subs: true,
-            },
+    fn kept_as_text() {
+        let e = Encode {
+            codec: Codec::Hevc,
+            nvenc: true,
+            quality: 24,
+            burn_subs: true,
         };
-        assert_eq!(c.to_text(), "encode|hevc|nvenc|24|subs");
-        assert_eq!(Choice::from_text(&c.to_text()), c);
-        assert_eq!(Choice::from_text("junk"), Choice::default());
-        assert_eq!(Choice::from_text("copy|h264|cpu|99|-").encode.quality, 20);
+        assert_eq!(e.to_text(), "hevc|nvenc|24|subs");
+        assert_eq!(Encode::from_text(&e.to_text()), e);
+        // As a version that also copied wrote it.
+        assert_eq!(Encode::from_text("encode|hevc|nvenc|24|subs"), e);
+        assert_eq!(Encode::from_text("junk"), Encode::default());
+        assert_eq!(Encode::from_text("h264|cpu|99|-").quality, 22);
     }
 
     #[test]
@@ -525,100 +412,111 @@ mod tests {
         );
     }
 
-    /// Both ways on a real file without a window: `cargo test clip_of_sample
-    /// -- --ignored --nocapture` (a video with sound in METALMPV_SAMPLE, or
-    /// the default below; METALMPV_NVENC=1 encodes on the card too).
+    /// A stretch encoded on a real file without a window, and subtitles
+    /// burnt in: `cargo test clip_of_sample -- --ignored --nocapture` (a
+    /// video with sound in METALMPV_SAMPLE, or the default below; another
+    /// stretch than 2–5 s in METALMPV_CLIP_FROM and _TO; METALMPV_NVENC=1
+    /// encodes on the card too).
     #[test]
     #[ignore = "needs vendor/libmpv and a sample video"]
     fn clip_of_sample() {
         let sample = std::env::var("METALMPV_SAMPLE")
-            .unwrap_or_else(|_| "D:/Projects/video_converter/samples/test.mp4".into());
+            .unwrap_or_else(|_| "D:/Projects/video_converter/samples/test2.mp4".into());
         let dir = std::env::temp_dir().join(format!("metalmpv_clip_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        println!("sample: {:?}", duration_of(Path::new(&sample)));
-        let mut modes = vec![Mode::Copy, Mode::Encode(Encode::default())];
+        let at = |name: &str, or: f64| {
+            std::env::var(name)
+                .ok()
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(or)
+        };
+        let (from, to) = (at("METALMPV_CLIP_FROM", 2.0), at("METALMPV_CLIP_TO", 5.0));
+        let mut ways = vec![Encode::default()];
         if std::env::var("METALMPV_NVENC").is_ok() {
-            modes.push(Mode::Encode(Encode {
+            ways.push(Encode {
                 nvenc: true,
                 codec: Codec::Hevc,
                 ..Encode::default()
-            }));
+            });
         }
-        for mode in modes {
-            let output = dir.join(
-                format!("clip {:?}.{}", mode, mode.extension())
-                    .replace(['{', '}', ':', ' ', ','], "_"),
-            );
-            let request = Request {
-                input: sample.clone().into(),
-                from: 2.0,
-                to: 5.0,
-                output: output.clone(),
-                mode,
-                audio: Some(1),
-                subs: Subs::None,
-                sub_style: Vec::new(),
-            };
-            let (progress, cancel) = (AtomicU32::new(0), AtomicBool::new(false));
-            let started = std::time::Instant::now();
-            run(&request, &progress, &cancel, &|| {}).unwrap();
-            let size = std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0);
-            println!("{mode:?}: {size} bytes in {:?}", started.elapsed());
-            assert!(size > 10_000, "{mode:?} wrote {size} bytes");
-            assert_eq!(progress.load(Ordering::Relaxed), 1000);
-            // The duration, as mpv reads it.
-            let duration = duration_of(&output);
-            println!("  duration {duration:?}");
-            let duration = duration.unwrap();
-            // As it is, from the keyframe before the start to the one after
-            // the end; encoded, exact.
-            let (low, high) = if mode == Mode::Copy {
-                (2.9, 15.0)
-            } else {
-                (2.8, 3.3)
-            };
-            assert!(duration > low && duration < high, "{mode:?}: {duration}");
-        }
-        // Subtitles of a file of their own burnt in, in a look of the user's.
-        let srt = dir.join("subs.srt");
-        std::fs::write(
-            &srt,
-            "1
-00:00:02,500 --> 00:00:04,000
-Burnt in
-",
-        )
-        .unwrap();
-        let output = dir.join("burnt.mp4");
-        let request = Request {
+        let request = |output: &Path, encode: Encode, subs: Subs| Request {
             input: sample.clone().into(),
-            from: 2.0,
-            to: 5.0,
-            output: output.clone(),
-            mode: Mode::Encode(Encode {
-                burn_subs: true,
-                ..Encode::default()
-            }),
+            from,
+            to,
+            output: output.to_path_buf(),
+            encode,
             audio: Some(1),
-            subs: Subs::File {
-                path: srt,
-                embedded: 0,
-            },
+            subs,
             sub_style: crate::sub_style::SubStyle::default().options().to_vec(),
         };
         let (progress, cancel) = (AtomicU32::new(0), AtomicBool::new(false));
-        run(&request, &progress, &cancel, &|| {}).unwrap();
-        assert!(duration_of(&output).is_some_and(|d| (d - 3.0).abs() < 0.2));
-        // The same moment without them: the picture differs at the bottom
-        // (the line), hardly at the top.
-        let plain = dir.join("plain.mp4");
-        let request = Request {
-            output: plain.clone(),
-            subs: Subs::None,
-            ..request
+        for (i, encode) in ways.into_iter().enumerate() {
+            let output = dir.join(format!("clip {i}.mp4"));
+            let started = std::time::Instant::now();
+            run(
+                &request(&output, encode, Subs::None),
+                &progress,
+                &cancel,
+                &|| {},
+            )
+            .unwrap();
+            let size = std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0);
+            let duration = duration_of(&output).unwrap();
+            println!(
+                "{encode:?}: {size} bytes, {duration:.3} s, in {:?}",
+                started.elapsed()
+            );
+            assert_eq!(progress.load(Ordering::Relaxed), 1000);
+            // Exact to the frame.
+            assert!((duration - (to - from)).abs() < 0.2, "{duration}");
+        }
+        // Subtitles of a file of their own burnt in, in a look of the
+        // user's: the picture differs from the same stretch without them at
+        // the bottom (the line), hardly at the top.
+        let srt = dir.join("subs.srt");
+        let stamp = |t: f64| {
+            let ms = (t * 1000.0).round() as u64;
+            format!(
+                "{:02}:{:02}:{:02},{:03}",
+                ms / 3_600_000,
+                ms / 60_000 % 60,
+                ms / 1000 % 60,
+                ms % 1000
+            )
         };
-        run(&request, &progress, &cancel, &|| {}).unwrap();
-        let (with, without) = (frame_at(&output, 1.5, &dir), frame_at(&plain, 1.5, &dir));
+        std::fs::write(
+            &srt,
+            format!("1\n{} --> {}\nBurnt in\n", stamp(from), stamp(to)),
+        )
+        .unwrap();
+        let (burnt, plain) = (dir.join("burnt.mp4"), dir.join("plain.mp4"));
+        let with_subs = Encode {
+            burn_subs: true,
+            ..Encode::default()
+        };
+        let subs = Subs::File {
+            path: srt,
+            embedded: embedded_subs(Path::new(&sample)),
+        };
+        run(
+            &request(&burnt, with_subs, subs),
+            &progress,
+            &cancel,
+            &|| {},
+        )
+        .unwrap();
+        run(
+            &request(&plain, with_subs, Subs::None),
+            &progress,
+            &cancel,
+            &|| {},
+        )
+        .unwrap();
+        let middle = (to - from) / 2.0;
+        let (with, without) = (
+            frame_at(&burnt, middle, &dir),
+            frame_at(&plain, middle, &dir),
+        );
         let differ = |rows: std::ops::Range<u32>| {
             let mut sum = 0u64;
             let mut n = 0u64;
@@ -638,7 +536,7 @@ Burnt in
         let h = with.height();
         let (top, bottom) = (differ(0..h / 4), differ(h * 3 / 4..h));
         println!("burnt in: the top differs by {top:.2}, the bottom by {bottom:.2}");
-        assert!(bottom > top * 3.0 + 1.0, "no subtitles burnt in");
+        assert!(bottom > top * 2.0 + 1.0, "no subtitles burnt in");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -682,6 +580,39 @@ Burnt in
             std::thread::sleep(Duration::from_millis(20));
         }
         panic!("no frame of {}", path.display());
+    }
+
+    /// How many subtitle tracks `path` has of its own.
+    fn embedded_subs(path: &Path) -> i64 {
+        let api = sys::api().unwrap();
+        let mut mpv = Mpv::new(
+            api,
+            &[
+                ("vo", "null"),
+                ("ao", "null"),
+                ("idle", "yes"),
+                ("pause", "yes"),
+                ("sub-auto", "no"),
+            ],
+        )
+        .unwrap();
+        mpv.command(0, &["loadfile", &path.to_string_lossy()]);
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while std::time::Instant::now() < deadline {
+            while let Some(event) = mpv.next_event() {
+                match event {
+                    Event::FileLoaded => mpv.get(1, "track-list", sys::MPV_FORMAT_NODE),
+                    Event::Property { id: 1, value } => {
+                        let tracks = crate::tracks::from_value(&value);
+                        return crate::tracks::of_kind(&tracks, crate::tracks::Kind::Sub).len()
+                            as i64;
+                    }
+                    _ => {}
+                }
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        0
     }
 
     fn duration_of(path: &Path) -> Option<f64> {

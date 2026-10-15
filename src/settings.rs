@@ -514,9 +514,9 @@ pub struct Settings {
     /// Where frames are saved; `None`: Pictures\MetalMPV.
     pub frames_folder: Option<PathBuf>,
     pub frames_format: FrameFormat,
-    /// How an A-B stretch was saved last (`clip.rs`); not a setting of the
-    /// window, Reset keeps it.
-    pub clip: crate::clip::Choice,
+    /// How an A-B stretch was encoded last (`clip.rs`); not a setting of
+    /// the window, Reset keeps it.
+    pub clip: crate::clip::Encode,
     /// What the window shows around the picture (`8`; only the picture, `7`).
     pub interface: Interface,
     /// Which media keys the player takes.
@@ -635,7 +635,7 @@ impl Default for Settings {
             window_on_open: WindowOnOpen::Keep,
             frames_folder: None,
             frames_format: FrameFormat::Png,
-            clip: crate::clip::Choice::default(),
+            clip: crate::clip::Encode::default(),
             interface: Interface::Full,
             media_keys: MediaKeys::Always,
             keys: Keymap::default(),
@@ -789,7 +789,7 @@ impl Settings {
                 .unwrap_or(d.frames_format),
             clip: get(CLIP)
                 .as_deref()
-                .map_or(d.clip, crate::clip::Choice::from_text),
+                .map_or(d.clip, crate::clip::Encode::from_text),
             interface: get(INTERFACE)
                 .as_deref()
                 .and_then(Interface::from_name)
@@ -1166,12 +1166,9 @@ mod tests {
             window_on_open: WindowOnOpen::Fit,
             frames_folder: Some(PathBuf::from(r"D:\Кадры")),
             frames_format: FrameFormat::Jpg,
-            clip: crate::clip::Choice {
-                copy: false,
-                encode: crate::clip::Encode {
-                    nvenc: true,
-                    ..crate::clip::Encode::default()
-                },
+            clip: crate::clip::Encode {
+                nvenc: true,
+                ..crate::clip::Encode::default()
             },
             interface: Interface::Compact,
             media_keys: MediaKeys::Window,
