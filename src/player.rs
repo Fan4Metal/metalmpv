@@ -1415,11 +1415,11 @@ impl Player {
         }
         if old.pan_x != new.pan_x {
             self.mpv
-                .set("video-pan-x", &Value::Double(new.pan_x as f64 / 100.0));
+                .set("video-pan-x", &Value::Double(new.pan_x / 100.0));
         }
         if old.pan_y != new.pan_y {
             self.mpv
-                .set("video-pan-y", &Value::Double(new.pan_y as f64 / 100.0));
+                .set("video-pan-y", &Value::Double(new.pan_y / 100.0));
         }
         if old.deinterlace != new.deinterlace {
             self.mpv

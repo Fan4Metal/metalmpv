@@ -310,6 +310,7 @@ const INFRASONIC: &str = "infrasonic_cut";
 const INFRASONIC_HZ: &str = "infrasonic_hz";
 const EQ_PRESETS: &str = "eq_presets";
 const KEEP_ADJUST: &str = "keep_adjust";
+const NAVIGATOR: &str = "navigator";
 const ADJUST: &str = "adjust";
 const OSD: &str = "osd";
 const OSD_COLOR: &str = "osd_color";
@@ -567,6 +568,8 @@ pub struct Settings {
     /// The picture's adjustments are kept between runs, as `adjust`.
     pub keep_adjust: bool,
     pub adjust: crate::adjust::Adjust,
+    /// The navigator over the picture's corner while it is zoomed in.
+    pub navigator: bool,
     /// The OSD line is shown; off, only the line of a stop where the data
     /// ran out is.
     pub osd: bool,
@@ -661,6 +664,7 @@ impl Default for Settings {
             sub_margins: true,
             track_prefs: crate::tracks::TrackPrefs::default(),
             keep_adjust: false,
+            navigator: true,
             adjust: crate::adjust::Adjust::default(),
             osd: true,
             osd_style: OsdStyle::default(),
@@ -924,6 +928,7 @@ impl Settings {
                     .unwrap_or_default(),
             },
             keep_adjust: flag(KEEP_ADJUST, d.keep_adjust),
+            navigator: flag(NAVIGATOR, d.navigator),
             adjust: get(ADJUST)
                 .filter(|_| flag(KEEP_ADJUST, d.keep_adjust))
                 .map(|v| crate::adjust::Adjust::from_text(&v))
@@ -1058,6 +1063,7 @@ impl Settings {
         storage.set_string(SUB_ASS_OVERRIDE, self.sub_ass_override.to_string());
         storage.set_string(SUB_MARGINS, self.sub_margins.to_string());
         storage.set_string(KEEP_ADJUST, self.keep_adjust.to_string());
+        storage.set_string(NAVIGATOR, self.navigator.to_string());
         let adjust = if self.keep_adjust {
             self.adjust.to_text()
         } else {
@@ -1237,8 +1243,10 @@ mod tests {
             adjust: crate::adjust::Adjust {
                 zoom: 150,
                 denoise: 30,
+                pan_x: -12.5,
                 ..crate::adjust::Adjust::default()
             },
+            navigator: false,
             sub_presets: vec![sub_style::Own {
                 name: "Вечер".into(),
                 style: SubStyle {

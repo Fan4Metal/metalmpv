@@ -118,6 +118,8 @@ pub struct Kept<'a> {
     pub sub_margins: &'a mut bool,
     /// The picture's adjustments are kept between runs.
     pub keep_adjust: &'a mut bool,
+    /// The navigator over the picture's corner while it is zoomed in.
+    pub navigator: &'a mut bool,
 }
 
 /// What the panel shows of the playback now.
@@ -145,6 +147,8 @@ pub struct Now<'a> {
     pub subs_on: bool,
     /// They are of a file of their own.
     pub subs_external: bool,
+    /// The picture's shape and its area, for the navigator.
+    pub geometry: super::navigator::Geometry,
 }
 
 impl VideoPanel {
@@ -337,13 +341,16 @@ fn tab_contents(
     out: &mut Vec<Cmd>,
 ) {
     match tab {
-        Tab::Video => video_tab(ui, adjust, kept.keep_adjust),
+        Tab::Video => video_tab(ui, adjust, kept, now),
         Tab::Sound => sound_tab(ui, kept, now, naming, out),
         Tab::Subtitles => subtitles_tab(ui, kept, now, naming, out),
     }
 }
 
-fn video_tab(ui: &mut Ui, adjust: &mut Adjust, keep: &mut bool) {
+/// The navigator's room on the Video tab.
+const NAVIGATOR_HEIGHT: f32 = 120.0;
+
+fn video_tab(ui: &mut Ui, adjust: &mut Adjust, kept: &mut Kept<'_>, now: Now<'_>) {
     if section(ui, "video_colour", tr!("Colour", "Цвет"), "") {
         for c in Color::ALL {
             let mut value = adjust.get(c);
@@ -364,22 +371,55 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, keep: &mut bool) {
             ..Spec::centred(range_of(adjust::ZOOM_RANGE), 100.0)
         };
         int_row(ui, tr!("Zoom", "Масштаб"), &mut adjust.zoom, &zoom);
-        let pan = |tip| Spec {
-            suffix: "%",
-            tip: Some(tip),
-            ..Spec::centred(range_of(adjust::PAN_RANGE), 0.0)
-        };
-        int_row(
+        ui.add_space(4.0);
+        // Of one height whatever the zoom: the panel is as tall as its
+        // tallest tab, and the navigator's shape follows the zoom.
+        let (rect, _) =
+            ui.allocate_exact_size(vec2(ui.available_width(), NAVIGATOR_HEIGHT), Sense::hover());
+        let size = now.geometry.size(adjust, rect.size());
+        super::navigator::show(
             ui,
-            tr!("Across", "По горизонтали"),
-            &mut adjust.pan_x,
-            &pan(tr!("Right when positive", "Положительный — вправо")),
+            Rect::from_center_size(rect.center(), size),
+            egui::Id::new("panel_navigator"),
+            now.geometry,
+            adjust,
+            style::CARD_BG,
         );
-        int_row(
+        ui.add_space(4.0);
+        let tip = tr!(
+            "The frame is the part of the picture on screen: drag it, or click where it should go; a double click centres the picture (Alt+arrows move it too). Right and down when positive, in percent of the picture as zoomed",
+            "Рамка — часть кадра на экране: её можно перетащить или щёлкнуть, куда её поставить; двойной щелчок возвращает кадр в центр (сдвигают и Alt+стрелки). Положительный — вправо и вниз, в процентах увеличенного кадра"
+        );
+        labelled_tip(ui, tr!("Pan", "Сдвиг"), Some(tip), |ui| {
+            for value in [&mut adjust.pan_x, &mut adjust.pan_y] {
+                ui.scope(|ui| {
+                    if value.abs() > 1e-9 {
+                        ui.visuals_mut().override_text_color = Some(style::accent_hover());
+                    }
+                    let drag = egui::DragValue::new(value)
+                        .speed(0.5)
+                        .max_decimals(1)
+                        .range(-adjust::PAN_MAX..=adjust::PAN_MAX)
+                        .suffix("%");
+                    ui.add_sized(vec2(64.0, ui.spacing().interact_size.y), drag)
+                        .on_hover_text(tip);
+                });
+            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let off = adjust.pan_x != 0.0 || adjust.pan_y != 0.0;
+                if reset(ui, off, tr!("To the centre", "В центр")) {
+                    (adjust.pan_x, adjust.pan_y) = (0.0, 0.0);
+                }
+            });
+        });
+        switch_line(
             ui,
-            tr!("Up and down", "По вертикали"),
-            &mut adjust.pan_y,
-            &pan(tr!("Down when positive", "Положительный — вниз")),
+            kept.navigator,
+            tr!("Navigator on the picture", "Навигатор на изображении"),
+            Some(tr!(
+                "While the picture is zoomed in past the window, the navigator shows in its bottom right corner",
+                "Пока кадр увеличен больше окна, навигатор виден в правом нижнем углу изображения"
+            )),
         );
     }
 
@@ -520,7 +560,7 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, keep: &mut bool) {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             switch_line_rtl(
                 ui,
-                keep,
+                kept.keep_adjust,
                 tr!("Remember", "Запоминать"),
                 tr!(
                     "The adjustments apply to every file until the program closes; on, they are kept between runs too",

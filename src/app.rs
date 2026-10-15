@@ -1739,14 +1739,13 @@ impl App {
                 self.osd.show(Osd::Zoom(self.adjust.zoom));
             }
             Cmd::Pan(x, y) => {
-                let range = crate::adjust::PAN_RANGE;
-                let (lo, hi) = (*range.start(), *range.end());
+                let max = crate::adjust::PAN_MAX;
                 self.change_picture(|a| {
-                    a.pan_x = (a.pan_x + x).clamp(lo, hi);
-                    a.pan_y = (a.pan_y + y).clamp(lo, hi);
+                    a.pan_x = (a.pan_x + x as f64).clamp(-max, max);
+                    a.pan_y = (a.pan_y + y as f64).clamp(-max, max);
                 });
-                self.osd
-                    .show(Osd::Pan(self.adjust.pan_x, self.adjust.pan_y));
+                let (x, y) = (self.adjust.pan_x, self.adjust.pan_y);
+                self.osd.show(Osd::Pan(x.round() as i64, y.round() as i64));
             }
             Cmd::ZoomReset => {
                 self.change_picture(|a| {
@@ -1892,6 +1891,11 @@ impl App {
     /// The picture's size as shown: the video's display size, turned by
     /// the Video panel's rotation (done when the picture is drawn, so not
     /// in mpv's `dwidth`/`dheight`).
+    /// The picture's shape and its area, for the navigators.
+    fn navigator_geometry(&self, state: &State) -> ui::navigator::Geometry {
+        ui::navigator::Geometry::new(self.picture_size(state), self.picture_area.size())
+    }
+
     fn picture_size(&self, state: &State) -> Option<[f64; 2]> {
         let [w, h] = video_size(state)?;
         Some(if self.adjust.rotate % 180 == 90 {
@@ -2719,6 +2723,10 @@ impl App {
                 cmds.push(cmd);
             }
         }
+        // After the drag area: over it, it takes the pointer.
+        if visible && self.settings.navigator {
+            self.corner_navigator(ui, rect, state);
+        }
         if ui::double_clicked(&response) {
             cmds.push(Cmd::ToggleFullscreen);
         }
@@ -2872,6 +2880,41 @@ impl App {
         let look = &self.settings.osd_style;
         self.osd
             .paint(ui.ctx(), osd_rect, state, look, scale, self.settings.osd);
+    }
+
+    /// The navigator over the picture's bottom right corner while the
+    /// picture is zoomed in past `rect`, above where the control bar comes
+    /// over the picture (the pointer there would bring the bar over it)
+    /// and off the fullscreen playlist.
+    fn corner_navigator(&mut self, ui: &mut egui::Ui, rect: Rect, state: &State) {
+        const MARGIN: f32 = 12.0;
+        let geometry = ui::navigator::Geometry::new(self.picture_size(state), rect.size());
+        if !geometry.zoomed_in(&self.adjust) {
+            return;
+        }
+        let (bottom, right) = if self.fullscreen {
+            (FULLSCREEN_BAR_ZONE, self.fullscreen_list_width)
+        } else if self.interface() == Interface::Bare {
+            (ui::controls::height(self.compact_bar()) + 16.0, 0.0)
+        } else {
+            (0.0, 0.0)
+        };
+        let size = geometry.size(&self.adjust, egui::vec2(160.0, 110.0));
+        let corner = egui::pos2(
+            rect.right() - right - MARGIN,
+            rect.bottom() - bottom - MARGIN,
+        );
+        let navigator = Rect::from_min_max(corner - size, corner);
+        // Not in a window too small for it.
+        if !rect.shrink(MARGIN).contains_rect(navigator) {
+            return;
+        }
+        let mut adjust = self.adjust.clone();
+        let id = egui::Id::new("corner_navigator");
+        let ground = Color32::from_black_alpha(160);
+        if ui::navigator::show(ui, navigator, id, geometry, &mut adjust, ground) {
+            self.change_picture(|a| *a = adjust);
+        }
     }
 
     /// The black area without a picture: the start screen, the title of an
@@ -4190,6 +4233,7 @@ impl eframe::App for App {
         let upmix = self.settings.upmix
             && self.settings.audio_channels.takes_upmix()
             && tracks::selected(&state.tracks, Kind::Audio).is_some_and(crate::audio::stereo_track);
+        let geometry = self.navigator_geometry(&state);
         let kept = ui::picture::Kept {
             audio_device: &mut self.settings.audio_device,
             devices: &state.audio_devices,
@@ -4210,6 +4254,7 @@ impl eframe::App for App {
             sub_ass_override: &mut self.settings.sub_ass_override,
             sub_margins: &mut self.settings.sub_margins,
             keep_adjust: &mut self.settings.keep_adjust,
+            navigator: &mut self.settings.navigator,
         };
         let panel_cmds = self.video_panel.show(
             &ctx,
@@ -4230,6 +4275,7 @@ impl eframe::App for App {
                 subs_on: tracks::selected(&state.tracks, Kind::Sub).is_some(),
                 subs_external: tracks::selected(&state.tracks, Kind::Sub)
                     .is_some_and(|t| t.external),
+                geometry,
             },
         );
         cmds.extend(panel_cmds);

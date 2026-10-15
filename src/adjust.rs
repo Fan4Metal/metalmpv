@@ -137,7 +137,7 @@ impl ToneMap {
 /// The zoom, in percent of the picture as it fits.
 pub const ZOOM_RANGE: std::ops::RangeInclusive<i64> = 50..=400;
 /// The pan, in percent of the picture's width or height either way.
-pub const PAN_RANGE: std::ops::RangeInclusive<i64> = -50..=50;
+pub const PAN_MAX: f64 = 50.0;
 
 /// The picture's shape: the file's, or one forced on it
 /// (`video-aspect-override`).
@@ -203,10 +203,11 @@ pub struct Adjust {
     pub aspect: Aspect,
     /// In percent, 100 as the picture fits ([`ZOOM_RANGE`]).
     pub zoom: i64,
-    /// In percent of the picture's size, right and down positive
-    /// ([`PAN_RANGE`]).
-    pub pan_x: i64,
-    pub pan_y: i64,
+    /// In percent of the picture's size as zoomed (mpv's unit), right and
+    /// down positive, at most [`PAN_MAX`] either way; fractions, so that
+    /// the navigator moves the picture smoothly.
+    pub pan_x: f64,
+    pub pan_y: f64,
     pub deinterlace: Deinterlace,
     pub tone_map: ToneMap,
 }
@@ -223,8 +224,8 @@ impl Default for Adjust {
             deband: false,
             aspect: Aspect::Auto,
             zoom: 100,
-            pan_x: 0,
-            pan_y: 0,
+            pan_x: 0.0,
+            pan_y: 0.0,
             deinterlace: Deinterlace::Auto,
             tone_map: ToneMap::Auto,
         }
@@ -301,12 +302,18 @@ impl Adjust {
             ("sharpen", self.sharpen, d.sharpen),
             ("denoise", self.denoise, d.denoise),
             ("zoom", self.zoom, d.zoom),
-            ("pan_x", self.pan_x, d.pan_x),
-            ("pan_y", self.pan_y, d.pan_y),
         ];
         for (name, value, default) in numbers {
             if value != default {
                 parts.push(format!("{name}={value}"));
+            }
+        }
+        for (name, value) in [("pan_x", self.pan_x), ("pan_y", self.pan_y)] {
+            // Hundredths of a percent: what the navigator moves by.
+            let text = format!("{value:.2}");
+            let text = text.trim_end_matches('0').trim_end_matches('.');
+            if text != "0" && text != "-0" {
+                parts.push(format!("{name}={text}"));
             }
         }
         for (name, on) in [
@@ -347,8 +354,16 @@ impl Adjust {
                 ("sharpen", Some(n)) => a.sharpen = n.clamp(0, 100),
                 ("denoise", Some(n)) => a.denoise = n.clamp(0, 100),
                 ("zoom", Some(n)) => a.zoom = n.clamp(*ZOOM_RANGE.start(), *ZOOM_RANGE.end()),
-                ("pan_x", Some(n)) => a.pan_x = n.clamp(*PAN_RANGE.start(), *PAN_RANGE.end()),
-                ("pan_y", Some(n)) => a.pan_y = n.clamp(*PAN_RANGE.start(), *PAN_RANGE.end()),
+                ("pan_x" | "pan_y", _) => {
+                    if let Some(n) = value.parse::<f64>().ok().filter(|n| n.is_finite()) {
+                        let n = n.clamp(-PAN_MAX, PAN_MAX);
+                        if name == "pan_x" {
+                            a.pan_x = n;
+                        } else {
+                            a.pan_y = n;
+                        }
+                    }
+                }
                 ("flip", _) => a.flip = value == "yes",
                 ("mirror", _) => a.mirror = value == "yes",
                 ("deband", _) => a.deband = value == "yes",
@@ -388,20 +403,21 @@ mod tests {
         a.flip = true;
         a.denoise = 40;
         a.zoom = 150;
-        a.pan_y = -10;
+        a.pan_y = -10.0;
+        a.pan_x = 3.25;
         a.aspect = Aspect::R235;
         a.deinterlace = Deinterlace::On;
         a.tone_map = ToneMap::Hable;
         let text = a.to_text();
         assert_eq!(
             text,
-            "brightness=12 hue=-30 rotate=90 denoise=40 zoom=150 pan_y=-10 flip=yes aspect=2.35:1 deinterlace=yes tone_map=hable"
+            "brightness=12 hue=-30 rotate=90 denoise=40 zoom=150 pan_x=3.25 pan_y=-10 flip=yes aspect=2.35:1 deinterlace=yes tone_map=hable"
         );
         assert_eq!(Adjust::from_text(&text), a);
         let odd = Adjust::from_text("zoom=9000 rotate=45 gamma=x tone_map=nope pan_x=-80 junk");
         assert_eq!(odd.zoom, 400);
         assert_eq!(odd.rotate, 0);
-        assert_eq!(odd.pan_x, -50);
+        assert_eq!(odd.pan_x, -50.0);
         assert_eq!(odd.tone_map, ToneMap::Auto);
         assert!((Adjust::default().zoom_option()).abs() < 1e-9);
         let z = Adjust {
