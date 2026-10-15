@@ -41,17 +41,18 @@ pub struct SubStyle {
 }
 
 impl Default for SubStyle {
-    /// mpv's own.
+    /// The soft look with a shadow ([`Preset::Soft`]) in mpv's font, size
+    /// and place.
     fn default() -> Self {
         Self {
             font: String::new(),
             scale: 100.0,
-            color: [255, 255, 255],
-            outline_color: [0, 0, 0],
-            outline: 1.65,
+            color: [230, 230, 230],
+            outline_color: [26, 26, 26],
+            outline: 1.0,
             pos: 100.0,
             bold: false,
-            shadow: 0.0,
+            shadow: 1.5,
             boxed: false,
         }
     }
@@ -61,10 +62,10 @@ impl Default for SubStyle {
 /// box; the font, the size and the height stay as they are.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Preset {
-    Standard,
+    Soft,
+    Classic,
     Thin,
     Bold,
-    Soft,
     ShadowOnly,
     Cream,
     Mint,
@@ -74,10 +75,10 @@ pub enum Preset {
 
 impl Preset {
     pub const ALL: [Preset; 9] = [
-        Preset::Standard,
+        Preset::Soft,
+        Preset::Classic,
         Preset::Thin,
         Preset::Bold,
-        Preset::Soft,
         Preset::ShadowOnly,
         Preset::Cream,
         Preset::Mint,
@@ -87,10 +88,10 @@ impl Preset {
 
     pub fn label(self) -> &'static str {
         match self {
-            Preset::Standard => tr!("Standard", "Обычные"),
+            Preset::Soft => tr!("Soft, with a shadow", "Мягкие, с тенью"),
+            Preset::Classic => tr!("Classic, as in mpv", "Классические, как в mpv"),
             Preset::Thin => tr!("Thin outline", "Тонкая обводка"),
             Preset::Bold => tr!("Bold, thick outline", "Жирные, толстая обводка"),
-            Preset::Soft => tr!("Soft, with a shadow", "Мягкие, с тенью"),
             Preset::ShadowOnly => tr!("Shadow only, no outline", "Только тень, без обводки"),
             Preset::Cream => tr!("Cream", "Кремовые"),
             Preset::Mint => tr!("Pale mint", "Бледно-мятные"),
@@ -103,10 +104,11 @@ impl Preset {
     /// bold, box.
     fn look(self) -> ([u8; 3], [u8; 3], f64, f64, bool, bool) {
         match self {
-            Preset::Standard => ([255, 255, 255], [0, 0, 0], 1.65, 0.0, false, false),
+            Preset::Soft => ([230, 230, 230], [26, 26, 26], 1.0, 1.5, false, false),
+            // mpv's own.
+            Preset::Classic => ([255, 255, 255], [0, 0, 0], 1.65, 0.0, false, false),
             Preset::Thin => ([255, 255, 255], [0, 0, 0], 0.8, 0.0, false, false),
             Preset::Bold => ([255, 255, 255], [0, 0, 0], 3.0, 0.0, true, false),
-            Preset::Soft => ([230, 230, 230], [26, 26, 26], 1.0, 1.5, false, false),
             Preset::ShadowOnly => ([255, 255, 255], [0, 0, 0], 0.0, 2.0, false, false),
             Preset::Cream => ([255, 243, 196], [32, 28, 20], 1.5, 1.0, false, false),
             Preset::Mint => ([214, 245, 228], [12, 32, 24], 1.5, 0.5, false, false),
@@ -313,8 +315,10 @@ mod tests {
             font: "Arial".into(),
             scale: 150.0,
             color: [255, 255, 0],
+            outline_color: [0, 0, 0],
             outline: 3.0,
             pos: 90.0,
+            shadow: 0.0,
             ..SubStyle::default()
         };
         assert_eq!(
@@ -337,13 +341,13 @@ mod tests {
             ..SubStyle::default()
         };
         let options = boxed.options();
-        assert_eq!(options[3].1, "#C0000000");
+        assert_eq!(options[3].1, "#C01A1A1A");
         assert_eq!(options[8].1, "opaque-box");
     }
 
     #[test]
     fn presets() {
-        assert_eq!(Preset::of(&SubStyle::default()), Some(Preset::Standard));
+        assert_eq!(Preset::of(&SubStyle::default()), Some(Preset::Soft));
         let mut style = SubStyle {
             font: "Arial".into(),
             scale: 140.0,

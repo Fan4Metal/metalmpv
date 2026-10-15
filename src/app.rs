@@ -278,9 +278,8 @@ impl App {
                 if settings.repeat == Repeat::One {
                     player.set_loop_file(true);
                 }
-                if settings.sub != crate::sub_style::SubStyle::default() {
-                    player.set_sub_style(&settings.sub);
-                }
+                // Always: the default look is not mpv's.
+                player.set_sub_style(&settings.sub);
                 player.set_sub_layout(settings.sub_ass_override, settings.sub_margins);
                 player.set_track_prefs(&settings.track_prefs);
                 if settings.keep_adjust {
