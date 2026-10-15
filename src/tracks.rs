@@ -70,6 +70,8 @@ pub struct Track {
     pub albumart: bool,
     /// Loaded from a file of its own (subtitles next to the video).
     pub external: bool,
+    /// That file.
+    pub external_filename: Option<String>,
     pub default: bool,
     pub forced: bool,
     pub commentary: bool,
@@ -136,6 +138,7 @@ pub fn from_value(list: &Value) -> Vec<Track> {
                 bitrate: t.get("demux-bitrate").and_then(Value::int),
                 albumart: flag("albumart"),
                 external: flag("external"),
+                external_filename: text("external-filename"),
                 default: flag("default"),
                 forced: flag("forced"),
                 commentary: flag("commentary"),

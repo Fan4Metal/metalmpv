@@ -112,6 +112,9 @@ pub struct App {
     /// size.
     icon: ui::IconCache,
     start_icon: ui::IconCache,
+    /// The lines of the subtitle file shown (one of its own), for the
+    /// panel's timeline: the file and what was read of it.
+    sub_lines: Option<(String, Option<Vec<crate::sub_lines::Line>>)>,
     /// The playlist panel's search, folded groups, drag and scrolling.
     list_state: ui::playlist::ListState,
     /// The start screen's recent files while they scroll: the wheel there
@@ -363,6 +366,7 @@ impl App {
             start_icon: None,
             recent_scroll: None,
             list_state: ui::playlist::ListState::default(),
+            sub_lines: None,
             window_icon: style::Accent::Blue,
             playlist_builder: None,
             playlist_hwnd: None,
@@ -513,6 +517,31 @@ impl App {
                 )
             }));
         }
+    }
+
+    /// Read the lines of the subtitle file shown (one of its own) for the
+    /// panel's timeline, once per file, while the panel is open (it lays
+    /// the Subtitles tab out even unseen).
+    fn update_sub_lines(&mut self, state: &State) {
+        if !self.video_panel.open {
+            return;
+        }
+        let file = tracks::selected(&state.tracks, Kind::Sub)
+            .filter(|t| t.external)
+            .and_then(|t| t.external_filename.clone());
+        let Some(file) = file else {
+            self.sub_lines = None;
+            return;
+        };
+        if self.sub_lines.as_ref().is_some_and(|(f, _)| *f == file) {
+            return;
+        }
+        let lines = crate::sub_lines::read(Path::new(&file));
+        log::debug!(
+            "subtitle lines of {file}: {}",
+            lines.as_ref().map_or(0, Vec::len)
+        );
+        self.sub_lines = Some((file, lines));
     }
 
     /// Keep where the file playing is now (`resume_playback`) and which
@@ -1214,6 +1243,13 @@ impl App {
                 if let Some(player) = &mut self.player {
                     player.set_audio_delay(seconds);
                     self.osd.show(Osd::AudioDelay(player.state.audio_delay));
+                }
+            }
+            Cmd::SubStep(lines) => {
+                if let Some(player) = &mut self.player
+                    && !state.idle
+                {
+                    player.sub_step(lines);
                 }
             }
             Cmd::SubDelay(steps) => {
@@ -2350,6 +2386,10 @@ impl App {
                 }
                 Happened::Restarted => {}
                 Happened::FrameSaved(error) => self.frame_saved(error),
+                Happened::SubStepped(delay) => self.osd.show(match delay {
+                    Some(delay) => Osd::SubDelay(delay),
+                    None => Osd::NoSubLine,
+                }),
                 Happened::Shutdown => {
                     self.engine_error = Some(crate::player::EngineError::Failed(
                         "mpv has shut down".into(),
@@ -3840,6 +3880,7 @@ impl eframe::App for App {
         };
         let info_cmds = self.info.show(&ctx, &subject, cover, channel);
         cmds.extend(info_cmds);
+        self.update_sub_lines(&state);
         let before = self.adjust.clone();
         let subs_before = self.settings.sub.clone();
         let output_before = (
@@ -3881,6 +3922,12 @@ impl eframe::App for App {
                 audio_out: state.live.audio_out.as_ref(),
                 audio_bitrate: state.live.audio_bitrate,
                 voice_boost,
+                time: state.time.filter(|_| !state.idle),
+                sub_lines: self
+                    .sub_lines
+                    .as_ref()
+                    .and_then(|(_, lines)| lines.as_deref()),
+                subs_on: tracks::selected(&state.tracks, Kind::Sub).is_some(),
             },
         );
         cmds.extend(panel_cmds);

@@ -319,6 +319,10 @@ actions! {
     SubsLater "subs_later" Sound Cmd::SubDelay(1.0), [Chord::shift(Key::Period)];
     SubsEarlier "subs_earlier" Sound Cmd::SubDelay(-1.0), [Chord::shift(Key::Comma)];
     SubsInSync "subs_in_sync" Sound Cmd::SubDelay(0.0), [Chord::shift(Key::Num0)];
+    SubStepBack "sub_step_back" Sound Cmd::SubStep(-1),
+        [Chord::of(Press::Key(Key::ArrowLeft), true, false, true)];
+    SubStepNext "sub_step_next" Sound Cmd::SubStep(1),
+        [Chord::of(Press::Key(Key::ArrowRight), true, false, true)];
     SoundLater "sound_later" Sound Cmd::AudioDelay(1.0),
         [Chord::ctrl(Key::Equals), Chord::ctrl(Key::Plus)];
     SoundEarlier "sound_earlier" Sound Cmd::AudioDelay(-1.0), [Chord::ctrl(Key::Minus)];
@@ -472,6 +476,14 @@ impl Action {
             Action::SubsLater => tr!("Subtitles later by 100 ms", "Субтитры позже на 100 мс"),
             Action::SubsEarlier => tr!("Subtitles earlier by 100 ms", "Субтитры раньше на 100 мс"),
             Action::SubsInSync => tr!("Subtitles as they were", "Субтитры как было"),
+            Action::SubStepBack => tr!(
+                "Subtitles: the previous line now",
+                "Субтитры: предыдущую реплику сейчас"
+            ),
+            Action::SubStepNext => tr!(
+                "Subtitles: the next line now",
+                "Субтитры: следующую реплику сейчас"
+            ),
             Action::SoundLater => tr!("Sound later by 100 ms", "Звук позже на 100 мс"),
             Action::SoundEarlier => tr!("Sound earlier by 100 ms", "Звук раньше на 100 мс"),
             Action::SoundInSync => tr!("Sound as it was", "Звук как было"),

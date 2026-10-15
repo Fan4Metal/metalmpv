@@ -345,6 +345,8 @@ pub enum Osd {
     AudioDelay(f64),
     /// The subtitles against the picture, in seconds.
     SubDelay(f64),
+    /// No subtitle line to move to now (`sub-step` found none).
+    NoSubLine,
     /// The playback speed.
     Speed(f64),
     /// When the window stays over the others.
@@ -653,6 +655,12 @@ impl Osd {
                     (true, false) => format!("[ Subtitle delay {ms} ms ]"),
                 }
             }
+            Osd::NoSubLine => if ru {
+                "[ Там нет реплики ]"
+            } else {
+                "[ No subtitle line there ]"
+            }
+            .to_owned(),
             Osd::NoData(time) => {
                 if ru {
                     format!("[ Нет данных на {}: файл неполный ]", clock(*time))

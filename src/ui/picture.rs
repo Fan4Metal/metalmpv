@@ -135,6 +135,11 @@ pub struct Now<'a> {
     /// Clearer speech is on: in stereo its filter adds a centre, and the
     /// device gets three channels.
     pub voice_boost: bool,
+    /// The position, the lines of the subtitle file shown (one of its own)
+    /// and whether subtitles are shown: the timeline of the delay.
+    pub time: Option<f64>,
+    pub sub_lines: Option<&'a [crate::sub_lines::Line]>,
+    pub subs_on: bool,
 }
 
 impl VideoPanel {
@@ -1219,6 +1224,16 @@ fn subtitles_tab(
     ) {
         out.push(Cmd::SetSubDelay(delay));
     }
+    super::sub_timeline::show(
+        ui,
+        super::sub_timeline::Timeline {
+            lines: now.sub_lines,
+            time: now.time,
+            delay: now.sub_delay,
+            subs_on: now.subs_on,
+        },
+        out,
+    );
     switch_line(
         ui,
         kept.sub_margins,

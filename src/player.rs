@@ -240,6 +240,9 @@ const LOAD: u64 = 101;
 const PLAYLIST: u64 = 102;
 /// The reply to [`Player::save_frame`]'s `screenshot-to-file`.
 const SCREENSHOT: u64 = 103;
+/// The reply to [`Player::sub_step`]'s `sub-step`, and the delay it made.
+const SUB_STEP: u64 = 104;
+const SUB_DELAY: u64 = 105;
 /// The figures of the playback, asked for while the information window is
 /// open ([`Player::ask_live`]): the replies' numbers from [`LIVE_FIRST`].
 const LIVE_FIRST: u64 = 110;
@@ -647,6 +650,9 @@ pub enum Happened {
     /// A frame asked for by [`Player::save_frame`] was written, or why
     /// not; in the order asked.
     FrameSaved(Option<String>),
+    /// [`Player::sub_step`] set the subtitle delay to this, or found no
+    /// line there.
+    SubStepped(Option<f64>),
     Shutdown,
 }
 
@@ -868,6 +874,15 @@ impl Player {
                     self.state.live.apply((id - LIVE_FIRST) as usize, &value);
                 }
                 Event::Property {
+                    id: SUB_DELAY,
+                    value,
+                } => {
+                    if let Some(delay) = value.double() {
+                        self.state.sub_delay = delay;
+                        out.push(Happened::SubStepped(Some(delay)));
+                    }
+                }
+                Event::Property {
                     id: PLAYLIST,
                     value,
                 } => {
@@ -989,6 +1004,17 @@ impl Player {
                     id: SCREENSHOT,
                     error,
                 } => out.push(Happened::FrameSaved(error)),
+                Event::CommandReply {
+                    id: SUB_STEP,
+                    error,
+                } => match error {
+                    // The delay mpv made, asked for after the command.
+                    None => self.mpv.get(SUB_DELAY, "sub-delay", sys::MPV_FORMAT_DOUBLE),
+                    Some(e) => {
+                        log::debug!("sub-step: {e}");
+                        out.push(Happened::SubStepped(None));
+                    }
+                },
                 Event::CommandReply { error: Some(e), .. } => log::warn!("mpv command failed: {e}"),
                 Event::Shutdown => out.push(Happened::Shutdown),
                 _ => {}
@@ -1361,6 +1387,15 @@ impl Player {
         let seconds = (seconds * 1000.0).round() / 1000.0;
         self.mpv.set("sub-delay", &Value::Double(seconds));
         self.state.sub_delay = seconds;
+    }
+
+    /// Set the subtitle delay so that the line `lines` after the one on
+    /// screen (before it, when negative) shows now: mpv's `sub-step`, for
+    /// the lines it has read (all of a file of their own); the delay comes
+    /// as [`Happened::SubStepped`].
+    pub fn sub_step(&mut self, lines: i32) {
+        self.mpv
+            .command(SUB_STEP, &["sub-step", &lines.to_string()]);
     }
 
     pub fn set_audio_delay(&mut self, seconds: f64) {
@@ -2189,6 +2224,99 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         assert_eq!(player.mpv.sets_waiting(), 0);
+    }
+
+    /// `sub-step` moves a subtitle file's next line to the position and
+    /// says the delay, or that there is no such line: `cargo test
+    /// sub_step -- --ignored` (a video in METALMPV_SAMPLE, or the default
+    /// below; the subtitles are written by the test).
+    #[test]
+    #[ignore = "needs vendor/libmpv and a sample video"]
+    fn sub_step_of_mpv() {
+        let sample = std::env::var("METALMPV_SAMPLE")
+            .unwrap_or_else(|_| "D:/Projects/video_converter/samples/test.mp4".into());
+        let srt = std::env::temp_dir().join(format!("metalmpv_step_{}.srt", std::process::id()));
+        std::fs::write(
+            &srt,
+            "1\n00:00:01,000 --> 00:00:02,000\nOne\n\n2\n00:00:05,000 --> 00:00:06,000\nTwo\n",
+        )
+        .unwrap();
+        let lines = crate::sub_lines::read(&srt).unwrap();
+        assert_eq!(lines.len(), 2);
+        let api = sys::api().unwrap();
+        let mpv = Mpv::new(
+            api,
+            &[
+                ("vo", "null"),
+                ("ao", "null"),
+                ("idle", "yes"),
+                ("terminal", "no"),
+            ],
+        )
+        .unwrap();
+        let mut player = Player {
+            mpv,
+            state: State::default(),
+            scan_asked: None,
+            live_asked: None,
+            loading: false,
+            starts_due: 0,
+            stopped: false,
+            hwdec: true,
+            hwdec_copy: false,
+            filters_on: false,
+            subs_off: false,
+            last_seek: None,
+            data_end_at: None,
+            af: String::new(),
+            af_before: String::new(),
+        };
+        observe_all(&player.mpv);
+        let until = |player: &mut Player, what: &dyn Fn(&Happened) -> bool| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while std::time::Instant::now() < deadline {
+                if let Some(h) = player.poll().into_iter().find(|h| what(h)) {
+                    return Some(h);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            None
+        };
+        player.load(Path::new(&sample), None, None);
+        assert!(until(&mut player, &|h| *h == Happened::FileLoaded).is_some());
+        player.set_pause(true);
+        player.add_subtitles(&srt);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while tracks::selected(&player.state.tracks, Kind::Sub).is_none()
+            && std::time::Instant::now() < deadline
+        {
+            player.poll();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let sub = tracks::selected(&player.state.tracks, Kind::Sub).expect("subtitles added");
+        assert_eq!(
+            sub.external_filename.as_deref().map(Path::new),
+            Some(srt.as_path())
+        );
+        let stepped = |h: &Happened| matches!(h, Happened::SubStepped(_));
+        player.sub_step(1);
+        let Some(Happened::SubStepped(Some(delay))) = until(&mut player, &stepped) else {
+            panic!("no delay after sub-step");
+        };
+        let time = player.state.time.unwrap_or(0.0);
+        // A line's start is now at the position.
+        assert!(
+            lines.iter().any(|l| (l.start + delay - time).abs() < 0.1),
+            "delay {delay} at {time}"
+        );
+        assert_eq!(player.state.sub_delay, delay);
+        // Past the last line mpv stops at it.
+        player.sub_step(50);
+        let Some(Happened::SubStepped(Some(delay))) = until(&mut player, &stepped) else {
+            panic!("no delay after a step past the end");
+        };
+        assert!((5.0 + delay - time).abs() < 0.1, "delay {delay} at {time}");
+        let _ = std::fs::remove_file(&srt);
     }
 
     /// The playback's figures and the tracks' ids on a real file without a

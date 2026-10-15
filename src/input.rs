@@ -34,6 +34,9 @@ pub enum Cmd {
     SetAudioDelay(f64),
     /// The subtitles' delay set to this many seconds (the panel's slider).
     SetSubDelay(f64),
+    /// The subtitle delay set so that the line after the one on screen
+    /// (before it, when negative) shows now (`Ctrl+Shift+Right`/`Left`).
+    SubStep(i32),
     /// The playback speed by this many steps of `format::SPEEDS` (`C`
     /// faster, `X` slower), 0 for normal (`Z`), as in GOM Player.
     Speed(i32),

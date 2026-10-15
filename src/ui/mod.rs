@@ -15,6 +15,7 @@ pub mod playlist;
 pub mod popover;
 pub mod settings;
 pub mod style;
+pub mod sub_timeline;
 pub mod title;
 pub mod tracks;
 pub mod url;
