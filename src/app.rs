@@ -2497,7 +2497,17 @@ impl App {
             .open_memory(open.then_some(egui::SetOpenCommand::Bool(true)))
             .at_pointer_fixed()
             .show(|ui| context_menu(ui, state, playlist_visible, chapter_marks, marks, cmds));
-        if ui.input(|i| !i.raw.hovered_files.is_empty()) {
+        // Subtitles alone over a playing file are added to it (`drop_files`).
+        let hovered = ui.input(|i| {
+            let files = &i.raw.hovered_files;
+            (!files.is_empty()).then(|| {
+                !state.idle
+                    && files
+                        .iter()
+                        .all(|f| f.path.as_deref().is_some_and(tracks::is_subtitles))
+            })
+        });
+        if let Some(only_subtitles) = hovered {
             ui.painter()
                 .rect_filled(rect.shrink(12.0), 8.0, Color32::from_black_alpha(160));
             ui.painter().rect_stroke(
@@ -2509,7 +2519,12 @@ impl App {
             ui.painter().text(
                 rect.center(),
                 Align2::CENTER_CENTER,
-                if self.playlist.is_empty() {
+                if only_subtitles {
+                    tr!(
+                        "Drop to load the subtitles",
+                        "Отпустите, чтобы загрузить субтитры"
+                    )
+                } else if self.playlist.is_empty() {
                     tr!("Drop to play", "Отпустите, чтобы воспроизвести")
                 } else {
                     tr!(
