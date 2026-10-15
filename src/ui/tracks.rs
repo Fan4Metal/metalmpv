@@ -217,7 +217,7 @@ fn column(ui: &mut Ui, all: &[Track], kind: Kind, room: f32, out: &mut Vec<Cmd>)
     if !audio {
         ui.add_space(6.0);
         let text = tr!("Load from a file…", "Загрузить из файла…");
-        if super::picture::icon_button(ui, icons::folder, text, None, |b| b)
+        if super::picture::icon_button(ui, icons::open, text, None, |b| b)
             .on_hover_text(tr!(
                 "Subtitles from a file of their own (SRT, ASS, …)",
                 "Субтитры из отдельного файла (SRT, ASS, …)"

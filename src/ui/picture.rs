@@ -307,7 +307,7 @@ impl VideoPanel {
                 }
                 camera.context_menu(|ui| {
                     let text = tr!("Open the folder", "Открыть папку");
-                    if icon_button(ui, icons::folder, text, None, |b| b.frame(false)).clicked() {
+                    if icon_button(ui, icons::open, text, None, |b| b.frame(false)).clicked() {
                         out.push(Cmd::ShowFrames);
                         ui.close();
                     }

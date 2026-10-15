@@ -82,6 +82,89 @@ pub fn eject(p: &Painter, o: Pos2, s: f32, c: Color32) {
     );
 }
 
+/// A folder to open, as metalmd's Open: the outline of an open folder, its
+/// tab on the top left and its front flap leaning forward, with rounded
+/// corners (drawn for `s` = 7, a 14-point icon, and scaled).
+pub fn open(p: &Painter, o: Pos2, s: f32, c: Color32) {
+    let k = s / 7.0;
+    let at = |points: &[(f32, f32)]| -> Vec<Pos2> {
+        points.iter().map(|&(x, y)| o + vec2(x, y) * k).collect()
+    };
+    let stroke = Stroke::new(1.3 * k, c);
+    let radii = |r: &[f32]| r.iter().map(|r| r * k).collect::<Vec<f32>>();
+    // The back with its tab, from where its rounded bottom left corner
+    // meets the front flap to where the flap's top is.
+    let back = at(&[
+        (-4.5, 5.0),
+        (-6.5, 5.0),
+        (-6.5, -5.0),
+        (-2.0, -5.0),
+        (-0.5, -3.0),
+        (5.0, -3.0),
+        (5.0, -0.5),
+    ]);
+    round_line(
+        p,
+        rounded(&back, &radii(&[0.0, 2.0, 2.0, 1.2, 1.2, 2.0, 0.0])),
+        stroke,
+    );
+    // The front flap, opened forward: a parallelogram leaning right, sharp
+    // only where it leaves the back's corner.
+    let flap = at(&[
+        (-4.5, 5.0),
+        (-2.0, -0.5),
+        (7.0, -0.5),
+        (4.5, 5.0),
+        (-4.5, 5.0),
+    ]);
+    round_line(
+        p,
+        rounded(&flap, &radii(&[0.0, 1.5, 1.5, 1.5, 0.0])),
+        stroke,
+    );
+}
+
+/// The line through `points` with each corner cut `radius[i]` along both
+/// its sides (less on a short side) and bridged by a curve, so that a line
+/// icon looks drawn with a round pen; a radius of 0 keeps the point as it
+/// is, as for the ends. egui joins lines with sharp mitres, which look
+/// rough at 14 points.
+fn rounded(points: &[Pos2], radius: &[f32]) -> Vec<Pos2> {
+    const STEPS: usize = 6;
+    let n = points.len();
+    let mut out = Vec::with_capacity(n * (STEPS + 1));
+    for (i, (&p, &radius)) in points.iter().zip(radius).enumerate() {
+        if radius <= 0.0 || i == 0 || i == n - 1 {
+            out.push(p);
+            continue;
+        }
+        let (prev, next) = (points[i - 1], points[i + 1]);
+        let r = radius
+            .min((prev - p).length() / 2.0)
+            .min((next - p).length() / 2.0);
+        let start = p + (prev - p).normalized() * r;
+        let end = p + (next - p).normalized() * r;
+        // A quadratic Bézier with the corner as its control point.
+        for k in 0..=STEPS {
+            let t = k as f32 / STEPS as f32;
+            let u = 1.0 - t;
+            out.push(
+                (start.to_vec2() * (u * u) + p.to_vec2() * (2.0 * u * t) + end.to_vec2() * (t * t))
+                    .to_pos2(),
+            );
+        }
+    }
+    out
+}
+
+/// An open line with round ends: egui ends a stroke flat.
+fn round_line(p: &Painter, points: Vec<Pos2>, stroke: Stroke) {
+    for end in [points.first(), points.last()].into_iter().flatten() {
+        p.circle_filled(*end, stroke.width / 2.0, stroke.color);
+    }
+    p.add(egui::epaint::PathShape::line(points, stroke));
+}
+
 /// A gear: the settings.
 pub fn gear(p: &Painter, o: Pos2, s: f32, c: Color32, fill: Color32) {
     let stroke = Stroke::new(s * 0.32, c);
@@ -468,22 +551,6 @@ pub fn camera(p: &Painter, o: Pos2, s: f32, c: Color32) {
         stroke,
     ));
     p.circle_stroke(at(0.0, 0.18), 0.38 * s, stroke);
-}
-
-/// A folder: open the folder.
-pub fn folder(p: &Painter, o: Pos2, s: f32, c: Color32) {
-    let at = |x: f32, y: f32| o + vec2(x, y) * s;
-    p.add(Shape::closed_line(
-        vec![
-            at(-1.0, -0.75),
-            at(-0.3, -0.75),
-            at(-0.1, -0.5),
-            at(1.0, -0.5),
-            at(1.0, 0.8),
-            at(-1.0, 0.8),
-        ],
-        Stroke::new(1.4, c),
-    ));
 }
 
 /// A pane: with `two`, split down the middle (two columns side by side);
