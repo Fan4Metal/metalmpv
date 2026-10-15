@@ -60,6 +60,8 @@ fn decode(bytes: &[u8]) -> String {
     match bytes {
         [0xFF, 0xFE, ..] => utf16(false),
         [0xFE, 0xFF, ..] => utf16(true),
+        // UTF-8's mark before a time line would hide that line.
+        [0xEF, 0xBB, 0xBF, rest @ ..] => String::from_utf8_lossy(rest).into_owned(),
         _ => String::from_utf8_lossy(bytes).into_owned(),
     }
 }
@@ -206,5 +208,10 @@ mod tests {
         let mut bytes = vec![0xFE, 0xFF];
         bytes.extend(text.encode_utf16().flat_map(u16::to_be_bytes));
         assert_eq!(decode(&bytes), text);
+        // UTF-8 with its mark, the first line a time line.
+        let mut bytes = vec![0xEF, 0xBB, 0xBF];
+        bytes.extend(text.as_bytes());
+        assert_eq!(decode(&bytes), text);
+        assert_eq!(arrow_lines(&decode(&bytes)).len(), 1);
     }
 }

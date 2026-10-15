@@ -31,6 +31,8 @@ pub struct Timeline<'a> {
     pub delay: f64,
     /// Subtitles are shown (‹ and › have lines to move).
     pub subs_on: bool,
+    /// They are of a file of their own (whose lines may not be read).
+    pub subs_external: bool,
 }
 
 /// The row: ‹, −, the strip, +, ›.
@@ -50,7 +52,7 @@ pub fn show(ui: &mut Ui, now: Timeline<'_>, out: &mut Vec<Cmd>) {
         if tool(ui, &back, now.subs_on, |p, o, c| chevron(p, o, s, c, false)).clicked() {
             out.push(Cmd::SubStep(-1));
         }
-        let wider = tr!("A longer stretch of time", "Шкала крупнее");
+        let wider = tr!("A longer stretch of time", "Показать больше времени");
         if tool(ui, wider, span + 1 < SPANS.len(), |p, o, c| {
             icons::minus(p, o, s, c)
         })
@@ -63,7 +65,7 @@ pub fn show(ui: &mut Ui, now: Timeline<'_>, out: &mut Vec<Cmd>) {
         let (strip, response) =
             ui.allocate_exact_size(vec2(width.max(40.0), HEIGHT), Sense::click_and_drag());
         strip_contents(ui, strip, &response, now, SPANS[span], out);
-        let narrower = tr!("A shorter stretch of time", "Шкала мельче");
+        let narrower = tr!("A shorter stretch of time", "Показать меньше времени");
         if tool(ui, narrower, span > 0, |p, o, c| icons::plus(p, o, s, c)).clicked() {
             span -= 1;
         }
@@ -105,6 +107,12 @@ fn strip_contents(
     let (Some(lines), Some(time)) = (now.lines, now.time) else {
         note(if !now.subs_on {
             tr!("No subtitles", "Нет субтитров")
+        } else if now.subs_external {
+            // Not read (yet): VobSub, PGS, SAMI…
+            tr!(
+                "The lines of this file are not shown",
+                "Реплики этого файла не показываются"
+            )
         } else {
             tr!(
                 "The timeline is for subtitle files",
@@ -116,19 +124,21 @@ fn strip_contents(
     let per_second = f64::from(strip.width()) / span;
     let centre = strip.center().x;
     let x_of = |t: f64| centre + ((t - time) * per_second) as f32;
-    // The drag: the delay at its start plus the way the pointer went, so
-    // that the hold on the position line can be left by going on.
+    // The drag: the delay at its start plus the way the pointer went from
+    // where it was pressed (egui's drag starts some points later, and the
+    // blocks lagged behind it by those), so that the hold on the position
+    // line can be left by going on.
     let drag_id = response.id.with("drag");
     if response.drag_started() {
-        ui.data_mut(|d| d.insert_temp(drag_id, (now.delay, 0.0_f32)));
+        let origin = ui.input(|i| i.pointer.press_origin()).map_or(0.0, |p| p.x);
+        ui.data_mut(|d| d.insert_temp(drag_id, (now.delay, origin)));
     }
     let mut delay = now.delay;
     if response.dragged()
-        && let Some((start, moved)) = ui.data(|d| d.get_temp::<(f64, f32)>(drag_id))
+        && let Some((start, origin)) = ui.data(|d| d.get_temp::<(f64, f32)>(drag_id))
+        && let Some(pointer) = response.interact_pointer_pos()
     {
-        let moved = moved + response.drag_delta().x;
-        ui.data_mut(|d| d.insert_temp(drag_id, (start, moved)));
-        let raw = start + f64::from(moved) / per_second;
+        let raw = start + f64::from(pointer.x - origin) / per_second;
         // The start nearest to the position line, held on it.
         let nearest = nearest_start(lines, time - raw);
         delay = match nearest {

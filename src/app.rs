@@ -4152,6 +4152,8 @@ impl eframe::App for App {
                 time: state.time.filter(|_| !state.idle),
                 sub_lines: self.sub_lines.as_ref().and_then(|s| s.lines.as_deref()),
                 subs_on: tracks::selected(&state.tracks, Kind::Sub).is_some(),
+                subs_external: tracks::selected(&state.tracks, Kind::Sub)
+                    .is_some_and(|t| t.external),
             },
         );
         cmds.extend(panel_cmds);

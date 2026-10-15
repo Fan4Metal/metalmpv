@@ -142,6 +142,8 @@ pub struct Now<'a> {
     pub time: Option<f64>,
     pub sub_lines: Option<&'a [crate::sub_lines::Line]>,
     pub subs_on: bool,
+    /// They are of a file of their own.
+    pub subs_external: bool,
 }
 
 impl VideoPanel {
@@ -1238,6 +1240,7 @@ fn subtitles_tab(
             time: now.time,
             delay: now.sub_delay,
             subs_on: now.subs_on,
+            subs_external: now.subs_external,
         },
         out,
     );
