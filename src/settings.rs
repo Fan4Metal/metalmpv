@@ -327,7 +327,7 @@ const BOOKMARKS: &str = "bookmarks";
 const REMEMBER_RECENT: &str = "remember_recent";
 
 /// How many recent files are kept.
-pub const RECENT_COUNT: usize = 10;
+pub const RECENT_COUNT: usize = 30;
 
 /// The longest seek step the settings accept, in seconds.
 /// The shortest seek step, in whole seconds as the settings show it.

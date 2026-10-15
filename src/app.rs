@@ -112,6 +112,9 @@ pub struct App {
     /// size.
     icon: ui::IconCache,
     start_icon: ui::IconCache,
+    /// The start screen's recent files while they scroll: the wheel there
+    /// scrolls them instead of setting the volume.
+    recent_scroll: Option<Rect>,
     /// The accent of the window's icon (blue from `main`).
     window_icon: style::Accent,
     /// The playlist's own window (`dock.rs`): how egui makes it, while it
@@ -356,6 +359,7 @@ impl App {
             start_at: None,
             icon: None,
             start_icon: None,
+            recent_scroll: None,
             window_icon: style::Accent::Blue,
             playlist_builder: None,
             playlist_hwnd: None,
@@ -2395,6 +2399,7 @@ impl App {
         // A double click switches fullscreen, a drag moves the window.
         let response = frameless::drag_area(ui, rect, ui.id().with("video"), Sense::CLICK);
         let visible = state.video().is_some() && self.video.is_some();
+        self.recent_scroll = None;
         if !state.idle
             && let Some(video) = &mut self.video
         {
@@ -2429,7 +2434,10 @@ impl App {
             self.middle_press = false;
             cmds.push(Cmd::TogglePlaylist);
         }
-        if response.hovered() {
+        let on_recent = self
+            .recent_scroll
+            .is_some_and(|r| ui.rect_contains_pointer(r));
+        if response.hovered() && !on_recent {
             let notches = ui::wheel_notches(ui);
             if notches != 0 {
                 cmds.push(Cmd::Volume(notches as f64 * input::VOLUME_STEP));
@@ -2553,7 +2561,7 @@ impl App {
 
     /// The black area without a picture: the start screen, the title of an
     /// audio file, or why nothing plays.
-    fn placeholder(&mut self, ui: &egui::Ui, rect: Rect, state: &State) -> Option<Cmd> {
+    fn placeholder(&mut self, ui: &mut egui::Ui, rect: Rect, state: &State) -> Option<Cmd> {
         let failed = self.engine_error.is_some() || (state.idle && self.file_error.is_some());
         if state.idle && !failed {
             return self.start_screen(ui, rect);
@@ -2602,7 +2610,7 @@ impl App {
 
     /// Nothing plays: the icon, the name, the version and what to do, as
     /// in qview; centred, a little above the middle.
-    fn start_screen(&mut self, ui: &egui::Ui, rect: Rect) -> Option<Cmd> {
+    fn start_screen(&mut self, ui: &mut egui::Ui, rect: Rect) -> Option<Cmd> {
         let size = start_icon_size(rect);
         let big = size > 64.0;
         let icon = ui::app_icon(ui.ctx(), size, &mut self.start_icon);
@@ -2680,41 +2688,68 @@ impl App {
             job.wrap = egui::text::TextWrapping::truncate_at_width(width);
             painter.layout_job(job)
         };
-        for (i, path) in self.settings.recent.iter().take(shown).enumerate() {
-            let name = path.file_name().map_or_else(
-                || path.display().to_string(),
-                |n| n.to_string_lossy().into_owned(),
-            );
-            let folder = path
-                .parent()
-                .map(|p| p.display().to_string())
-                .unwrap_or_default();
-            // Laid out in the text colour: the hover only tints it.
-            let name = truncated(name, 14.0, style::TEXT);
-            let folder = truncated(folder, 11.0, style::TEXT_WEAK);
-            let name_rect = centred(y, name.size());
-            let folder_rect = centred(name_rect.bottom() + 1.0, folder.size());
-            // The name and the folder under it take the click.
-            let row = name_rect.union(folder_rect);
-            let response = ui
-                .interact(row, ui.id().with(("recent", i)), Sense::CLICK)
-                .on_hover_text(path.display().to_string());
-            let hovered = response.hovered();
-            if hovered {
-                ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
-            }
-            let color = if hovered {
-                style::accent()
-            } else {
-                style::TEXT
-            };
-            painter.galley_with_override_text_color(name_rect.min, name, color);
-            painter.galley(folder_rect.min, folder, style::TEXT_WEAK);
-            if response.clicked() {
-                out = Some(Cmd::OpenRecent(i));
-            }
-            y += RECENT_ROW;
+        // As many rows as fit are seen; the rest scroll in the same place.
+        let list_rect = Rect::from_min_size(
+            egui::pos2(centre - width / 2.0, y),
+            egui::vec2(width, shown as f32 * RECENT_ROW),
+        );
+        if self.settings.recent.len() > shown {
+            self.recent_scroll = Some(list_rect);
         }
+        let mut list = ui.new_child(egui::UiBuilder::new().max_rect(list_rect));
+        egui::ScrollArea::vertical()
+            .id_salt("recent_files")
+            .max_height(list_rect.height())
+            .auto_shrink([false, false])
+            // The wheel scrolls it; a bar would only crowd the centred rows.
+            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+            .show(&mut list, |ui| {
+                // Rows of exactly `RECENT_ROW`: with egui's spacing between
+                // them the last one seen was cut.
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for (i, path) in self.settings.recent.iter().enumerate() {
+                    // A place in the column, not a widget: the gaps still
+                    // move the window.
+                    let (_, row) = ui.allocate_space(egui::vec2(width, RECENT_ROW));
+                    let name = path.file_name().map_or_else(
+                        || path.display().to_string(),
+                        |n| n.to_string_lossy().into_owned(),
+                    );
+                    let folder = path
+                        .parent()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default();
+                    // Laid out in the text colour: the hover only tints it.
+                    let name = truncated(name, 14.0, style::TEXT);
+                    let folder = truncated(folder, 11.0, style::TEXT_WEAK);
+                    let name_rect = centred(row.top(), name.size());
+                    let folder_rect = centred(name_rect.bottom() + 1.0, folder.size());
+                    // The name and the folder under it take the click.
+                    let response = ui
+                        .interact(
+                            name_rect.union(folder_rect),
+                            ui.id().with(("recent", i)),
+                            Sense::CLICK,
+                        )
+                        .on_hover_text(path.display().to_string());
+                    let hovered = response.hovered();
+                    if hovered {
+                        ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+                    }
+                    let color = if hovered {
+                        style::accent()
+                    } else {
+                        style::TEXT
+                    };
+                    let painter = ui.painter();
+                    painter.galley_with_override_text_color(name_rect.min, name, color);
+                    painter.galley(folder_rect.min, folder, style::TEXT_WEAK);
+                    if response.clicked() {
+                        out = Some(Cmd::OpenRecent(i));
+                    }
+                }
+            });
+        y = list_rect.bottom();
         let clear = layout(
             tr!("Clear the list", "Очистить список").to_owned(),
             12.0,

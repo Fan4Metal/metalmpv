@@ -136,7 +136,7 @@ The settings window (`F5` or the gear button) lists the categories on the left a
 | General | On-screen messages: size | 100 % | 50–200 % of the usual size, which follows the height of the picture |
 | General | On-screen messages: look | yellow letters, thin black outline, shadow | As for the subtitles: the colour of the letters and of the outline, the outline's thickness (0–4), the shadow (0–4), bold letters, and a slightly see-through box of the outline's colour in place of the outline, the thickness then being its margin; **Default** brings the yellow line back; a sample line under them shows the font, the size and the look |
 | Playback | Go on from where it stopped | on | A file of 5 minutes or more opened again starts where it was left, with a message on the screen; `Home` goes to the beginning. A file watched to its last 30 seconds, or stopped in its first 10 seconds, starts from the beginning. The last 200 files are remembered; **Forget all** clears the list |
-| Playback | Remember the recent files | on | The start screen lists the files played last; when off, none are kept and the list is cleared |
+| Playback | Remember the recent files | on | The start screen lists the last thirty files played, those that do not fit scrolling in the list; when off, none are kept and the list is cleared |
 | Playback | Left / Right | 10 s | The step of `←` and `→`, on keyframes |
 | Playback | Ctrl+Left / Right | 60 s | The step of `Ctrl+←` and `Ctrl+→`, on keyframes |
 | Playback | Marks on the seek bar | on | Cuts in the seek bar where the chapters start; also in the context menu |
