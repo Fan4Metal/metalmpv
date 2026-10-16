@@ -1298,12 +1298,7 @@ fn subtitles_tab(
         );
     }
 
-    if section(
-        ui,
-        "subs_place",
-        tr!("Place and timing", "Положение и время"),
-        "",
-    ) {
+    if section(ui, "subs_place", tr!("Place", "Положение"), "") {
         let height = Spec {
             tip: Some(tr!(
                 "For all subtitles; 100 is the bottom, 0 the top",
@@ -1312,6 +1307,27 @@ fn subtitles_tab(
             ..Spec::centred(sub_style::POS_RANGE, d.pos)
         };
         value_row(ui, tr!("Height", "Высота"), &mut style.pos, &height);
+        switch_line(
+            ui,
+            kept.sub_margins,
+            tr!("In the black bars", "В чёрных полях"),
+            Some(tr!(
+                "Where the picture has black bars, the subtitles go in them, ASS ones too; off, over the picture",
+                "Если у изображения есть чёрные поля, субтитры, в том числе ASS, идут в них; выключено — поверх изображения"
+            )),
+        );
+        switch_line(
+            ui,
+            kept.sub_ass_override,
+            tr!("Style for ASS too", "Стиль и для ASS"),
+            Some(tr!(
+                "The font, the colours and the outline above replace those of ASS subtitles too (their signs and effects lose their look)",
+                "Шрифт, цвета и обводка выше заменяют и стили субтитров ASS (надписи и эффекты в них теряют свой вид)"
+            )),
+        );
+    }
+
+    if section(ui, "subs_timing", tr!("Timing", "Синхронизация"), "") {
         let mut delay = now.sub_delay;
         if value_row(
             ui,
@@ -1338,24 +1354,6 @@ fn subtitles_tab(
                 subs_external: now.subs_external,
             },
             out,
-        );
-        switch_line(
-            ui,
-            kept.sub_margins,
-            tr!("In the black bars", "В чёрных полях"),
-            Some(tr!(
-                "Where the picture has black bars, the subtitles go in them, ASS ones too; off, over the picture",
-                "Если у изображения есть чёрные поля, субтитры, в том числе ASS, идут в них; выключено — поверх изображения"
-            )),
-        );
-        switch_line(
-            ui,
-            kept.sub_ass_override,
-            tr!("Style for ASS too", "Стиль и для ASS"),
-            Some(tr!(
-                "The font, the colours and the outline above replace those of ASS subtitles too (their signs and effects lose their look)",
-                "Шрифт, цвета и обводка выше заменяют и стили субтитров ASS (надписи и эффекты в них теряют свой вид)"
-            )),
         );
     }
 
