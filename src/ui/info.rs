@@ -39,6 +39,9 @@ pub struct InfoWindow {
     zoom: bool,
     /// When Copy all was last clicked.
     copied: Option<Instant>,
+    /// The file whose audio chips were unfolded ("+3" clicked); another
+    /// file folds them again.
+    unfolded: Option<std::path::PathBuf>,
 }
 
 /// What an IPTV list says about the entry playing, and its logo once
@@ -220,7 +223,8 @@ impl InfoWindow {
                 if let Some(album) = album {
                     ui.add(egui::Label::new(RichText::new(album).color(style::TEXT_WEAK)).wrap());
                 }
-                let rows = info::chips_in(lang(), subject);
+                let unfolded = subject.path.is_some() && self.unfolded.as_deref() == subject.path;
+                let rows = info::chips_in(lang(), subject, unfolded);
                 if !rows.is_empty() {
                     ui.add_space(6.0);
                 }
@@ -231,6 +235,10 @@ impl InfoWindow {
                             if chip(ui, &c).clicked() {
                                 match c.action {
                                     ChipAction::Audio(id) => out.push(Cmd::SelectAudio(id)),
+                                    ChipAction::Unfold => {
+                                        self.unfolded = subject.path.map(Into::into);
+                                    }
+                                    ChipAction::Fold => self.unfolded = None,
                                     ChipAction::None => {}
                                 }
                             }

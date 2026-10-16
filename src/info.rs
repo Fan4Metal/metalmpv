@@ -892,6 +892,9 @@ pub enum ChipAction {
     None,
     /// Plays this audio track.
     Audio(i64),
+    /// Shows all the audio tracks ("+3"), or folds them again ("−").
+    Unfold,
+    Fold,
 }
 
 /// A chip's colour, when the window shows colours.
@@ -947,8 +950,9 @@ const AUDIO_CHIPS: usize = 4;
 /// The header's chips in rows: the file (format, size, duration, overall
 /// bitrate), the picture (codec, size, aspect, fps, depth, HDR, bitrate), the
 /// sound (a chip per audio track, the playing one marked; the subtitles'
-/// count and language). What the list below says, at a glance.
-pub fn chips_in(lang: Lang, s: &Subject) -> Vec<Vec<Chip>> {
+/// count and language). What the list below says, at a glance. More audio
+/// tracks than [`AUDIO_CHIPS`] fold into "+N" unless `unfolded`.
+pub fn chips_in(lang: Lang, s: &Subject, unfolded: bool) -> Vec<Vec<Chip>> {
     let (path, state) = (s.path, s.state);
     let ru = lang == Lang::Ru;
     let mut rows = Vec::new();
@@ -1100,7 +1104,8 @@ pub fn chips_in(lang: Lang, s: &Subject) -> Vec<Vec<Chip>> {
 
     let mut sound = Vec::new();
     let audio = tracks::of_kind(&state.tracks, Kind::Audio);
-    let shown = if audio.len() > AUDIO_CHIPS {
+    let folds = audio.len() > AUDIO_CHIPS;
+    let shown = if folds && !unfolded {
         AUDIO_CHIPS - 1
     } else {
         audio.len()
@@ -1145,7 +1150,15 @@ pub fn chips_in(lang: Lang, s: &Subject) -> Vec<Vec<Chip>> {
             text: format!("+{}", audio.len() - shown),
             tip: Some(rest.join("\n")),
             selected: audio.iter().skip(shown).any(|t| t.selected),
-            action: ChipAction::None,
+            action: ChipAction::Unfold,
+            tone: Tone::Sound,
+        });
+    } else if folds {
+        sound.push(Chip {
+            text: "−".into(),
+            tip: Some(if ru { "Свернуть" } else { "Fold" }.into()),
+            selected: false,
+            action: ChipAction::Fold,
             tone: Tone::Sound,
         });
     }
@@ -1493,7 +1506,7 @@ mod tests {
         assert!(track_details_in(Lang::En, &video, &s).ends_with("12.0 Mb/s"));
         let rows = track_rows_in(Lang::Ru, &subs, &s);
         assert_eq!(value(&rows, "Элементов"), Some("1\u{a0}234"));
-        let chips = chips_in(Lang::En, &s);
+        let chips = chips_in(Lang::En, &s, false);
         assert_eq!(
             chips[1][0].tip.as_deref(),
             Some("Main 10 · level 5.1, High tier")
@@ -1658,6 +1671,7 @@ mod tests {
                 state: &state,
                 facts: None,
             },
+            false,
         );
         let texts: Vec<Vec<&str>> = rows
             .iter()
@@ -1715,6 +1729,7 @@ mod tests {
                 state: &state,
                 facts: None,
             },
+            false,
         );
         let sound: Vec<&str> = rows[2].iter().map(|c| c.text.as_str()).collect();
         assert_eq!(
@@ -1732,6 +1747,22 @@ mod tests {
             rows[2][3].tip.as_deref(),
             Some("4. English\n5. English\n6. English")
         );
+        assert_eq!(rows[2][3].action, ChipAction::Unfold);
+        // Unfolded: every track, then the chip that folds them.
+        let rows = chips_in(
+            Lang::En,
+            &Subject {
+                path: Some(path),
+                state: &state,
+                facts: None,
+            },
+            true,
+        );
+        let sound: Vec<&ChipAction> = rows[2].iter().map(|c| &c.action).collect();
+        assert_eq!(sound.len(), 8);
+        assert_eq!(sound[5], &ChipAction::Audio(6));
+        assert_eq!(sound[6], &ChipAction::Fold);
+        assert!(rows[2][5].selected);
 
         // An address has no extension to show: the container's name.
         state.file_format = Some("mpegts".into());
@@ -1742,6 +1773,7 @@ mod tests {
                 state: &state,
                 facts: None,
             },
+            false,
         );
         assert_eq!(rows[0][0].text, "MPEG-TS");
         assert_eq!(rows[0][0].tone, Tone::Plain);
