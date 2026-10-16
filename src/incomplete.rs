@@ -73,8 +73,9 @@ pub fn truncated(path: &str, duration: f64, mp3: bool) -> bool {
     {
         return false;
     }
-    declared(&head, duration, mp3)
-        .is_some_and(|declared| size + (declared / 50).max(4096) < start + declared)
+    declared(&head, duration, mp3).is_some_and(|declared| {
+        size.saturating_add((declared / 50).max(4096)) < start.saturating_add(declared)
+    })
 }
 
 /// The size `head` (a file's start after its ID3v2 tag) declares for
@@ -146,7 +147,7 @@ fn declared(head: &[u8], duration: f64, mp3: bool) -> Option<u64> {
         return None;
     }
     (duration.is_finite() && duration > 0.0)
-        .then(|| frame as u64 + (duration * kbps as f64 * 125.0) as u64)
+        .then(|| (frame as u64).saturating_add((duration * kbps as f64 * 125.0) as u64))
 }
 
 #[cfg(test)]

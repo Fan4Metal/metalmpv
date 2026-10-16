@@ -127,6 +127,8 @@ pub fn read(path: &Path) -> Facts {
 
 // --- Matroska -----------------------------------------------------------
 
+/// The most tracks of a Matroska file read.
+const MAX_TRACKS: usize = 1024;
 const INFO: u32 = 0x1549_A966;
 const MUXING_APP: u32 = 0x4D80;
 const WRITING_APP: u32 = 0x5741;
@@ -172,7 +174,9 @@ fn matroska(r: &mut (impl Read + Seek), facts: &mut Facts) -> Option<()> {
             TRACKS => {
                 let mut index = 0;
                 ebml::children(r, size, |r, id, size| {
-                    if id != TRACK_ENTRY {
+                    // A file of a million entries would make the tags'
+                    // matching take hours (each is looked for in turn).
+                    if id != TRACK_ENTRY || facts.tracks.len() >= MAX_TRACKS {
                         return Some(());
                     }
                     let (mut number, mut uid, mut codec, mut private) = (None, None, None, None);

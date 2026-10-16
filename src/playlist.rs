@@ -16,6 +16,9 @@ pub const MEDIA_EXTENSIONS: &[&str] = &[
     "dts",
 ];
 
+/// The largest playlist file read.
+const MAX_LIST_BYTES: u64 = 256 << 20;
+
 /// Playlist files, opened as their entries and written by Save the list.
 pub const PLAYLIST_EXTENSIONS: &[&str] = &["m3u", "m3u8"];
 
@@ -222,6 +225,12 @@ pub fn expand_lists(paths: Vec<PathBuf>) -> (Vec<PathBuf>, HashMap<PathBuf, Chan
         .flat_map(|p| {
             if !is_playlist_file(&p) {
                 return vec![p];
+            }
+            // A list of a million channels is some 100 MB; more is no list
+            // (out of memory the program would end).
+            if std::fs::metadata(&p).is_ok_and(|m| m.len() > MAX_LIST_BYTES) {
+                log::warn!("{} is too large for a list", p.display());
+                return Vec::new();
             }
             match std::fs::read(&p) {
                 Ok(bytes) => {

@@ -882,7 +882,7 @@ impl Settings {
                         let gains: Vec<i64> = v
                             .split(',')
                             .filter_map(|g| g.trim().parse().ok())
-                            .filter(|g: &i64| g.abs() <= audio::EQ_RANGE)
+                            .filter(|g: &i64| (-audio::EQ_RANGE..=audio::EQ_RANGE).contains(g))
                             .collect();
                         <[i64; 10]>::try_from(gains).ok()
                     })

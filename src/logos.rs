@@ -320,6 +320,16 @@ fn prune() {
     let mut removed = 0;
     for entry in entries.flatten() {
         let path = entry.path();
+        // Only the cache's own files (`cache_file`): a portable copy's
+        // folder may hold a `logos` folder of the user's.
+        let ours = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .is_some_and(|s| s.len() == 16 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+            && path.extension().is_none_or(|e| e == "part");
+        if !ours {
+            continue;
+        }
         let old = entry
             .metadata()
             .and_then(|m| m.modified())

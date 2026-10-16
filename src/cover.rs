@@ -98,6 +98,10 @@ pub fn find(path: &Path) -> Option<Cover> {
         return None;
     }
     let file = in_folder(path)?;
+    // Out of memory is no panic a worker survives: the program would end.
+    if std::fs::metadata(&file).ok()?.len() > MAX_BYTES {
+        return None;
+    }
     let bytes = std::fs::read(&file).ok()?;
     decode(bytes, Source::Folder(file))
 }
