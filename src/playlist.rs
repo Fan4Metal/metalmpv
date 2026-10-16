@@ -289,6 +289,15 @@ pub fn is_media(path: &Path) -> bool {
         .is_some_and(|e| MEDIA_EXTENSIONS.iter().any(|m| m.eq_ignore_ascii_case(e)))
 }
 
+/// Whether `path` is a sound file by its extension (a type of
+/// `filetypes.rs` that holds sound: MKA, AC3 and DTS too).
+pub fn is_audio(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .and_then(crate::filetypes::of_extension)
+        .is_some_and(|t| t.kind == crate::filetypes::Kind::Audio)
+}
+
 /// What plays after the end of a file.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Repeat {
@@ -752,12 +761,16 @@ impl Playlist {
 }
 
 /// The media files of the folder `file` is in, sorted, `file` among them
-/// (whatever its extension).
-pub fn folder_of(file: &Path) -> Vec<PathBuf> {
+/// (whatever its extension); with `audio_only`, only the sound files (an
+/// album's tracks, not the clip beside them).
+pub fn folder_of(file: &Path, audio_only: bool) -> Vec<PathBuf> {
     let Some(dir) = file.parent() else {
         return vec![file.to_path_buf()];
     };
     let mut out = media_in(dir);
+    if audio_only {
+        out.retain(|p| is_audio(p));
+    }
     // Names in another case are the same file on Windows: the entry takes
     // the spelling the file was opened with (it is looked for by it).
     let wanted = file.to_string_lossy().to_lowercase();
@@ -1210,18 +1223,26 @@ mod tests {
                 .collect()
         };
         assert_eq!(
-            names(folder_of(&dir.join("ep10.mkv"))),
+            names(folder_of(&dir.join("ep10.mkv"), false)),
             ["ep2.MP4", "ep10.mkv", "song.flac"]
         );
         assert_eq!(
-            names(folder_of(&dir.join("notes.txt"))),
+            names(folder_of(&dir.join("notes.txt"), false)),
             ["ep2.MP4", "ep10.mkv", "notes.txt", "song.flac"]
         );
         // Opened by a name in another case: listed once, by that name.
         assert_eq!(
-            names(folder_of(&dir.join("EP10.MKV"))),
+            names(folder_of(&dir.join("EP10.MKV"), false)),
             ["ep2.MP4", "EP10.MKV", "song.flac"]
         );
+        // An album: its sound files only.
+        std::fs::write(dir.join("Track 1.MP3"), b"").unwrap();
+        assert_eq!(
+            names(folder_of(&dir.join("song.flac"), true)),
+            ["song.flac", "Track 1.MP3"]
+        );
+        std::fs::remove_file(dir.join("Track 1.MP3")).unwrap();
+        assert!(is_audio(Path::new("a.MKA")) && !is_audio(Path::new("a.mkv")));
         let mut p = Playlist::default();
         p.replace(vec![dir.clone()]);
         assert_eq!(p.len(), 3);

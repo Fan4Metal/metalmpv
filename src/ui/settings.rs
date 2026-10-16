@@ -904,6 +904,19 @@ fn general(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
             50.0,
             |ui| switch(ui, &mut settings.fill_playlist),
         );
+        if settings.fill_playlist {
+            divider(ui);
+            row(
+                ui,
+                tr!("Only for audio", "Только для аудио"),
+                Some(tr!(
+                    "Only an audio file brings its folder's audio files, an album's tracks; a video opens alone.",
+                    "Только звуковой файл добавляет звуковые файлы своей папки — треки альбома; видео открывается одно."
+                )),
+                50.0,
+                |ui| switch(ui, &mut settings.fill_audio_only),
+            );
+        }
         divider(ui);
         row(
             ui,
@@ -2160,6 +2173,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.seek_long = d.seek_long;
     settings.hwdec = d.hwdec;
     settings.fill_playlist = d.fill_playlist;
+    settings.fill_audio_only = d.fill_audio_only;
     settings.channel_logos = d.channel_logos;
     settings.chapter_marks = d.chapter_marks;
     settings.resume_playback = d.resume_playback;

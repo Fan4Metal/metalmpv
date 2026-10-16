@@ -429,7 +429,8 @@ impl App {
     }
 
     /// Replace the playlist with `paths` and play the first. One file
-    /// brings the media files of its folder along when the setting says so.
+    /// brings the media files of its folder along when the setting says so
+    /// (only a sound file its folder's sound files, with `fill_audio_only`).
     fn open(&mut self, paths: Vec<PathBuf>) {
         // A playlist file is its entries, not one of a folder's files.
         let from_list = paths.iter().any(|p| playlist::is_playlist_file(p));
@@ -437,12 +438,17 @@ impl App {
         let Some(target) = paths.first().cloned() else {
             return;
         };
-        let list =
-            if paths.len() == 1 && !from_list && self.settings.fill_playlist && target.is_file() {
-                playlist::folder_of(&target)
-            } else {
-                paths
-            };
+        let audio_only = self.settings.fill_audio_only;
+        let fill = paths.len() == 1
+            && !from_list
+            && self.settings.fill_playlist
+            && (!audio_only || playlist::is_audio(&target))
+            && target.is_file();
+        let list = if fill {
+            playlist::folder_of(&target, audio_only)
+        } else {
+            paths
+        };
         self.playlist.replace(list);
         self.playlist.describe(channels);
         let index = self

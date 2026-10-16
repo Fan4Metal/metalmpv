@@ -29,6 +29,7 @@ const SEEK_SHORT: &str = "seek_short";
 const SEEK_LONG: &str = "seek_long";
 const HWDEC: &str = "hwdec";
 const FILL_PLAYLIST: &str = "fill_playlist_from_folder";
+const FILL_AUDIO_ONLY: &str = "fill_playlist_audio_only";
 const CHANNEL_LOGOS: &str = "channel_logos";
 const PLAYLIST_VISIBLE: &str = "playlist_visible";
 const TRACKS_WIDE: &str = "tracks_wide";
@@ -481,6 +482,8 @@ pub struct Settings {
     pub hwdec: bool,
     /// Opening one file lists the media files of its folder.
     pub fill_playlist: bool,
+    /// ... only for a sound file, and only with the folder's sound files.
+    pub fill_audio_only: bool,
     /// The pictures of an M3U list's channels are fetched (`logos.rs`).
     pub channel_logos: bool,
     pub playlist_visible: bool,
@@ -623,6 +626,7 @@ impl Default for Settings {
             seek_long: 60.0,
             hwdec: true,
             fill_playlist: false,
+            fill_audio_only: false,
             channel_logos: true,
             playlist_visible: false,
             tracks_wide: false,
@@ -755,6 +759,7 @@ impl Settings {
             seek_long: number(SEEK_LONG, MIN_STEP..=MAX_STEP, d.seek_long),
             hwdec: flag(HWDEC, d.hwdec),
             fill_playlist: flag(FILL_PLAYLIST, d.fill_playlist),
+            fill_audio_only: flag(FILL_AUDIO_ONLY, d.fill_audio_only),
             channel_logos: flag(CHANNEL_LOGOS, d.channel_logos),
             playlist_visible: flag(PLAYLIST_VISIBLE, d.playlist_visible),
             tracks_wide: flag(TRACKS_WIDE, d.tracks_wide),
@@ -1001,6 +1006,7 @@ impl Settings {
         storage.set_string(SEEK_LONG, self.seek_long.to_string());
         storage.set_string(HWDEC, self.hwdec.to_string());
         storage.set_string(FILL_PLAYLIST, self.fill_playlist.to_string());
+        storage.set_string(FILL_AUDIO_ONLY, self.fill_audio_only.to_string());
         storage.set_string(CHANNEL_LOGOS, self.channel_logos.to_string());
         storage.set_string(PLAYLIST_VISIBLE, self.playlist_visible.to_string());
         storage.set_string(TRACKS_WIDE, self.tracks_wide.to_string());
@@ -1169,6 +1175,7 @@ mod tests {
             seek_long: 30.5,
             hwdec: false,
             fill_playlist: true,
+            fill_audio_only: true,
             channel_logos: false,
             playlist_visible: true,
             tracks_wide: true,
