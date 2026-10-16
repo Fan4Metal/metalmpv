@@ -69,6 +69,9 @@ pub struct App {
     engine_error: Option<crate::player::EngineError>,
     /// Why the last file could not be played.
     file_error: Option<String>,
+    /// Files that failed one after another: with the list repeated, a list
+    /// of broken files is gone round once, not for good.
+    failed_in_row: usize,
     /// Frames asked for and not written yet, in order: their names are
     /// taken, and the OSD names each once written.
     frames_saving: std::collections::VecDeque<PathBuf>,
@@ -344,6 +347,7 @@ impl App {
             video,
             engine_error,
             file_error: None,
+            failed_in_row: 0,
             frames_saving: std::collections::VecDeque::new(),
             playlist: Playlist::default(),
             about: AboutDialog::default(),
@@ -449,6 +453,7 @@ impl App {
         } else {
             paths
         };
+        self.failed_in_row = 0;
         self.playlist.replace(list);
         self.playlist.describe(channels);
         let index = self
@@ -496,8 +501,17 @@ impl App {
 
     /// Play playlist entry `index`.
     fn play(&mut self, index: usize) {
-        // The entry playing chosen again starts over, not where it is.
-        let again = self.playlist.current() == Some(index) && !self.state_idle();
+        // The file playing chosen again starts over, not where it is. By
+        // mpv's path: a list just replaced makes its first entry current,
+        // and a file opened while another played came back at 0.
+        let playing = self.player.as_ref().and_then(|p| p.state.path.clone());
+        let again = !self.state_idle()
+            && self
+                .playlist
+                .items()
+                .get(index)
+                .zip(playing.as_deref())
+                .is_some_and(|(entry, p)| crate::bookmarks::same_path(entry, Path::new(p)));
         let Some(path) = self.playlist.set_current(index).map(Path::to_path_buf) else {
             return;
         };
@@ -1065,6 +1079,10 @@ impl App {
             Ask::SaveCover(bytes) => {
                 if let Err(e) = std::fs::write(&path, bytes) {
                     log::warn!("cannot save the cover to {}: {e}", path.display());
+                    self.osd.show_always(Osd::Text(tr!(
+                        format!("Cannot save the cover: {e}"),
+                        format!("Не удалось сохранить обложку: {e}")
+                    )));
                 }
             }
             Ask::FramesFolder => self.settings.frames_folder = Some(path),
@@ -2565,6 +2583,7 @@ impl App {
                         self.settings.played(path);
                     }
                     self.file_error = None;
+                    self.failed_in_row = 0;
                     self.pick_ready = self.pick_tracks;
                     self.fit_on_open = self.settings.window_on_open != WindowOnOpen::Keep;
                 }
@@ -2607,8 +2626,12 @@ impl App {
                         format!("Не удалось воспроизвести {name}: {e}")
                     )));
                     self.file_error = Some(e);
-                    // A broken file in a list is skipped.
-                    if let Some(i) = self.playlist.next() {
+                    // A broken file in a list is skipped, round to the first
+                    // with the list repeated, until each has failed once.
+                    self.failed_in_row += 1;
+                    if self.failed_in_row < self.playlist.len()
+                        && let Some(i) = self.playlist.next_in(self.settings.repeat)
+                    {
                         self.play(i);
                     }
                 }
@@ -4375,6 +4398,7 @@ impl eframe::App for App {
     /// The render context goes first, while the OpenGL context lives, then
     /// the core.
     fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
+        crate::instance::closing();
         // A stretch being saved is cancelled, and its thread is given a
         // moment to delete the file half written.
         self.clip_dialog.cancel();

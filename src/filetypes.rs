@@ -271,8 +271,6 @@ pub const FILE_TYPES: &[FileType] = &[
     },
 ];
 
-/// Resource ID of the icon of `FILE_TYPES[i]` in the executable (the app
-/// icon is 1).
 /// The type of files with `extension` (any case, without the dot).
 pub fn of_extension(extension: &str) -> Option<&'static FileType> {
     let extension = extension.to_ascii_lowercase();
@@ -281,6 +279,8 @@ pub fn of_extension(extension: &str) -> Option<&'static FileType> {
         .find(|t| t.extensions.contains(&extension.as_str()))
 }
 
+/// Resource ID of the icon of `FILE_TYPES[i]` in the executable (the app
+/// icon is 1).
 pub const fn icon_id(i: usize) -> u16 {
     101 + i as u16
 }

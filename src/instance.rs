@@ -13,6 +13,7 @@ use std::ffi::OsString;
 use std::hash::{Hash, Hasher};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -42,6 +43,14 @@ const ANSWER_MS: u32 = 3000;
 static RECEIVED: Mutex<Vec<(PathBuf, Instant)>> = Mutex::new(Vec::new());
 /// The UI to wake when a path arrives, and the main window.
 static TARGET: OnceLock<(egui::Context, isize)> = OnceLock::new();
+/// The player is closing: paths handed over now would never be taken, so
+/// the later start is told no and plays them itself.
+static CLOSING: AtomicBool = AtomicBool::new(false);
+
+/// Take no more paths: the player is closing.
+pub fn closing() {
+    CLOSING.store(true, Ordering::Relaxed);
+}
 
 /// Name of the mutex and of the window class, the same for every start of
 /// this exe in this session.
@@ -219,7 +228,10 @@ unsafe extern "system" fn window_proc(
         return unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) };
     }
     let data = unsafe { &*(lparam as *const COPYDATASTRUCT) };
-    let Some((ctx, main)) = TARGET.get().filter(|_| data.dwData == MAGIC) else {
+    let Some((ctx, main)) = TARGET
+        .get()
+        .filter(|_| data.dwData == MAGIC && !CLOSING.load(Ordering::Relaxed))
+    else {
         return 0;
     };
     if data.cbData > 0 && !data.lpData.is_null() {
