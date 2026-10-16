@@ -2588,11 +2588,24 @@ impl App {
                     self.fit_on_open = self.settings.window_on_open != WindowOnOpen::Keep;
                 }
                 Happened::Expanded { entries, playing } => {
+                    // The entries this app would load itself, as mpv would
+                    // (the one it plays it has let through already).
+                    let remote = self.playlist.current_path().is_some_and(playlist::is_url);
+                    let mut at = 0;
                     let entries = entries
                         .into_iter()
-                        .map(|(file, title)| (PathBuf::from(file), title))
+                        .enumerate()
+                        .map(|(i, (file, title))| (i, PathBuf::from(file), title))
+                        .filter(|(i, path, _)| *i == playing || playlist::safe_entry(path, remote))
+                        .enumerate()
+                        .map(|(kept, (i, path, title))| {
+                            if i == playing {
+                                at = kept;
+                            }
+                            (path, title)
+                        })
                         .collect();
-                    self.playlist.expand_current(entries, playing);
+                    self.playlist.expand_current(entries, at);
                 }
                 Happened::NoData(end) if self.settings.stay_in_incomplete => {
                     // mpv stopped at the end of the data (keep-open): it

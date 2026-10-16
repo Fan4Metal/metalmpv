@@ -195,6 +195,11 @@ pub fn m3u_entries(text: &str, dir: &Path) -> Vec<(PathBuf, Option<Channel>)> {
             None => PathBuf::from(line),
         };
         let path = if is_url(&path) {
+            if !safe_entry(&path, false) {
+                log::warn!("list entry skipped: {}", path.display());
+                described = None;
+                continue;
+            }
             path
         } else if path.is_absolute() {
             lexical(&path)
@@ -280,6 +285,27 @@ pub fn is_url(path: &Path) -> bool {
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c))
     })
+}
+
+/// The schemes a list's entry may have: streams, not FFmpeg's devices
+/// (`av://dshow:…` turns a camera on) or sockets (`tcp://`): the app loads
+/// each entry itself, so mpv's `load-unsafe-playlists` does not apply.
+const LIST_SCHEMES: &[&str] = &[
+    "http", "https", "rtsp", "rtsps", "rtmp", "rtmps", "rtmpe", "rtmpt", "rtmpte", "rtmpts", "rtp",
+    "srt", "rist", "udp", "mms", "mmsh", "mmst", "ftp",
+];
+
+/// Whether an entry of a list may be played: an address of a stream's
+/// scheme, or a path of a list on this computer (a list from an address
+/// names none: mpv's own rule, and a share would be asked for the user's
+/// sign-in).
+pub fn safe_entry(entry: &Path, remote_list: bool) -> bool {
+    if !is_url(entry) {
+        return !remote_list;
+    }
+    let text = entry.to_string_lossy();
+    text.split_once("://")
+        .is_some_and(|(scheme, _)| LIST_SCHEMES.iter().any(|s| s.eq_ignore_ascii_case(scheme)))
 }
 
 /// Whether `path` has one of [`MEDIA_EXTENSIONS`].
@@ -791,8 +817,10 @@ pub fn folder_of(file: &Path, audio_only: bool) -> Vec<PathBuf> {
 fn expand(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for path in paths {
-        // An address asks nothing of the disk (an IPTV list has thousands).
-        if !is_url(&path) && path.is_dir() {
+        // An address asks nothing of the disk (an IPTV list has thousands),
+        // nor does a media file (a list's entries on a share switched off
+        // waited for the network each).
+        if !is_url(&path) && !is_media(&path) && path.is_dir() {
             out.extend(media_in(&path));
         } else {
             out.push(path);
@@ -923,6 +951,21 @@ mod tests {
                 PathBuf::from(r"D:\y.mkv"),
             ]
         );
+        // A device or a socket is no stream; its description goes with it.
+        let text = "#EXTINF:-1,Camera\nav://dshow:video=Camera\ntcp://10.0.0.1:22\n\
+                    #EXTINF:-1,One\nUDP://@239.0.0.1:1234\n";
+        let read = m3u_entries(text, Path::new(r"C:\Lists"));
+        assert_eq!(read.len(), 1);
+        assert_eq!(read[0].0, PathBuf::from("UDP://@239.0.0.1:1234"));
+        assert_eq!(
+            read[0].1.as_ref().and_then(|c| c.title.as_deref()),
+            Some("One")
+        );
+        // A list from an address names no paths.
+        assert!(safe_entry(Path::new(r"\\host\s\a.mkv"), false));
+        assert!(!safe_entry(Path::new(r"\\host\s\a.mkv"), true));
+        assert!(!safe_entry(Path::new(r"C:\a.mkv"), true));
+        assert!(safe_entry(Path::new("https://a/b.ts"), true));
     }
 
     #[test]

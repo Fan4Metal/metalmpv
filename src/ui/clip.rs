@@ -258,10 +258,6 @@ impl ClipDialog {
                         input: stretch.input.clone(),
                         from: stretch.from,
                         to: stretch.to,
-                        replace: self
-                            .replace
-                            .as_deref()
-                            .is_some_and(|r| crate::clip::same_file(r, &output)),
                         output,
                         encode: *e,
                         audio: stretch.audio,
@@ -296,8 +292,10 @@ impl ClipDialog {
     /// over another file unless the Save dialog asked, in a folder that is
     /// there or can be made.
     fn check(&self, output: &Path, stretch: &Stretch) -> Result<(), String> {
+        // Nor the file written meanwhile (Name.part.mp4 for Name.mp4).
         if !crate::playlist::is_url(&stretch.input)
-            && crate::clip::same_file(output, &stretch.input)
+            && (crate::clip::same_file(output, &stretch.input)
+                || crate::clip::same_file(&crate::clip::part_of(output), &stretch.input))
         {
             return Err(tr!(
                 "This is the file playing; choose another name.",

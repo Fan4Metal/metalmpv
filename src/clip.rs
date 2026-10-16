@@ -142,9 +142,9 @@ pub struct Request {
     pub input: PathBuf,
     pub from: f64,
     pub to: f64,
+    /// Written only once whole (`part_of` is written meanwhile), so a
+    /// file it replaces stays if the saving fails.
     pub output: PathBuf,
-    /// `output` may be written over (its Save dialog asked).
-    pub replace: bool,
     pub encode: Encode,
     pub audio: Option<i64>,
     pub channels: Option<i64>,
@@ -179,16 +179,20 @@ impl Job {
         let cancel = Arc::new(AtomicBool::new(false));
         let (send, done) = channel();
         let output = request.output.clone();
-        // A file that was there is not deleted for a failure, unless the
-        // Save dialog asked to replace it (it may be half written over).
-        let ours = request.replace || !output.exists();
         let (p, c) = (progress.clone(), cancel.clone());
         crate::worker::spawn("clip", move || {
-            let result = crate::worker::guarded(|| run(&request, &p, &c, &wake))
+            let part = part_of(&request.output);
+            let mut result = crate::worker::guarded(|| run(&request, &part, &p, &c, &wake))
                 .unwrap_or_else(|| Err(Failure::Mpv("the encoding failed".into())));
-            if result.is_err() && ours {
-                // Nothing half written is left behind.
-                let _ = std::fs::remove_file(&request.output);
+            if result.is_ok()
+                && let Err(e) = std::fs::rename(&part, &request.output)
+            {
+                result = Err(Failure::Mpv(e.to_string()));
+            }
+            if result.is_err() {
+                // Nothing half written is left behind; a file the Save
+                // dialog was told to replace stays as it was.
+                let _ = std::fs::remove_file(&part);
             }
             let _ = send.send(result);
             wake();
@@ -254,9 +258,18 @@ fn quiet() -> Vec<(&'static str, String)> {
     .collect()
 }
 
-/// Do `request` on this thread; `progress` in thousandths.
+/// The file written while the stretch is saved, beside `output`, with its
+/// extension: mpv's encoder chooses the container by it.
+pub fn part_of(output: &Path) -> PathBuf {
+    let stem = output.file_stem().unwrap_or_default().to_string_lossy();
+    let extension = output.extension().unwrap_or_default().to_string_lossy();
+    output.with_file_name(format!("{stem}.part.{extension}"))
+}
+
+/// Do `request` on this thread into `into`; `progress` in thousandths.
 fn run(
     request: &Request,
+    into: &Path,
     progress: &AtomicU32,
     cancel: &AtomicBool,
     wake: &dyn Fn(),
@@ -269,7 +282,7 @@ fn run(
     let encode = request.encode;
     let (codec, codec_options) = encode.encoder();
     options.extend([
-        ("o", request.output.to_string_lossy().into_owned()),
+        ("o", into.to_string_lossy().into_owned()),
         ("ovc", codec.to_owned()),
         ("ovcopts", codec_options),
         ("oac", "aac".to_owned()),
@@ -322,7 +335,7 @@ fn run(
         request.to,
         request.input.display(),
         request.encode,
-        request.output.display()
+        into.display()
     );
     let set = |share: f64| {
         let value = (share.clamp(0.0, 1.0) * 1000.0) as u32;
@@ -352,7 +365,7 @@ fn run(
                 } if loaded => {
                     // The encoder finishes the file as the core is destroyed.
                     drop(mpv);
-                    let size = std::fs::metadata(&request.output).map_or(0, |m| m.len());
+                    let size = std::fs::metadata(into).map_or(0, |m| m.len());
                     if size == 0 {
                         return Err(Failure::Mpv("nothing was written".into()));
                     }
@@ -593,7 +606,6 @@ mod tests {
             from,
             to,
             output: output.to_path_buf(),
-            replace: false,
             encode,
             audio: Some(1),
             channels: Some(2),
@@ -609,6 +621,7 @@ mod tests {
             let started = std::time::Instant::now();
             run(
                 &request(&output, encode, Subs::None),
+                &output,
                 &progress,
                 &cancel,
                 &|| {},
@@ -654,6 +667,7 @@ mod tests {
         };
         run(
             &request(&burnt, with_subs, subs),
+            &burnt,
             &progress,
             &cancel,
             &|| {},
@@ -661,6 +675,7 @@ mod tests {
         .unwrap();
         run(
             &request(&plain, with_subs, Subs::None),
+            &plain,
             &progress,
             &cancel,
             &|| {},
