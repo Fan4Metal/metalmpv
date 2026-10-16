@@ -567,9 +567,9 @@ impl SubMode {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SubAuto {
     /// The video's name exactly: `Film.srt`.
+    #[default]
     Exact,
     /// Names with the video's in them: `Film.rus.srt`, `Film.Forced.ass`.
-    #[default]
     Fuzzy,
     /// Every subtitle file of the folder.
     All,
@@ -766,7 +766,7 @@ mod tests {
         let get = |name| options.iter().find(|(n, _)| *n == name).unwrap().1.clone();
         assert_eq!(get("slang"), "");
         assert_eq!(get("subs-fallback-forced"), "always");
-        assert_eq!(get("sub-auto"), "fuzzy");
+        assert_eq!(get("sub-auto"), "exact");
         assert!(languages(Lang::Ru).contains(&("rus", "Русский")));
     }
 
