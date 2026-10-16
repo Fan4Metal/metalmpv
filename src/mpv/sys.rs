@@ -115,6 +115,17 @@ pub struct mpv_event_log_message {
 }
 
 #[repr(C)]
+pub struct mpv_event_start_file {
+    pub playlist_entry_id: i64,
+}
+
+/// The result of a command (`MPV_EVENT_COMMAND_REPLY`), on success.
+#[repr(C)]
+pub struct mpv_event_command {
+    pub result: mpv_node,
+}
+
+#[repr(C)]
 pub struct mpv_event_end_file {
     pub reason: c_int,
     pub error: c_int,
@@ -315,6 +326,8 @@ mod tests {
         assert_eq!(size_of::<mpv_event_property>(), 24);
         assert_eq!(size_of::<mpv_event_log_message>(), 32);
         assert_eq!(size_of::<mpv_event_end_file>(), 32);
+        assert_eq!(size_of::<mpv_event_start_file>(), 8);
+        assert_eq!(size_of::<mpv_event_command>(), 16);
         assert_eq!(size_of::<mpv_render_param>(), 16);
         assert_eq!(size_of::<mpv_opengl_init_params>(), 16);
         assert_eq!(size_of::<mpv_opengl_fbo>(), 16);

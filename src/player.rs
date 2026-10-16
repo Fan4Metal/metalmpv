@@ -777,10 +777,16 @@ pub struct Player {
     /// the one before, reported late, is not this one's (it would skip
     /// the file just chosen).
     loading: bool,
-    /// Files asked for whose start mpv has not reported yet: an error
-    /// ending a file meanwhile is the one's before (it failed as another
-    /// was chosen), not the file chosen.
-    starts_due: u32,
+    /// `loadfile`s not answered yet: an error ending a file meanwhile is
+    /// the one's before (it failed as another was chosen), not the file
+    /// chosen.
+    loads_unanswered: u32,
+    /// mpv's playlist entry id of the file chosen (the answer to its
+    /// `loadfile`, or the file mpv started with none unanswered: the entry
+    /// of a list it expanded): only its error is the file's. Counting the
+    /// starts lost one for good when a `loadfile` replaced another before
+    /// it started, and every error after was taken for the file before's.
+    entry: Option<i64>,
     /// Stopped by [`Player::stop`]: an end of the file reported late is
     /// not one to move on from.
     stopped: bool,
@@ -833,7 +839,8 @@ impl Player {
             scan_asked: None,
             live_asked: None,
             loading: false,
-            starts_due: 0,
+            loads_unanswered: 0,
+            entry: None,
             stopped: false,
             hwdec: true,
             hwdec_copy: false,
@@ -952,7 +959,13 @@ impl Player {
                                         self.ran_out_at = self.data_end_at;
                                         out.push(Happened::NoData(end));
                                     }
-                                    None => out.push(Happened::Eof),
+                                    None => {
+                                        // Played on to its own end after
+                                        // its data had run out: watched.
+                                        self.ran_out_at = None;
+                                        self.data_end_at = None;
+                                        out.push(Happened::Eof);
+                                    }
                                 }
                             }
                         }
@@ -974,16 +987,25 @@ impl Player {
                     self.ask(Prop::Height);
                 }
                 Event::PlaybackRestart => out.push(Happened::Restarted),
-                Event::StartFile => self.starts_due = self.starts_due.saturating_sub(1),
+                Event::StartFile { entry } => {
+                    if self.loads_unanswered == 0 {
+                        self.entry = Some(entry);
+                    }
+                }
                 Event::EndFile {
                     reason: EndReason::Error,
                     error,
-                } if self.starts_due > 0 || self.stopped => {
+                    entry,
+                } if self.stopped
+                    || self.loads_unanswered > 0
+                    || self.entry.is_some_and(|e| e != entry) =>
+                {
                     log::debug!("the file before the one chosen failed: {error:?}");
                 }
                 Event::EndFile {
                     reason: EndReason::Error,
                     error,
+                    ..
                 } => {
                     self.loading = false;
                     out.push(Happened::Failed(
@@ -1009,6 +1031,9 @@ impl Player {
                 },
                 Event::QueueOverflow => {
                     log::warn!("mpv event queue overflowed; asking for the properties again");
+                    // Answers may be lost: an error is the file's again.
+                    self.loads_unanswered = 0;
+                    self.entry = None;
                     self.state.scan = None;
                     self.scan_asked = None;
                     self.mpv.forget_sets();
@@ -1020,21 +1045,34 @@ impl Player {
                 Event::CommandReply {
                     id: LOAD,
                     error: Some(e),
+                    ..
                 } => {
                     // Refused before anything was opened: no end-file comes,
                     // nor a start.
                     log::warn!("mpv loadfile failed: {e}");
-                    self.loading = false;
-                    self.starts_due = self.starts_due.saturating_sub(1);
-                    out.push(Happened::Failed(e));
+                    self.loads_unanswered = self.loads_unanswered.saturating_sub(1);
+                    if self.loads_unanswered == 0 {
+                        self.loading = false;
+                        out.push(Happened::Failed(e));
+                    }
+                }
+                Event::CommandReply {
+                    id: LOAD, result, ..
+                } => {
+                    self.loads_unanswered = self.loads_unanswered.saturating_sub(1);
+                    if self.loads_unanswered == 0 {
+                        self.entry = result.get("playlist_entry_id").and_then(Value::int);
+                    }
                 }
                 Event::CommandReply {
                     id: SCREENSHOT,
                     error,
+                    ..
                 } => out.push(Happened::FrameSaved(error)),
                 Event::CommandReply {
                     id: SUB_STEP,
                     error,
+                    ..
                 } => match error {
                     // The delay mpv made, asked for after the command.
                     None => self.mpv.get(SUB_DELAY, "sub-delay", sys::MPV_FORMAT_DOUBLE),
@@ -1180,7 +1218,7 @@ impl Player {
         self.state.width = None;
         self.state.height = None;
         self.loading = true;
-        self.starts_due += 1;
+        self.loads_unanswered += 1;
         self.stopped = false;
         self.last_seek = None;
         self.data_end_at = None;
@@ -1752,7 +1790,8 @@ mod tests {
             scan_asked: None,
             live_asked: None,
             loading: false,
-            starts_due: 0,
+            loads_unanswered: 0,
+            entry: None,
             stopped: false,
             hwdec: true,
             hwdec_copy: false,
@@ -1844,7 +1883,8 @@ mod tests {
             scan_asked: None,
             live_asked: None,
             loading: false,
-            starts_due: 0,
+            loads_unanswered: 0,
+            entry: None,
             stopped: false,
             hwdec: true,
             hwdec_copy: false,
@@ -1971,7 +2011,8 @@ mod tests {
                 scan_asked: None,
                 live_asked: None,
                 loading: false,
-                starts_due: 0,
+                loads_unanswered: 0,
+                entry: None,
                 stopped: false,
                 hwdec: true,
                 hwdec_copy: false,
@@ -2054,7 +2095,8 @@ mod tests {
             scan_asked: None,
             live_asked: None,
             loading: false,
-            starts_due: 0,
+            loads_unanswered: 0,
+            entry: None,
             stopped: false,
             hwdec: true,
             hwdec_copy: false,
@@ -2106,6 +2148,68 @@ mod tests {
         assert!(loaded, "the first entry did not load");
         assert_eq!(count, Some(1), "mpv kept the other entries");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A file replaced before mpv started it gives no start: the errors
+    /// after that are still the files' chosen.
+    /// `cargo test errors_after_a_replaced_load -- --ignored`
+    #[test]
+    #[ignore = "needs vendor/libmpv"]
+    fn errors_after_a_replaced_load() {
+        let api = sys::api().unwrap();
+        let mpv = Mpv::new(
+            api,
+            &[
+                ("vo", "null"),
+                ("ao", "null"),
+                ("idle", "yes"),
+                ("terminal", "no"),
+                ("keep-open", "yes"),
+            ],
+        )
+        .unwrap();
+        let mut player = Player {
+            mpv,
+            state: State::default(),
+            scan_asked: None,
+            live_asked: None,
+            loading: false,
+            loads_unanswered: 0,
+            entry: None,
+            stopped: false,
+            hwdec: true,
+            hwdec_copy: false,
+            filters_on: false,
+            subs_off: false,
+            sub_file: None,
+            last_seek: None,
+            data_end_at: None,
+            ran_out_at: None,
+            af: String::new(),
+            af_before: String::new(),
+        };
+        let dir = std::env::temp_dir();
+        let failures = |player: &mut Player| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            let mut count = 0;
+            while std::time::Instant::now() < deadline {
+                count += player
+                    .poll()
+                    .iter()
+                    .filter(|h| matches!(h, Happened::Failed(_)))
+                    .count();
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            count
+        };
+        // Two loads before mpv starts either: only the second is the file's.
+        player.load(&dir.join("metalmpv missing 1.mkv"), None, None);
+        player.load(&dir.join("metalmpv missing 2.mkv"), None, None);
+        assert_eq!(failures(&mut player), 1);
+        assert!(!player.loading());
+        // And the next one's error is not taken for the file before's.
+        player.load(&dir.join("metalmpv missing 3.mkv"), None, None);
+        assert_eq!(failures(&mut player), 1);
     }
 
     /// Plays a real file without a window and reads its tracks:
@@ -2181,7 +2285,8 @@ mod tests {
             scan_asked: None,
             live_asked: None,
             loading: false,
-            starts_due: 0,
+            loads_unanswered: 0,
+            entry: None,
             stopped: false,
             hwdec: true,
             hwdec_copy: false,
@@ -2266,7 +2371,8 @@ mod tests {
             scan_asked: None,
             live_asked: None,
             loading: false,
-            starts_due: 0,
+            loads_unanswered: 0,
+            entry: None,
             stopped: false,
             hwdec: true,
             hwdec_copy: false,
@@ -2336,7 +2442,7 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         assert!(failed, "a missing file did not fail");
-        assert_eq!(player.starts_due, 0);
+        assert_eq!(player.loads_unanswered, 0);
         // A value refused is answered (and logged) like one taken.
         player
             .mpv
@@ -2384,7 +2490,8 @@ mod tests {
             scan_asked: None,
             live_asked: None,
             loading: false,
-            starts_due: 0,
+            loads_unanswered: 0,
+            entry: None,
             stopped: false,
             hwdec: true,
             hwdec_copy: false,
@@ -2617,7 +2724,8 @@ mod tests {
             scan_asked: None,
             live_asked: None,
             loading: false,
-            starts_due: 0,
+            loads_unanswered: 0,
+            entry: None,
             stopped: false,
             hwdec: true,
             hwdec_copy: false,
@@ -3012,7 +3120,8 @@ mod tests {
             scan_asked: None,
             live_asked: None,
             loading: false,
-            starts_due: 0,
+            loads_unanswered: 0,
+            entry: None,
             stopped: false,
             hwdec: true,
             hwdec_copy: false,

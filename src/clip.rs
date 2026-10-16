@@ -354,10 +354,12 @@ fn run(
                 Event::CommandReply {
                     id: LOAD,
                     error: Some(e),
+                    ..
                 } => return Err(Failure::Mpv(e)),
                 Event::EndFile {
                     reason: EndReason::Error,
                     error,
+                    ..
                 } => return Err(Failure::Mpv(error.unwrap_or_else(|| "cannot open".into()))),
                 Event::EndFile {
                     reason: EndReason::Eof,

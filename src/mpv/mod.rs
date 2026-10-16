@@ -107,12 +107,18 @@ pub enum Event {
     CommandReply {
         id: u64,
         error: Option<String>,
+        /// What the command gives back (`loadfile`: `playlist_entry_id`).
+        result: Value,
     },
-    StartFile,
+    /// `entry`: the playlist entry's id, as `loadfile` gave it.
+    StartFile {
+        entry: i64,
+    },
     FileLoaded,
     EndFile {
         reason: EndReason,
         error: Option<String>,
+        entry: i64,
     },
     Seek,
     PlaybackRestart,
@@ -338,11 +344,26 @@ impl Mpv {
                 }
                 Event::Other(event.event_id)
             }
-            sys::MPV_EVENT_COMMAND_REPLY => Event::CommandReply {
-                id: event.reply_userdata,
-                error,
+            sys::MPV_EVENT_COMMAND_REPLY => {
+                let result = if event.error < 0 || event.data.is_null() {
+                    Value::None
+                } else {
+                    let c = unsafe { &*(event.data as *const sys::mpv_event_command) };
+                    unsafe { node(&c.result) }
+                };
+                Event::CommandReply {
+                    id: event.reply_userdata,
+                    error,
+                    result,
+                }
+            }
+            sys::MPV_EVENT_START_FILE => Event::StartFile {
+                entry: if event.data.is_null() {
+                    0
+                } else {
+                    unsafe { (*(event.data as *const sys::mpv_event_start_file)).playlist_entry_id }
+                },
             },
-            sys::MPV_EVENT_START_FILE => Event::StartFile,
             sys::MPV_EVENT_FILE_LOADED => Event::FileLoaded,
             sys::MPV_EVENT_END_FILE => {
                 let e = unsafe { &*(event.data as *const sys::mpv_event_end_file) };
@@ -355,7 +376,11 @@ impl Mpv {
                     _ => EndReason::Other,
                 };
                 let error = (e.error < 0).then(|| self.error_string(e.error));
-                Event::EndFile { reason, error }
+                Event::EndFile {
+                    reason,
+                    error,
+                    entry: e.playlist_entry_id,
+                }
             }
             sys::MPV_EVENT_SEEK => Event::Seek,
             sys::MPV_EVENT_PLAYBACK_RESTART => Event::PlaybackRestart,
