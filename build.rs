@@ -71,7 +71,12 @@ fn main() {
             .set("ProductName", "MetalMPV")
             .set("LegalCopyright", "Copyright (C) 2026 Fan4_Metal");
         if let Err(e) = res.compile() {
-            // A missing resource compiler must not break the build.
+            // A missing resource compiler must not break a debug build; a
+            // release without the icons would show blank ones for every
+            // file type it registers.
+            if std::env::var("PROFILE").as_deref() == Ok("release") {
+                panic!("resources not embedded: {e}");
+            }
             println!("cargo:warning=icon not embedded: {e}");
         }
     }
