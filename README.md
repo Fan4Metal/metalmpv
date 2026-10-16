@@ -17,7 +17,7 @@
 
 MetalMPV is a video player for Windows with a classic layout: the picture fills the window, the seek bar and the buttons sit under it with Play in the middle, and the playlist opens on the right. Playback is done by [libmpv](https://mpv.io), the library of the mpv player, so practically every video and audio format plays, with hardware decoding where the graphics card supports it. The program is built for opening files quickly and for instant seeking on keyframes.
 
-![MetalMPV playing a video, with the control bar under the picture](images/screenshot.png)
+![MetalMPV's start screen, with the control bar at the bottom](images/screenshot.png)
 
 *Screenshot of version 0.1.0.*
 
