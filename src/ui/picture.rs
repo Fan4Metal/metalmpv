@@ -12,7 +12,8 @@
 //! (`audio.rs`): the output device, the channels, compressed sound to a
 //! receiver, the delay, the boost,
 //! the normalization, clearer speech, and the ten-band equalizer with its
-//! presets and the user's own. Subtitles (`sub_style.rs`): the looks,
+//! presets and the user's own; Reset all, the device and the receiver
+//! aside. Subtitles (`sub_style.rs`): the looks,
 //! ready-made and the user's own, a preview, the font and the size, the
 //! colours, outline, shadow and box, the
 //! height, the delay, the black bars, and the style for ASS too.
@@ -819,6 +820,37 @@ fn sound_tab(
     if section(ui, "sound_equalizer", tr!("Equalizer", "Эквалайзер"), "") {
         eq_head(ui, kept.equalizer, kept.eq_presets, naming);
         bands(ui, kept.equalizer);
+    }
+
+    // What the sound is made into; where it goes (the device, a receiver)
+    // and the user's own gains stay.
+    let d = crate::settings::Settings::default();
+    let changed = *kept.channels != d.audio_channels
+        || *kept.volume_max != d.volume_max
+        || *kept.normalize != d.normalize
+        || *kept.normalize_strength != d.normalize_strength
+        || *kept.voice_boost != d.voice_boost
+        || *kept.voice_db != d.voice_db
+        || *kept.upmix != d.upmix
+        || *kept.upmix_lfe != d.upmix_lfe
+        || *kept.subwoofer != d.subwoofer
+        || *kept.equalizer != d.equalizer
+        || now.audio_delay != 0.0;
+    ui.add_space(10.0);
+    if reset_all(ui, changed) {
+        *kept.channels = d.audio_channels;
+        *kept.volume_max = d.volume_max;
+        *kept.normalize = d.normalize;
+        *kept.normalize_strength = d.normalize_strength;
+        *kept.voice_boost = d.voice_boost;
+        *kept.voice_db = d.voice_db;
+        *kept.upmix = d.upmix;
+        *kept.upmix_lfe = d.upmix_lfe;
+        *kept.subwoofer = d.subwoofer;
+        *kept.equalizer = d.equalizer;
+        if now.audio_delay != 0.0 {
+            out.push(Cmd::SetAudioDelay(0.0));
+        }
     }
 }
 

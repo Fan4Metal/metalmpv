@@ -168,7 +168,7 @@ The tab (also opened by the Equalizer action, which has no default key) starts w
 - **Subwoofer**: its **Level** in dB (−20 to +10), for a 5.1 or 7.1 track against the track's own level, for Stereo to 5.1 against a 5.1's standard, 10 dB under the other channels, as receivers play that channel 10 dB louder; and **Cut the infrasound**, which takes out what lies under the frequency set (15–40 Hz, 25 by default; 24 dB an octave) in all channels: a subwoofer hardly plays it, but its cone is driven to the limit and the bass bubbles, and films with deep bass hold much of it.
 - **Equalizer**: ten bands, 31 Hz to 16 kHz, ±12 dB a band (a double click or the round arrow under a band puts it back to 0), with a scale of ±12 dB, the 0 dB line and a curve through the bands. Its switch turns it on, and the list beside it holds the presets Flat, Rock, Pop, Jazz, Classical, Bass, Voice and Treble. The plus beside the list saves the gains under a name typed in the row that appears (Enter saves, Esc gives up; a name already there is replaced); such gains follow the presets in the list under "Mine", at most twenty, and the bin deletes the ones chosen.
 
-A function's settings show only while it is on. All but the delay are kept between runs; the equalizer, the normalization and clearer speech do not apply to sound sent to a receiver undecoded.
+A function's settings show only while it is on. **Reset all** puts the rest back, the delay included; the output device, the receiver and one's own equalizer gains stay. All but the delay are kept between runs; the equalizer, the normalization and clearer speech do not apply to sound sent to a receiver undecoded.
 
 </details>
 
