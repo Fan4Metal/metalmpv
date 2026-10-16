@@ -1306,8 +1306,8 @@ fn subtitles_tab(
     ) {
         let height = Spec {
             tip: Some(tr!(
-                "For all subtitles; 100 is the bottom",
-                "Для всех субтитров; 100 — внизу"
+                "For all subtitles; 100 is the bottom, 0 the top",
+                "Для всех субтитров; 100 — внизу, 0 — вверху"
             )),
             ..Spec::centred(sub_style::POS_RANGE, d.pos)
         };

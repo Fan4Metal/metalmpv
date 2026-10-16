@@ -15,8 +15,9 @@ use std::ops::RangeInclusive;
 pub const SCALE_RANGE: RangeInclusive<f64> = 50.0..=300.0;
 /// The outline's thickness, in mpv's units (scaled pixels at 720 lines).
 pub const OUTLINE_RANGE: RangeInclusive<f64> = 0.0..=6.0;
-/// The height: 100 at the bottom (mpv's `sub-pos`), less higher up.
-pub const POS_RANGE: RangeInclusive<f64> = 50.0..=100.0;
+/// The height: 100 at the picture's bottom edge (mpv's `sub-pos` with no
+/// `sub-margin-y`), less higher up, 0 at the top.
+pub const POS_RANGE: RangeInclusive<f64> = 0.0..=100.0;
 /// The shadow's offset, in the outline's units.
 pub const SHADOW_RANGE: RangeInclusive<f64> = 0.0..=4.0;
 /// The opacity of the box behind the text, of 255.
@@ -50,7 +51,7 @@ impl Default for SubStyle {
             color: [230, 230, 230],
             outline_color: [26, 26, 26],
             outline: 1.0,
-            pos: 100.0,
+            pos: 95.0,
             bold: false,
             shadow: 1.5,
             boxed: false,
@@ -250,7 +251,7 @@ pub fn clean(text: &str) -> String {
 
 impl SubStyle {
     /// mpv's properties and their values.
-    pub fn options(&self) -> [(&'static str, String); 9] {
+    pub fn options(&self) -> [(&'static str, String); 10] {
         let font = if self.font.is_empty() {
             "sans-serif"
         } else {
@@ -276,6 +277,10 @@ impl SubStyle {
             ("sub-bold", if self.bold { "yes" } else { "no" }.to_owned()),
             ("sub-shadow-offset", format!("{:.2}", self.shadow)),
             ("sub-border-style", border.to_owned()),
+            // mpv's own 22 kept 100 that far over the bottom, and above
+            // 100 it only cuts the lines off at the edge: the height alone
+            // places them (95 is where mpv's 100 was).
+            ("sub-margin-y", "0".to_owned()),
         ]
     }
 }
@@ -333,6 +338,7 @@ mod tests {
                 ("sub-bold", "no".to_owned()),
                 ("sub-shadow-offset", "0.00".to_owned()),
                 ("sub-border-style", "outline-and-shadow".to_owned()),
+                ("sub-margin-y", "0".to_owned()),
             ]
         );
         assert_eq!(SubStyle::default().options()[0].1, "sans-serif");
