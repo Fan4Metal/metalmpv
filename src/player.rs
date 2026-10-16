@@ -1513,6 +1513,10 @@ impl Player {
 
     /// The subtitles against the picture, in seconds; kept between files.
     pub fn set_sub_delay(&mut self, seconds: f64) {
+        // A field takes "inf" and "nan" as numbers.
+        if !seconds.is_finite() {
+            return;
+        }
         let seconds = (seconds * 1000.0).round() / 1000.0;
         self.mpv.set("sub-delay", &Value::Double(seconds));
         self.state.sub_delay = seconds;
@@ -1528,6 +1532,10 @@ impl Player {
     }
 
     pub fn set_audio_delay(&mut self, seconds: f64) {
+        // A field takes "inf" and "nan" as numbers.
+        if !seconds.is_finite() {
+            return;
+        }
         let seconds = (seconds * 1000.0).round() / 1000.0;
         self.mpv.set("audio-delay", &Value::Double(seconds));
         self.state.audio_delay = seconds;

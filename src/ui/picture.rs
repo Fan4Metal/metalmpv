@@ -90,6 +90,9 @@ pub struct VideoPanel {
     rect: Option<egui::Rect>,
     /// The tabs scroll: the window is too low for the tallest.
     scrolls: bool,
+    /// A value was being typed in the last frame: egui drops the focus on
+    /// Esc before the keys are read, and that Esc closed the panel too.
+    typed: bool,
 }
 
 /// What the Sound and Subtitles tabs edit: settings, kept between runs.
@@ -155,7 +158,7 @@ impl VideoPanel {
     /// A name or a value is being typed: the player's keys wait, and the
     /// field keeps the focus.
     pub fn typing(&self, ctx: &egui::Context) -> bool {
-        self.open && (self.naming.is_some() || popover::has_focus(ctx, PANEL_ID))
+        self.open && (self.naming.is_some() || self.typed || popover::has_focus(ctx, PANEL_ID))
     }
 
     pub fn toggle(&mut self) {
@@ -192,12 +195,14 @@ impl VideoPanel {
         if !self.open {
             self.rect = None;
             self.naming = None;
+            self.typed = false;
             return out;
         }
         if popover::pressed_outside(ctx, self.rect, button) {
             self.open = false;
             self.rect = None;
             self.naming = None;
+            self.typed = false;
             return out;
         }
         // A gutter for the scroll bar while the tabs scroll, so that it
@@ -284,6 +289,7 @@ impl VideoPanel {
             }
         });
         self.rect = Some(shown);
+        self.typed = popover::has_focus(ctx, PANEL_ID);
         out
     }
 
@@ -380,7 +386,7 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, kept: &mut Kept<'_>, now: Now<'_>
         super::navigator::show(
             ui,
             Rect::from_center_size(rect.center(), size),
-            egui::Id::new("panel_navigator"),
+            ui.id().with("panel_navigator"),
             now.geometry,
             adjust,
             style::CARD_BG,

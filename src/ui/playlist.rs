@@ -644,13 +644,18 @@ fn files_list(
         }
         // Let go: dropped where the line was (taken in any case), unless
         // beside the entry it started on: a slow click (egui counts a press
-        // held long as a drag) would gather a selection there.
+        // held long as a drag) would gather a selection there. Let go while
+        // the list was not shown (hidden in the middle of a drag), nothing
+        // moves when it is shown again.
+        let (down, released) =
+            ui.input(|i| (i.pointer.primary_down(), i.pointer.primary_released()));
         if drag.is_some()
-            && !ui.input(|i| i.pointer.primary_down())
+            && !down
             && let Some(Some(slot)) = drag.take()
             && drag_from
                 .take()
                 .is_none_or(|from| slot != from && slot != from + 1)
+            && released
         {
             out.push(Cmd::PlaylistMove(slot));
         }

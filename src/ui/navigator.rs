@@ -81,6 +81,11 @@ pub fn show(
     a: &mut Adjust,
     ground: Color32,
 ) -> bool {
+    // Laid out unseen (the panel measures its tabs): no input, else a drag
+    // moved the pan twice a frame.
+    if !ui.is_visible() {
+        return false;
+    }
     let response = ui.interact(rect, id, Sense::click_and_drag());
     let bounds = geometry.bounds(a);
     // Fractions of the picture to points and back.
