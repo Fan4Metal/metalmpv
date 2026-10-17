@@ -714,6 +714,25 @@ impl Keymap {
         *self == Self::default()
     }
 
+    /// The keys of `action` are its defaults.
+    pub fn is_default_for(&self, action: Action) -> bool {
+        self.chords(action) == action.defaults()
+    }
+
+    /// Give `action` its default keys back; each is taken from the action
+    /// that had it, and those are returned with the key they lost.
+    pub fn reset(&mut self, action: Action) -> Vec<(Chord, Action)> {
+        let mut taken = Vec::new();
+        for &chord in action.defaults() {
+            if let Some(other) = self.action(chord).filter(|&a| a != action) {
+                self.chords[other.index()].retain(|&c| c != chord);
+                taken.push((chord, other));
+            }
+        }
+        self.chords[action.index()] = action.defaults().to_vec();
+        taken
+    }
+
     /// The actions whose keys differ from the defaults, a line each:
     /// `id<TAB>chord chord` (nothing after the tab for no keys).
     pub fn to_setting(&self) -> String {
@@ -881,6 +900,24 @@ mod tests {
         assert_eq!(map.chords(Action::NextSubs), [Chord::key(Key::S), g]);
         map.remove(Action::NextSubs, 0);
         assert_eq!(map.chords(Action::NextSubs), [g]);
+    }
+
+    #[test]
+    fn an_action_gets_its_keys_back() {
+        let mut map = Keymap::default();
+        let space = Chord::key(Key::Space);
+        map.assign(Action::Stop, None, space);
+        map.remove(Action::VideoPanel, 1);
+        assert!(!map.is_default_for(Action::Pause));
+        // Space comes back from Stop, which keeps no other key.
+        assert_eq!(map.reset(Action::Pause), [(space, Action::Stop)]);
+        assert!(map.is_default_for(Action::Pause));
+        assert!(map.chords(Action::Stop).is_empty());
+        assert_eq!(map.reset(Action::VideoPanel), []);
+        assert!(map.is_default_for(Action::VideoPanel));
+        // Stop has no default key: all keys are the defaults again.
+        map.reset(Action::Stop);
+        assert!(map.is_default());
     }
 
     #[test]

@@ -441,7 +441,7 @@ In the settings, the **Keyboard shortcuts** category lists the actions in groups
 - A click on a key waits for the key combination (or the mouse's back or forward button, with `Ctrl`, `Alt` or `Shift` if wanted) that takes its place, **+** adds one more, the cross removes it, and `Esc` gives up.
 - A combination another action had is taken from that action, and the page says so, with **Undo** beside.
 - A search field above the groups leaves the actions whose name or keys contain the text typed.
-- **Reset the keys** puts them all back. The menus and tooltips show the keys as they are set.
+- The round arrow at the right of an action puts its own keys back (taken from the action that had them, with Undo), and **Reset the keys** puts them all back. The menus and tooltips show the keys as they are set.
 - A few actions without a default key can be given one: Stop, A-B repeat: start, end, off (one key for the three in turn), Load subtitles, Equalizer, Reset the equalizer (flat, off), Reset the subtitles' look, Chapter marks on the seek bar, Time: both, elapsed, remaining, Shuffle, Sort and Clear the playlist, Show the file in its folder, Open the folder of saved frames, Save the cover…, Playlist in a window of its own / in the player, IPTV groups in the playlist, How far files were watched in the playlist, Minimize, Maximize and Close the program.
 - The mouse wheel, the double and middle clicks and the media keys stay as described; `Ctrl+V` and `Shift+Insert` cannot be chosen, and `Ctrl+Insert` is taken as `Ctrl+C`.
 

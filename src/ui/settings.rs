@@ -2074,7 +2074,8 @@ impl SettingsDialog {
                     .layout_no_wrap(label, FontId::proportional(13.0), style::TEXT_BRIGHT);
             text.size().x + 18.0 + if waiting { 0.0 } else { 18.0 } + GAP
         };
-        let mut width = 26.0 + GAP;
+        // `+` and the round arrow back.
+        let mut width = 2.0 * (26.0 + GAP);
         if self.capture == Some((action, None)) {
             width += chip(waiting(), true);
         }
@@ -2092,6 +2093,29 @@ impl SettingsDialog {
     /// keys from the last.
     fn key_chips(&mut self, ui: &mut Ui, keys: &mut Keymap, action: Action, changed: &mut Changed) {
         ui.spacing_mut().item_spacing.x = 6.0;
+        // The round arrow back to the action's own keys, at the right as
+        // the sliders' is; grey while they are.
+        let defaults: Vec<String> = action.defaults().iter().map(|c| c.label()).collect();
+        let tip = if defaults.is_empty() {
+            tr!(
+                "Back to the default: no key",
+                "Вернуть по умолчанию: без клавиши"
+            )
+            .to_owned()
+        } else {
+            tr!(
+                format!("Back to the default: {}", defaults.join(", ")),
+                format!("Вернуть по умолчанию: {}", defaults.join(", "))
+            )
+        };
+        let off = !keys.is_default_for(action);
+        if super::tool(ui, &tip, off, |p, o, c| super::icons::reset(p, o, 6.0, c)).clicked() {
+            let before = keys.clone();
+            let taken = keys.reset(action);
+            self.capture = None;
+            self.taken = taken.first().map(|&(chord, other)| (chord, other, before));
+            changed.keys = true;
+        }
         let add = ui
             .add(egui::Button::new("+").min_size(vec2(26.0, KEY_HEIGHT)))
             .on_hover_text(tr!("Add a key", "Добавить клавишу"));
