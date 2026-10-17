@@ -202,6 +202,9 @@ pub struct App {
     /// How wide it was drawn in the last frame (0 while closed), in points:
     /// the panels over the picture keep off it.
     fullscreen_list_width: f32,
+    /// The information's chips over the picture's top right corner
+    /// (`Ctrl+I`), while the information window is closed.
+    info_overlay: bool,
     /// The video area of the last frame, in points.
     picture_area: Rect,
     /// The title row, the control bar and the playlist around the video
@@ -404,6 +407,7 @@ impl App {
             middle_press: false,
             fullscreen_playlist: false,
             fullscreen_list_width: 0.0,
+            info_overlay: false,
             picture_area: Rect::NOTHING,
             chrome: egui::Vec2::ZERO,
             pending_picture: None,
@@ -670,13 +674,19 @@ impl App {
         self.positions.remember(Path::new(path), time, chosen);
     }
 
-    /// Read what the container of the file playing says while the
-    /// information window is open (once per file), and take it when read.
+    /// The file's information is shown: its window or its chips over the
+    /// picture.
+    fn info_wanted(&self) -> bool {
+        self.info.open || self.info_overlay
+    }
+
+    /// Read what the container of the file playing says while its
+    /// information is shown (once per file), and take it when read.
     fn update_facts(&mut self, ctx: &egui::Context, state: &State) {
         let wanted = self
             .playlist
             .current_path()
-            .filter(|p| self.info.open && !state.idle && !playlist::is_url(p));
+            .filter(|p| self.info_wanted() && !state.idle && !playlist::is_url(p));
         if let Some(path) = wanted
             && self.facts.as_ref().is_none_or(|f| f.path != path)
         {
@@ -1482,6 +1492,7 @@ impl App {
                 }
             }
             Cmd::ToggleInfo => self.info.toggle(),
+            Cmd::ToggleInfoOverlay => self.info_overlay = !self.info_overlay,
             Cmd::ToggleVideoPanel => {
                 self.video_panel.toggle();
                 if self.video_panel.open {
@@ -2811,6 +2822,7 @@ impl App {
             repeat: self.settings.repeat,
             on_top: self.settings.on_top,
             playlist_detached: self.settings.playlist_detached,
+            info_overlay: self.info_overlay,
             bookmarks: self
                 .settings
                 .bookmarks
@@ -2922,6 +2934,20 @@ impl App {
         let look = &self.settings.osd_style;
         self.osd
             .paint(ui.ctx(), osd_rect, state, look, scale, self.settings.osd);
+        // The window says it all while open.
+        if self.info_overlay && !self.info.open && !state.idle && self.engine_error.is_none() {
+            let mut area = osd_rect;
+            if self.fullscreen {
+                area.max.x -= self.fullscreen_list_width;
+            }
+            let subject = info_subject(&self.playlist, self.facts.as_ref(), state);
+            let rows = crate::info::chips_in(
+                crate::i18n::lang(),
+                &subject,
+                crate::info::Unfolded::default(),
+            );
+            ui::info::overlay(ui.ctx(), area, &rows);
+        }
     }
 
     /// The navigator over the picture's bottom right corner while the
@@ -3521,6 +3547,19 @@ fn context_menu(
     );
     item(
         ui,
+        if marks.info_overlay {
+            tr!(
+                "Hide the information over the picture",
+                "Скрыть сведения поверх картинки"
+            )
+        } else {
+            tr!("Information over the picture", "Сведения поверх картинки")
+        }
+        .into(),
+        Cmd::ToggleInfoOverlay,
+    );
+    item(
+        ui,
         tr!("Video, sound and subtitles…", "Видео, звук и субтитры…").into(),
         Cmd::ToggleVideoPanel,
     );
@@ -3655,6 +3694,23 @@ fn bookmarks_menu(
     });
 }
 
+/// What the information window and the chips over the picture tell of: the
+/// file playing and what its container says once read.
+fn info_subject<'a>(
+    playlist: &'a Playlist,
+    facts: Option<&'a FactsSlot>,
+    state: &'a State,
+) -> crate::info::Subject<'a> {
+    let path = playlist.current_path();
+    crate::info::Subject {
+        path,
+        state,
+        facts: facts
+            .filter(|f| Some(f.path.as_path()) == path)
+            .and_then(|f| f.loaded.as_ref()),
+    }
+}
+
 /// The width of the playlist's own window the first time, in points.
 const PLAYLIST_WIDTH: f32 = 300.0;
 
@@ -3678,6 +3734,7 @@ struct Marks {
     repeat: Repeat,
     on_top: OnTop,
     playlist_detached: bool,
+    info_overlay: bool,
     /// The bookmarks' labels, whether each is of the file playing, and
     /// where in its file it is.
     bookmarks: Vec<(String, bool, Option<f32>)>,
@@ -4229,7 +4286,7 @@ impl eframe::App for App {
             .and_then(|c| c.loaded.as_ref())
             .map(|(cover, texture)| CoverView { cover, texture });
         if let Some(player) = &mut self.player {
-            if self.info.open {
+            if self.info.open || self.info_overlay {
                 player.ask_scan();
             }
             // The figures of the moment, for the information window and
@@ -4251,16 +4308,7 @@ impl eframe::App for App {
                 .filter(|_| self.settings.channel_logos && self.info.open)
                 .and_then(|url| self.logos.get(&ctx, url).cloned()),
         });
-        let path = self.playlist.current_path();
-        let subject = crate::info::Subject {
-            path,
-            state: &state,
-            facts: self
-                .facts
-                .as_ref()
-                .filter(|f| Some(f.path.as_path()) == path)
-                .and_then(|f| f.loaded.as_ref()),
-        };
+        let subject = info_subject(&self.playlist, self.facts.as_ref(), &state);
         let info_cmds = self.info.show(&ctx, &subject, cover, channel);
         cmds.extend(info_cmds);
         self.update_sub_lines(&ctx, &state);

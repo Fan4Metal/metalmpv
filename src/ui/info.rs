@@ -719,33 +719,7 @@ fn hue(tone: Tone) -> Option<Color32> {
 /// subtitles each a tint of their own hue.
 fn chip(ui: &mut Ui, chip: &info::Chip) -> egui::Response {
     let clickable = chip.action != ChipAction::None;
-    let tone = chip.tone;
-    let (ground, lit, color) = match tone {
-        Tone::Format(c) => {
-            let band = Color32::from_rgb(c.band[0], c.band[1], c.band[2]);
-            (band, band, style::TEXT_BRIGHT)
-        }
-        _ => match hue(tone) {
-            Some(h) => (
-                h.gamma_multiply(0.22),
-                h.gamma_multiply(0.36),
-                if chip.selected {
-                    style::TEXT_BRIGHT
-                } else {
-                    h.lerp_to_gamma(Color32::WHITE, 0.55)
-                },
-            ),
-            None => (
-                Color32::from_white_alpha(18),
-                Color32::from_white_alpha(34),
-                if chip.selected {
-                    style::TEXT_BRIGHT
-                } else {
-                    style::TEXT
-                },
-            ),
-        },
-    };
+    let (ground, lit, color) = colours(chip);
     let galley = ui.fonts_mut(|f| {
         f.layout_no_wrap(chip.text.clone(), egui::FontId::proportional(12.0), color)
     });
@@ -786,6 +760,119 @@ fn chip(ui: &mut Ui, chip: &info::Chip) -> egui::Response {
     match &chip.tip {
         Some(tip) => response.on_hover_text(tip),
         None => response,
+    }
+}
+
+/// The chips of the header over the picture's top right corner (`Ctrl+I`):
+/// on a see-through dark ground, each row's chips right-aligned and
+/// wrapped within `WIDEST` of `area`'s width. Only painted: the picture
+/// under them keeps the pointer.
+pub fn overlay(ctx: &egui::Context, area: Rect, rows: &[Vec<info::Chip>]) {
+    const MARGIN: f32 = 12.0;
+    const GAP: f32 = 4.0;
+    const HEIGHT: f32 = 21.0;
+    const PAD: f32 = 14.0;
+    /// The share of the area's width the chips may take.
+    const WIDEST: f32 = 0.6;
+    let painter = ctx
+        .layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("info_overlay"),
+        ))
+        .with_clip_rect(area);
+    let widest = (area.width() * WIDEST).max(area.width().min(200.0) - 2.0 * MARGIN);
+    let right = area.right() - MARGIN;
+    let mut y = area.top() + MARGIN;
+    for row in rows {
+        let chips: Vec<_> = row
+            .iter()
+            .map(|chip| {
+                let (ground, _, color) = colours(chip);
+                let galley = painter.layout_no_wrap(
+                    chip.text.clone(),
+                    egui::FontId::proportional(13.0),
+                    color,
+                );
+                (chip, ground, color, galley)
+            })
+            .collect();
+        // Packed into lines in their order, each line then right-aligned.
+        let mut lines: Vec<(std::ops::Range<usize>, f32)> = Vec::new();
+        let (mut start, mut width) = (0, 0.0);
+        for (i, (_, _, _, galley)) in chips.iter().enumerate() {
+            let w = galley.size().x + PAD;
+            if i > start && width + GAP + w > widest {
+                lines.push((start..i, width));
+                (start, width) = (i, 0.0);
+            }
+            width += if i > start { GAP + w } else { w };
+        }
+        if start < chips.len() {
+            lines.push((start..chips.len(), width));
+        }
+        for (range, width) in lines {
+            let mut x = right - width;
+            for (chip, ground, color, galley) in &chips[range] {
+                let rect =
+                    Rect::from_min_size(egui::pos2(x, y), vec2(galley.size().x + PAD, HEIGHT));
+                // The chip's own ground is tinted for the window's: over a
+                // picture a dark one goes under it.
+                painter.rect_filled(rect, 4.0, Color32::from_black_alpha(130));
+                painter.rect_filled(rect, 4.0, ground.gamma_multiply(0.8));
+                if chip.selected {
+                    painter.rect_stroke(
+                        rect,
+                        4.0,
+                        egui::Stroke::new(1.0, style::accent_hover()),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+                let text = egui::Align2::CENTER_CENTER
+                    .anchor_size(rect.center(), galley.size())
+                    .min;
+                painter.galley_with_override_text_color(
+                    text + vec2(1.0, 1.0),
+                    galley.clone(),
+                    Color32::from_black_alpha(200),
+                );
+                painter.galley(text, galley.clone(), *color);
+                x = rect.right() + GAP;
+            }
+            y += HEIGHT + GAP;
+        }
+        // A little apart: the file, the picture, the sound, the subtitles.
+        y += 2.0;
+    }
+}
+
+/// A chip's ground, its ground when hovered and its text's colour.
+fn colours(chip: &info::Chip) -> (Color32, Color32, Color32) {
+    let tone = chip.tone;
+    match tone {
+        Tone::Format(c) => {
+            let band = Color32::from_rgb(c.band[0], c.band[1], c.band[2]);
+            (band, band, style::TEXT_BRIGHT)
+        }
+        _ => match hue(tone) {
+            Some(h) => (
+                h.gamma_multiply(0.22),
+                h.gamma_multiply(0.36),
+                if chip.selected {
+                    style::TEXT_BRIGHT
+                } else {
+                    h.lerp_to_gamma(Color32::WHITE, 0.55)
+                },
+            ),
+            None => (
+                Color32::from_white_alpha(18),
+                Color32::from_white_alpha(34),
+                if chip.selected {
+                    style::TEXT_BRIGHT
+                } else {
+                    style::TEXT
+                },
+            ),
+        },
     }
 }
 

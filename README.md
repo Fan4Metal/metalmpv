@@ -229,6 +229,8 @@ When the file has chapters, the seek bar is cut at the start of each, and the to
 
 `I`, the **i** button in the title row or **File information** in the picture's context menu opens a window over the player; playback and the keys go on while it is open, and `I` or `Esc` closes it. At the top it shows the cover with the title, the artist and the album, and under them the main facts in rows of chips: the file, the picture and the sound, a chip per audio track (a click on one plays that track), and the subtitles. Below come sections with every detail of the file, the playback and the tracks.
 
+`Ctrl+I` or **Information over the picture** in the context menu shows the same chips alone, see-through, in the picture's top right corner, until `Ctrl+I` hides them; they make way for the window while it is open.
+
 <details>
 <summary>What the window shows</summary>
 
@@ -422,6 +424,7 @@ The keys below are the defaults; they can be changed in the settings (**Keyboard
 | `Insert` | Add files to the playlist |
 | `Ctrl+S` | Save the playlist as M3U8 |
 | `I` | The file information window |
+| `Ctrl+I` | The information's chips over the picture |
 | `F5`, `Ctrl+,` | Settings |
 | `F1` | About |
 | `Esc` | Closes the file information window, else the tracks window, else the Video, sound and subtitles panel, else the playlist shown in fullscreen, else leaves fullscreen, else brings the interface back after `7`, else closes the program |

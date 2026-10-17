@@ -394,6 +394,7 @@ actions! {
     PlaylistProgress "playlist_progress" Files Cmd::TogglePlaylistProgress, [];
     ShowInFolder "show_in_folder" Files Cmd::ShowInFolder, [];
     Info "info" Files Cmd::ToggleInfo, [Chord::key(Key::I)];
+    InfoOverlay "info_overlay" Files Cmd::ToggleInfoOverlay, [Chord::ctrl(Key::I)];
     VideoPanel "video_panel" Files Cmd::ToggleVideoPanel, [Chord::key(Key::U), Chord::key(Key::F7)];
     Equalizer "equalizer" Files Cmd::ShowEqualizer, [];
     SaveFrame "save_frame" Files Cmd::SaveFrame, [Chord::ctrl(Key::E)];
@@ -600,6 +601,10 @@ impl Action {
             Action::PlaylistClear => tr!("Clear the playlist", "Очистить плейлист"),
             Action::ShowInFolder => tr!("Show the file in its folder", "Показать файл в папке"),
             Action::Info => tr!("File information", "Сведения о файле"),
+            Action::InfoOverlay => tr!(
+                "File information over the picture",
+                "Сведения о файле поверх картинки"
+            ),
             Action::VideoPanel => tr!(
                 "Video, sound and subtitles panel",
                 "Панель видео, звука и субтитров"

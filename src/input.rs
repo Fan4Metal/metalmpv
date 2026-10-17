@@ -119,6 +119,8 @@ pub enum Cmd {
     ToggleChapterMarks,
     /// Open or close the file's information window (`I`).
     ToggleInfo,
+    /// Show or hide the information's chips over the picture (`Ctrl+I`).
+    ToggleInfoOverlay,
     /// Open or close the Video, sound and subtitles panel (`U`, next to the
     /// information's `I`; `F7` as in GOM Player).
     ToggleVideoPanel,
