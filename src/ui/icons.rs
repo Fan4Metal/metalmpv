@@ -504,34 +504,6 @@ pub fn reset(p: &Painter, o: Pos2, s: f32, c: Color32) {
     ));
 }
 
-/// A round arrow round a small picture: turn it, to the right
-/// (clockwise) or to the left.
-pub fn turn(p: &Painter, o: Pos2, s: f32, c: Color32, clockwise: bool) {
-    let stroke = Stroke::new(1.4, c);
-    let side = if clockwise { -1.0 } else { 1.0 };
-    let r = 0.9 * s;
-    // As `reset`, three quarters of a turn ending on the right with the
-    // arrow up; mirrored for the other way.
-    let points: Vec<Pos2> = (0..=18)
-        .map(|i| {
-            let a = (270.0 - 15.0 * i as f32).to_radians();
-            o + vec2(a.cos() * side, a.sin()) * r
-        })
-        .collect();
-    let tip = o + vec2(r * side, -0.1 * s);
-    p.add(Shape::line(points, stroke));
-    p.add(Shape::line(
-        vec![
-            tip + vec2(-0.4 * side, 0.4) * s,
-            tip,
-            tip + vec2(0.4 * side, 0.4) * s,
-        ],
-        stroke,
-    ));
-    let picture = egui::Rect::from_center_size(o, vec2(0.75, 0.5) * s);
-    p.rect_filled(picture, 1.0, c);
-}
-
 /// A triangle and its mirror image across a dashed line: turned upside
 /// down (the line across), or `sideways` mirrored (the line down).
 pub fn flip(p: &Painter, o: Pos2, s: f32, c: Color32, sideways: bool) {

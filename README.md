@@ -147,7 +147,7 @@ Moved near an edge of the player, it is drawn to it and lined up with the player
 - **Aspect ratio**: the file's or one forced on it: 4:3, 16:9, 16:10, 1.85:1, 2.35:1 or 2.39:1 (also in the **Aspect ratio** submenu of the picture's context menu).
 - **Deinterlacing** weaves interlaced pictures, as in TV recordings, into whole frames: automatically for frames marked interlaced (the default), always or never.
 - **HDR on SDR** chooses how an HDR picture is brought down to an ordinary screen: automatically, BT.2390 (the standard's), Hable (filmic), Möbius (bright), Reinhard (soft) or clipped.
-- **Turns and flips**: a row of four icon buttons, named in their tooltips, turns the picture left or right by 90° and flips it upside down or mirrors it (the flips are lit while on).
+- **Rotation and flips**: **Rotation** chooses the angle, 0°, 90°, 180° or 270° clockwise (`Ctrl+R` turns it on by 90°), and **Flip** turns the picture upside down or mirrors it, each lit while on.
 
 The sharpness, the noise reduction and the flips are FFmpeg filters run by the processor (while any of them is on, hardware decoding copies each frame back to memory for them); the rest is done by the graphics card. The adjustments apply to every file until the program is closed, and between runs with **Remember** on; **Reset all** puts them back.
 

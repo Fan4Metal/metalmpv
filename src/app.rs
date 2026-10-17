@@ -1766,7 +1766,7 @@ impl App {
                 }
             }
             Cmd::Rotate => {
-                self.change_picture(|a| a.rotate = (a.rotate + 90) % 360);
+                self.change_picture(|a| a.turn(1));
                 self.osd.show(Osd::Rotation(self.adjust.rotate));
             }
             Cmd::CycleAspect => {

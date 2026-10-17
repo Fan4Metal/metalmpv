@@ -514,49 +514,55 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, kept: &mut Kept<'_>, now: Now<'_>
         ui,
         "video_rotation",
         tr!("Rotation and flips", "Поворот и отражение"),
-        &format!("{}°", adjust.rotate),
+        "",
     ) {
-        // Four icons in a row, named in their tooltips: the turns, then the
-        // flips (lit while on).
-        let (flipped, mirrored) = (adjust.flip, adjust.mirror);
-        let size = Some(vec2(52.0, 28.0));
-        ui.horizontal(|ui| {
-            let left = |p: &_, o, s, c| icons::turn(p, o, s, c, false);
-            let right = |p: &_, o, s, c| icons::turn(p, o, s, c, true);
-            let flip = |p: &_, o, s, c| icons::flip(p, o, s, c, false);
-            let mirror = |p: &_, o, s, c| icons::flip(p, o, s, c, true);
-            if icon_button(ui, left, "", size, |b| b)
-                .on_hover_text(tr!("Turn left by 90°", "Повернуть влево на 90°"))
-                .clicked()
-            {
-                adjust.turn(-1);
-            }
-            if icon_button(ui, right, "", size, |b| b)
-                .on_hover_text(tr!("Turn right by 90°", "Повернуть вправо на 90°"))
-                .clicked()
-            {
-                adjust.turn(1);
-            }
-            ui.add_space(12.0);
-            if icon_button(ui, flip, "", size, |b| b.selected(flipped))
-                .on_hover_text(tr!(
-                    "Upside down (on the processor)",
-                    "Перевернуть вертикально (на процессоре)"
-                ))
-                .clicked()
-            {
-                adjust.flip = !adjust.flip;
-            }
-            if icon_button(ui, mirror, "", size, |b| b.selected(mirrored))
-                .on_hover_text(tr!(
-                    "Mirror (on the processor)",
-                    "Отразить зеркально (на процессоре)"
-                ))
-                .clicked()
-            {
-                adjust.mirror = !adjust.mirror;
+        // The angle chosen as one of four, the flips as two switches side
+        // by side, both rows as wide as the others' controls.
+        let turn_tip = crate::keymap::with_key(tr!("Clockwise", "По часовой стрелке"), Cmd::Rotate);
+        let angles = [0, 90, 180, 270].map(|a| Segment {
+            icon: None,
+            text: format!("{a}°"),
+            on: adjust.rotate == a,
+            tip: turn_tip.clone(),
+        });
+        let rotation = tr!("Rotation", "Поворот");
+        labelled_tip(ui, rotation, None, |ui| {
+            if let Some(i) = segments(ui, &angles) {
+                adjust.rotate = 90 * i as i64;
             }
         });
+        let flips = [
+            Segment {
+                icon: Some(|p: &_, o, s, c| icons::flip(p, o, s, c, false)),
+                text: tr!("Upside down", "Вверх ногами").into(),
+                on: adjust.flip,
+                tip: tr!(
+                    "Turned upside down (on the processor)",
+                    "Перевернуть вертикально (на процессоре)"
+                )
+                .into(),
+            },
+            Segment {
+                icon: Some(|p: &_, o, s, c| icons::flip(p, o, s, c, true)),
+                text: tr!("Mirror", "Зеркально").into(),
+                on: adjust.mirror,
+                tip: tr!(
+                    "Mirrored left to right (on the processor)",
+                    "Отразить слева направо (на процессоре)"
+                )
+                .into(),
+            },
+        ];
+        labelled_tip(
+            ui,
+            tr!("Flip", "Отражение"),
+            None,
+            |ui| match segments(ui, &flips) {
+                Some(0) => adjust.flip = !adjust.flip,
+                Some(_) => adjust.mirror = !adjust.mirror,
+                None => {}
+            },
+        );
     }
 
     ui.add_space(10.0);
@@ -1811,6 +1817,78 @@ fn combo_row(
             .width(ui.available_width())
             .show_ui(ui, items);
     });
+}
+
+/// A part of [`segments`].
+struct Segment {
+    icon: Option<Icon>,
+    text: String,
+    /// Lit: chosen, or on.
+    on: bool,
+    tip: String,
+}
+
+/// Parts side by side as one control, as wide as the room left in the
+/// row: each its text after its icon, lit while on; the one clicked.
+fn segments(ui: &mut Ui, parts: &[Segment]) -> Option<usize> {
+    // Its own: the rows of one tab are in children of one id.
+    let id = ui.auto_id_with("segments");
+    let height = ui.spacing().interact_size.y.max(24.0);
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
+    let painter = ui.painter().clone();
+    let ground = ui.visuals().widgets.inactive.weak_bg_fill;
+    painter.rect_filled(rect, 5.0, ground);
+    let part = rect.width() / parts.len().max(1) as f32;
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let mut clicked = None;
+    for (i, s) in parts.iter().enumerate() {
+        let r = Rect::from_min_size(
+            pos2(rect.left() + part * i as f32, rect.top()),
+            vec2(part, height),
+        );
+        let response = ui
+            .interact(r, id.with(i), Sense::click())
+            .on_hover_text(&s.tip);
+        if response.clicked() {
+            clicked = Some(i);
+        }
+        let inner = r.shrink(2.0);
+        if s.on {
+            painter.rect_filled(inner, 4.0, style::selected_bg());
+        } else if response.hovered() {
+            painter.rect_filled(inner, 4.0, style::HOVER);
+        }
+        // A line between two parts neither of which is lit.
+        if i > 0 && !s.on && !parts[i - 1].on {
+            painter.vline(
+                r.left(),
+                (r.top() + 6.0)..=(r.bottom() - 6.0),
+                Stroke::new(1.0, style::LINE),
+            );
+        }
+        let color = if s.on || response.hovered() {
+            style::TEXT_BRIGHT
+        } else {
+            style::TEXT
+        };
+        let galley = painter.layout_no_wrap(s.text.clone(), font.clone(), color);
+        let icon = if s.icon.is_some() { ICON + 4.0 } else { 0.0 };
+        let left = r.center().x - (icon + galley.size().x) / 2.0;
+        if let Some(paint) = s.icon {
+            paint(
+                &painter,
+                pos2(left + ICON / 2.0, r.center().y),
+                ICON * 0.4,
+                color,
+            );
+        }
+        painter.galley(
+            pos2(left + icon, r.center().y - galley.size().y / 2.0),
+            galley,
+            color,
+        );
+    }
+    clicked
 }
 
 /// A small note under a row.
