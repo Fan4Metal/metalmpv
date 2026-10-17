@@ -132,7 +132,7 @@ Moved near an edge of the player, it is drawn to it and lined up with the player
 
 - **Place**: over its button, as the tracks window is (at the bottom right corner when only the picture is shown), as tall as its tallest tab, whichever is shown; in a window too low for it, it takes the height there is above the button and its tabs scroll under the head.
 - **Sections**: in the tabs, a click on a section's title folds the section or unfolds it, and the panel keeps that between runs.
-- **Values** are set by sliders whose rail is lit from the starting point to the knob, so that a change shows at once; the value beside each can also be dragged or typed and is shown in the accent colour while it differs from the default, which a double click on the slider or the round arrow beside it brings back. On and off are switches.
+- **Values** are set by sliders whose rail is lit from the starting point to the knob, so that a change shows at once; the arrows at the slider's ends move the value a step back or forward, again and again while held; the value beside each can also be dragged or typed and is shown in the accent colour while it differs from the default, which a double click on the slider or the round arrow beside it brings back. On and off are switches.
 - **Tooltips**: each setting's tooltip says how it applies: to which subtitles, on the processor or the graphics card, whether it is kept between runs.
 - **Save the frame** saves the frame as decoded, without subtitles, as a PNG or a JPG (see Video in the settings) named after the file and the position into `Pictures\MetalMPV` or the folder chosen; a right click on the camera offers **Open the folder**.
 

@@ -1645,11 +1645,27 @@ fn delay_tip(text: &str, later: Cmd, earlier: Cmd) -> String {
 /// A slider `width` wide: a rail lit in the accent colour from the spec's
 /// origin to the knob, so a step off it shows at once, with a tick at the
 /// origin when it is inside the range. A press or a drag sets the value to
-/// the nearest step.
+/// the nearest step; the arrows at its ends move it a step back or forward
+/// (held, step after step).
 fn rail(ui: &mut Ui, value: &mut f64, spec: &Spec, width: f32) -> egui::Response {
     let height = ui.spacing().interact_size.y;
-    let (rect, mut response) = ui.allocate_exact_size(vec2(width, height), Sense::click_and_drag());
+    let id = ui.auto_id_with("rail");
+    let (whole, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
     let (lo, hi) = (*spec.range.start(), *spec.range.end());
+    for (forward, x) in [(false, whole.left()), (true, whole.right() - ARROW)] {
+        let r = Rect::from_min_size(pos2(x, whole.top()), vec2(ARROW, height));
+        if stepper(ui, r, id.with(forward), forward) {
+            let v = *value + if forward { spec.step } else { -spec.step };
+            let mut v =
+                egui::emath::round_to_decimals((v / spec.step).round() * spec.step, spec.decimals);
+            if spec.clamp {
+                v = v.clamp(lo, hi);
+            }
+            *value = v;
+        }
+    }
+    let rect = whole.shrink2(vec2(ARROW, 0.0));
+    let mut response = ui.interact(rect, id, Sense::click_and_drag());
     let (left, right) = (rect.left() + KNOB, rect.right() - KNOB);
     let x_of = |v: f64| egui::lerp(left..=right, ((v - lo) / (hi - lo)).clamp(0.0, 1.0) as f32);
     if (response.dragged() || response.clicked())
@@ -1696,6 +1712,57 @@ fn rail(ui: &mut Ui, value: &mut f64, spec: &Spec, width: f32) -> egui::Response
         painter.circle_filled(pos2(to, y), if active { KNOB + 1.0 } else { KNOB }, knob);
     }
     response
+}
+
+/// The width of the arrows at a slider's ends.
+const ARROW: f32 = 14.0;
+/// A held arrow steps again after this long, then every [`REPEAT_EVERY`],
+/// in seconds.
+const REPEAT_AFTER: f64 = 0.4;
+const REPEAT_EVERY: f64 = 0.06;
+
+/// An arrow at a slider's end, `forward` pointing right, in `rect`: whether
+/// it steps the value this frame (pressed, or held long enough).
+fn stepper(ui: &mut Ui, rect: Rect, id: egui::Id, forward: bool) -> bool {
+    let response = ui.interact(rect, id, Sense::click());
+    let held = id.with("next");
+    let mut step = false;
+    if response.is_pointer_button_down_on() {
+        let now = ui.input(|i| i.time);
+        let next = ui.data(|d| d.get_temp::<f64>(held));
+        let wait = match next {
+            None => Some(REPEAT_AFTER),
+            Some(t) if now >= t => Some(REPEAT_EVERY),
+            Some(_) => None,
+        };
+        if let Some(wait) = wait {
+            step = true;
+            ui.data_mut(|d| d.insert_temp(held, now + wait));
+        }
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_secs_f64(REPEAT_EVERY));
+    } else {
+        ui.data_mut(|d| d.remove::<f64>(held));
+    }
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        if response.hovered() {
+            painter.rect_filled(rect.shrink2(vec2(0.0, 2.0)), 3.0, style::HOVER);
+        }
+        let color = if !ui.is_enabled() {
+            style::TEXT_WEAK.gamma_multiply(0.5)
+        } else if response.hovered() {
+            style::TEXT_BRIGHT
+        } else {
+            style::TEXT_WEAK
+        };
+        let c = rect.center();
+        let (dx, dy) = (if forward { 2.0 } else { -2.0 }, 4.0);
+        let stroke = Stroke::new(1.5, color);
+        painter.line_segment([pos2(c.x - dx, c.y - dy), pos2(c.x + dx, c.y)], stroke);
+        painter.line_segment([pos2(c.x + dx, c.y), pos2(c.x - dx, c.y + dy)], stroke);
+    }
+    step
 }
 
 /// A switch with its text after it (a click on either turns it); `tip`
