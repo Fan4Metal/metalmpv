@@ -1302,6 +1302,17 @@ fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>, chan
             divider(ui);
             row(
                 ui,
+                tr!("Briefly", "Кратко"),
+                Some(tr!(
+                    "One row: the format, the picture's codec, size and HDR, the sound and the subtitles playing. Off, every chip of the information window.",
+                    "Одна строка: формат, кодек, размер и HDR изображения, играющие звук и субтитры. Если выключено — все чипы окна сведений."
+                )),
+                50.0,
+                |ui| switch(ui, &mut settings.info_overlay_brief),
+            );
+            divider(ui);
+            row(
+                ui,
                 tr!("Transparency", "Прозрачность"),
                 Some(tr!(
                     "The chips' ground; the text stays, with its shadow.",
@@ -2231,6 +2242,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.fullscreen_title = d.fullscreen_title;
     settings.info_overlay = d.info_overlay;
     settings.info_overlay_transparency = d.info_overlay_transparency;
+    settings.info_overlay_brief = d.info_overlay_brief;
     settings.snap_to_centre = d.snap_to_centre;
     settings.on_top = d.on_top;
     settings.window_on_open = d.window_on_open;

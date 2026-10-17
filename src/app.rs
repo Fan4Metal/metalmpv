@@ -2941,11 +2941,12 @@ impl App {
                 area.max.x -= self.fullscreen_list_width;
             }
             let subject = info_subject(&self.playlist, self.facts.as_ref(), state);
-            let rows = crate::info::chips_in(
-                crate::i18n::lang(),
-                &subject,
-                crate::info::Unfolded::default(),
-            );
+            let lang = crate::i18n::lang();
+            let rows = if self.settings.info_overlay_brief {
+                vec![crate::info::brief_chips_in(lang, &subject)]
+            } else {
+                crate::info::chips_in(lang, &subject, crate::info::Unfolded::default())
+            };
             let transparency = self.settings.info_overlay_transparency as f32;
             ui::info::overlay(ui.ctx(), area, &rows, transparency);
         }

@@ -314,6 +314,7 @@ const KEEP_ADJUST: &str = "keep_adjust";
 const NAVIGATOR: &str = "navigator";
 const INFO_OVERLAY: &str = "info_overlay";
 const INFO_OVERLAY_TRANSPARENCY: &str = "info_overlay_transparency";
+const INFO_OVERLAY_BRIEF: &str = "info_overlay_brief";
 const ADJUST: &str = "adjust";
 const OSD: &str = "osd";
 const OSD_COLOR: &str = "osd_color";
@@ -580,6 +581,8 @@ pub struct Settings {
     /// How transparent their ground is, in percent (0 to 100: the text
     /// alone, with its shadow).
     pub info_overlay_transparency: f64,
+    /// Only the main chips, in one row (`info::brief_chips_in`).
+    pub info_overlay_brief: bool,
     /// The OSD line is shown; off, only the line of a stop where the data
     /// ran out is.
     pub osd: bool,
@@ -678,6 +681,7 @@ impl Default for Settings {
             navigator: true,
             info_overlay: false,
             info_overlay_transparency: 40.0,
+            info_overlay_brief: false,
             adjust: crate::adjust::Adjust::default(),
             osd: true,
             osd_style: OsdStyle::default(),
@@ -949,6 +953,7 @@ impl Settings {
                 0.0..=100.0,
                 d.info_overlay_transparency,
             ),
+            info_overlay_brief: flag(INFO_OVERLAY_BRIEF, d.info_overlay_brief),
             adjust: get(ADJUST)
                 .filter(|_| flag(KEEP_ADJUST, d.keep_adjust))
                 .map(|v| crate::adjust::Adjust::from_text(&v))
@@ -1090,6 +1095,7 @@ impl Settings {
             INFO_OVERLAY_TRANSPARENCY,
             format!("{:.0}", self.info_overlay_transparency),
         );
+        storage.set_string(INFO_OVERLAY_BRIEF, self.info_overlay_brief.to_string());
         let adjust = if self.keep_adjust {
             self.adjust.to_text()
         } else {
@@ -1276,6 +1282,7 @@ mod tests {
             navigator: false,
             info_overlay: true,
             info_overlay_transparency: 65.0,
+            info_overlay_brief: true,
             sub_presets: vec![sub_style::Own {
                 name: "Вечер".into(),
                 style: SubStyle {

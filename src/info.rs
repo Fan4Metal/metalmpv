@@ -921,6 +921,10 @@ pub struct Chip {
     pub tip: Option<String>,
     /// The track playing: outlined.
     pub selected: bool,
+    /// One of the few the brief chips over the picture keep
+    /// ([`brief_chips_in`]): the format, the picture's codec, size and HDR,
+    /// the sound and the subtitles playing.
+    pub main: bool,
     pub action: ChipAction,
     pub tone: Tone,
 }
@@ -931,9 +935,15 @@ impl Chip {
             text: text.into(),
             tip: None,
             selected: false,
+            main: false,
             action: ChipAction::None,
             tone: Tone::Plain,
         }
+    }
+
+    fn main(mut self) -> Self {
+        self.main = true;
+        self
     }
 
     fn tone(mut self, tone: Tone) -> Self {
@@ -972,6 +982,7 @@ fn fold_chip(ru: bool, kind: Kind, tone: Tone) -> Chip {
         text: "−".into(),
         tip: Some(if ru { "Свернуть" } else { "Fold" }.into()),
         selected: false,
+        main: false,
         action: ChipAction::Fold(kind),
         tone,
     }
@@ -1005,7 +1016,7 @@ pub fn chips_in(lang: Lang, s: &Subject, unfolded: Unfolded) -> Vec<Vec<Chip>> {
             Some(e) => Chip::new(e.to_uppercase()).tip(container),
             None => Chip::new(container),
         };
-        file.push(chip.tone(tone));
+        file.push(chip.tone(tone).main());
     }
     if let Some(size) = state.file_size {
         file.push(Chip::new(size_in(lang, size)).tip(if ru {
@@ -1069,11 +1080,11 @@ pub fn chips_in(lang: Lang, s: &Subject, unfolded: Unfolded) -> Vec<Vec<Chip>> {
             if !tip.is_empty() {
                 chip = chip.tip(tip);
             }
-            picture.push(chip);
+            picture.push(chip.main());
         }
         let params = state.video_params.as_ref().filter(|_| track.selected);
         if let (Some(w), Some(h)) = (track.width, track.height) {
-            picture.push(Chip::new(format!("{w}×{h}")));
+            picture.push(Chip::new(format!("{w}×{h}")).main());
             let mut aspect = display_aspect(params, w, h, track.par.unwrap_or(1.0));
             // A phone's video turned a quarter plays upright: 9:16.
             if track.rotation.is_some_and(|r| r.rem_euclid(180) == 90) && aspect > 0.0 {
@@ -1108,7 +1119,7 @@ pub fn chips_in(lang: Lang, s: &Subject, unfolded: Unfolded) -> Vec<Vec<Chip>> {
                 _ => None,
             };
             if let Some(hdr) = hdr {
-                let mut chip = Chip::new(hdr);
+                let mut chip = Chip::new(hdr).main();
                 if let Some(tip) = hdr_in(lang, params, state.hdr10_plus) {
                     chip = chip.tip(tip);
                 }
@@ -1116,7 +1127,11 @@ pub fn chips_in(lang: Lang, s: &Subject, unfolded: Unfolded) -> Vec<Vec<Chip>> {
             }
         }
         if let Some(dv) = track.dolby_vision {
-            picture.push(Chip::new("Dolby Vision").tip(dolby_vision_in(lang, dv)));
+            picture.push(
+                Chip::new("Dolby Vision")
+                    .tip(dolby_vision_in(lang, dv))
+                    .main(),
+            );
         }
         if let Some(bitrate) = s.bitrate(track) {
             picture.push(Chip::new(bitrate_in(lang, bitrate as f64)).tip(if ru {
@@ -1166,6 +1181,7 @@ pub fn chips_in(lang: Lang, s: &Subject, unfolded: Unfolded) -> Vec<Vec<Chip>> {
             text: parts.join(" "),
             tip: Some(tip.trim_end().to_owned()),
             selected: track.selected,
+            main: track.selected,
             action: ChipAction::Audio(track.id),
             tone: Tone::Sound,
         });
@@ -1181,6 +1197,7 @@ pub fn chips_in(lang: Lang, s: &Subject, unfolded: Unfolded) -> Vec<Vec<Chip>> {
             text: format!("+{}", audio.len() - shown),
             tip: Some(rest.join("\n")),
             selected: audio.iter().skip(shown).any(|t| t.selected),
+            main: false,
             action: ChipAction::Unfold(Kind::Audio),
             tone: Tone::Sound,
         });
@@ -1202,6 +1219,7 @@ pub fn chips_in(lang: Lang, s: &Subject, unfolded: Unfolded) -> Vec<Vec<Chip>> {
                 text: name,
                 tip: Some(tip.trim_end().to_owned()),
                 selected: track.selected,
+                main: track.selected,
                 action: ChipAction::Sub(track.id),
                 tone: Tone::Subtitles,
             });
@@ -1233,12 +1251,33 @@ pub fn chips_in(lang: Lang, s: &Subject, unfolded: Unfolded) -> Vec<Vec<Chip>> {
         if n > 1 {
             chip.action = ChipAction::Unfold(Kind::Sub);
         }
+        chip.main = subs.iter().any(|t| t.selected);
         subtitles.push(chip);
     }
     // A row each, so that the subtitles do not follow the sound's chips,
     // however many.
     rows.extend([sound, subtitles].into_iter().filter(|r| !r.is_empty()));
     rows
+}
+
+/// The chips over the picture in brief, in one row: the format, the
+/// picture's codec, size and HDR, the audio track playing and the subtitles
+/// shown, whichever of the audio tracks plays.
+pub fn brief_chips_in(lang: Lang, s: &Subject) -> Vec<Chip> {
+    let all = Unfolded {
+        audio: true,
+        subs: false,
+    };
+    chips_in(lang, s, all)
+        .into_iter()
+        .flatten()
+        .filter(|c| c.main)
+        .map(|c| Chip {
+            // Not outlined: there is nothing to tell it from.
+            selected: false,
+            ..c
+        })
+        .collect()
 }
 
 /// A track's heading: "Audio 2: English — Commentary".
@@ -1756,6 +1795,26 @@ mod tests {
             rows[3][0].tip.as_deref(),
             Some("   1. Русский\n● 2. Английский")
         );
+        // In brief: what plays, in one row, nothing outlined.
+        let subject = Subject {
+            path: Some(path),
+            state: &state,
+            facts: None,
+        };
+        let brief = brief_chips_in(Lang::Ru, &subject);
+        let texts: Vec<&str> = brief.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(
+            texts,
+            [
+                "MKV",
+                "HEVC",
+                "1920×1080",
+                "HDR (PQ)",
+                "AAC 5.1 Русский",
+                "Субтитры: Английский (2/2)"
+            ]
+        );
+        assert!(brief.iter().all(|c| !c.selected));
         // The subtitles unfolded: a chip each, then the one that folds them.
         let rows = chips_in(
             Lang::Ru,

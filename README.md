@@ -229,7 +229,7 @@ When the file has chapters, the seek bar is cut at the start of each, and the to
 
 `I`, the **i** button in the title row or **File information** in the picture's context menu opens a window over the player; playback and the keys go on while it is open, and `I` or `Esc` closes it. At the top it shows the cover with the title, the artist and the album, and under them the main facts in rows of chips: the file, the picture and the sound, a chip per audio track (a click on one plays that track), and the subtitles. Below come sections with every detail of the file, the playback and the tracks.
 
-`Ctrl+I` or **Information over the picture** in the context menu shows the same chips alone, see-through, in the picture's top right corner, until `Ctrl+I` hides them; they make way for the window while it is open. They stay on between runs; the **Video** page of the settings turns them on and off and sets how transparent their ground is.
+`Ctrl+I` or **Information over the picture** in the context menu shows the same chips alone, see-through, in the picture's top right corner, until `Ctrl+I` hides them; they make way for the window while it is open. They stay on between runs; the **Video** page of the settings turns them on and off, sets how transparent their ground is and, with **Briefly**, leaves one row of what plays: the format, the picture's codec, size and HDR, the audio track and the subtitles.
 
 <details>
 <summary>What the window shows</summary>
