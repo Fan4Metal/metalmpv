@@ -383,6 +383,28 @@ pub fn work_area(hwnd: isize) -> Option<[i32; 4]> {
     Some([r.left, r.top, r.right, r.bottom])
 }
 
+/// The work area of the monitor `rect` (pixels) is mostly on.
+pub fn work_area_at(rect: [i32; 4]) -> Option<[i32; 4]> {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromRect,
+    };
+    let r = RECT {
+        left: rect[0],
+        top: rect[1],
+        right: rect[2],
+        bottom: rect[3],
+    };
+    let monitor = unsafe { MonitorFromRect(&r, MONITOR_DEFAULTTONEAREST) };
+    let mut info: MONITORINFO = unsafe { std::mem::zeroed() };
+    info.cbSize = size_of::<MONITORINFO>() as u32;
+    if unsafe { GetMonitorInfoW(monitor, &mut info) } == 0 {
+        return None;
+    }
+    let w = info.rcWork;
+    Some([w.left, w.top, w.right, w.bottom])
+}
+
 /// The window's rectangle on the screen, in pixels.
 pub fn window_rect(hwnd: isize) -> Option<[i32; 4]> {
     use windows_sys::Win32::Foundation::RECT;
@@ -545,6 +567,90 @@ pub fn set_snap(on: bool) {
     SNAP.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// The mini player's window: its least size and the shape it keeps.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Mini {
+    /// The least size of the window, in pixels (winit's own least size is
+    /// the player's; its viewport command would come a frame late).
+    pub least: [i32; 2],
+    /// The shape of the client area kept while the window is sized
+    /// (width over height); none for sound alone.
+    pub aspect: Option<f64>,
+}
+
+/// The window is the mini player ([`set_mini`]).
+static MINI: std::sync::Mutex<Option<Mini>> = std::sync::Mutex::new(None);
+/// How near an edge of the work area the mini player is drawn to it, in
+/// pixels at 96 dpi.
+const EDGE_REACH: i32 = 16;
+
+/// The window is the mini player, or not (`None`): its least size and
+/// shape (`WM_GETMINMAXINFO`, `WM_SIZING`), and while it is moved it is
+/// drawn to the work area's edges instead of its centre (`WM_MOVING`).
+pub fn set_mini(mini: Option<Mini>) {
+    if let Ok(mut m) = MINI.lock() {
+        *m = mini;
+    }
+}
+
+fn mini() -> Option<Mini> {
+    MINI.lock().ok().and_then(|m| *m)
+}
+
+/// The size of the window's frame around its client area, in pixels.
+fn border(hwnd: isize) -> [i32; 2] {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetClientRect, GetWindowRect};
+    let mut window = RECT::default();
+    let mut client = RECT::default();
+    if unsafe { GetWindowRect(hwnd as _, &mut window) } == 0
+        || unsafe { GetClientRect(hwnd as _, &mut client) } == 0
+    {
+        return [0, 0];
+    }
+    [
+        (window.right - window.left) - (client.right - client.left),
+        (window.bottom - window.top) - (client.bottom - client.top),
+    ]
+}
+
+/// `WM_SIZING`: the rectangle at `lparam`, sized by the edge `edge`
+/// (`WMSZ_*`), with the mini player's shape.
+unsafe fn keep_shape(
+    hwnd: isize,
+    edge: usize,
+    lparam: windows_sys::Win32::Foundation::LPARAM,
+    aspect: f64,
+) {
+    use windows_sys::Win32::Foundation::RECT;
+    // WMSZ_LEFT 1, RIGHT 2, TOP 3, TOPLEFT 4, TOPRIGHT 5, BOTTOM 6,
+    // BOTTOMLEFT 7, BOTTOMRIGHT 8.
+    let side = match edge {
+        1 => [-1, 0],
+        2 => [1, 0],
+        3 => [0, -1],
+        4 => [-1, -1],
+        5 => [1, -1],
+        6 => [0, 1],
+        7 => [-1, 1],
+        8 => [1, 1],
+        _ => return,
+    };
+    let rect = unsafe { &mut *(lparam as *mut RECT) };
+    let [left, top, right, bottom] = crate::sizing::kept_aspect(
+        [rect.left, rect.top, rect.right, rect.bottom],
+        side,
+        aspect,
+        border(hwnd),
+    );
+    *rect = RECT {
+        left,
+        top,
+        right,
+        bottom,
+    };
+}
+
 /// The windows take the media keys ([`set_media_keys`]).
 static MEDIA_KEYS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
@@ -648,8 +754,9 @@ unsafe extern "system" fn window_proc(
     use std::sync::atomic::Ordering;
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        ENDSESSION_CLOSEAPP, PBT_APMSUSPEND, WM_COMMAND, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE,
-        WM_MOVING, WM_NCCALCSIZE, WM_POWERBROADCAST, WM_QUERYENDSESSION, WM_WINDOWPOSCHANGED,
+        ENDSESSION_CLOSEAPP, MINMAXINFO, PBT_APMSUSPEND, WM_COMMAND, WM_ENTERSIZEMOVE,
+        WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_MOVING, WM_NCCALCSIZE, WM_POWERBROADCAST,
+        WM_QUERYENDSESSION, WM_SIZING, WM_WINDOWPOSCHANGED,
     };
     // THBN_CLICKED in WM_COMMAND's high word.
     const THBN_CLICKED: usize = 0x1800;
@@ -679,7 +786,23 @@ unsafe extern "system" fn window_proc(
                 *start = None;
             }
         }
-        WM_MOVING if lparam != 0 && SNAP.load(Ordering::Relaxed) => {
+        // winit's least size is the player's: the mini player's after it.
+        WM_GETMINMAXINFO if lparam != 0 => {
+            if let Some(mini) = mini() {
+                let result = unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) };
+                let info = unsafe { &mut *(lparam as *mut MINMAXINFO) };
+                info.ptMinTrackSize.x = mini.least[0];
+                info.ptMinTrackSize.y = mini.least[1];
+                return result;
+            }
+        }
+        WM_SIZING if lparam != 0 => {
+            if let Some(aspect) = mini().and_then(|m| m.aspect) {
+                unsafe { keep_shape(hwnd as isize, wparam, lparam, aspect) };
+                return 1;
+            }
+        }
+        WM_MOVING if lparam != 0 && (SNAP.load(Ordering::Relaxed) || mini().is_some()) => {
             if unsafe { snap(hwnd as isize, lparam) } {
                 return 1;
             }
@@ -753,7 +876,8 @@ unsafe fn move_started(hwnd: isize) {
 }
 
 /// `WM_MOVING`: put the moved rectangle at `lparam` on the centre lines of
-/// the work area it is within [`SNAP_REACH`] of; whether it could. The
+/// the work area it is within [`SNAP_REACH`] of (the mini player against
+/// its edges within [`EDGE_REACH`]); whether it could. The
 /// rectangle snapped is where the pointer alone puts the window (the start
 /// plus the pointer's way): Windows works the next rectangle out from the
 /// one given back, so a snapped one would keep the window on the line for
@@ -808,11 +932,14 @@ unsafe fn snap(hwnd: isize, lparam: windows_sys::Win32::Foundation::LPARAM) -> b
         dpi => dpi as i32,
     };
     let w = info.rcWork;
-    let [left, top, right, bottom] = crate::sizing::snapped_to_centre(
-        [rect.left, rect.top, rect.right, rect.bottom],
-        [w.left, w.top, w.right, w.bottom],
-        SNAP_REACH * dpi / 96,
-    );
+    let moved = [rect.left, rect.top, rect.right, rect.bottom];
+    let work = [w.left, w.top, w.right, w.bottom];
+    // The mini player to the edges and corners, the player to the centre.
+    let [left, top, right, bottom] = if mini().is_some() {
+        crate::sizing::snapped_to_edges(moved, work, EDGE_REACH * dpi / 96)
+    } else {
+        crate::sizing::snapped_to_centre(moved, work, SNAP_REACH * dpi / 96)
+    };
     *rect = RECT {
         left,
         top,

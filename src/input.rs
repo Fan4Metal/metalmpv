@@ -164,6 +164,9 @@ pub enum Cmd {
     CycleInterface,
     /// One of the interfaces (the context menu).
     SetInterface(crate::settings::Interface),
+    /// The mini player, a small window over the others with Play and the
+    /// volume over the picture, or the player's window again (`0`).
+    ToggleMini,
     /// Force the picture's shape, or the file's again (the context menu).
     SetAspect(crate::adjust::Aspect),
     /// The picture's adjustments back to none, as the panel's Video tab's
@@ -372,6 +375,7 @@ mod tests {
         assert_eq!(scale(Key::Num6), Some(Cmd::ToggleFill));
         assert_eq!(scale(Key::Num7), Some(Cmd::ToggleInterface));
         assert_eq!(scale(Key::Num8), Some(Cmd::CycleInterface));
+        assert_eq!(scale(Key::Num0), Some(Cmd::ToggleMini));
         assert_eq!(default_command(Key::Num4, none, true), None);
         assert_eq!(default_command(Key::Num1, Modifiers::ALT, false), None);
     }

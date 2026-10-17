@@ -326,6 +326,69 @@ fn compact(ui: &mut Ui, mut bar: Bar<'_>) -> Vec<Cmd> {
     out
 }
 
+/// The height of the mini player's row over the picture's bottom.
+pub const MINI_ROW: f32 = 36.0;
+
+/// The mini player's controls over the picture in `rect`: along its bottom
+/// Play, the speaker and the volume, the seek bar where there is room; the
+/// player's window again in the top right corner. The row's
+/// free space moves the window, as the picture does.
+pub fn mini(ui: &mut Ui, rect: Rect, state: &State, drag: &mut Option<f64>) -> Vec<Cmd> {
+    const BUTTON: f32 = 28.0;
+    const SLIDER: f32 = 56.0;
+    const PAD: f32 = 4.0;
+    const MIN_SEEK: f32 = 40.0;
+    let mut out = Vec::new();
+    let row = Rect::from_min_max(pos2(rect.left(), rect.bottom() - MINI_ROW), rect.max);
+    ui.painter()
+        .rect_filled(row, 0.0, style::BAR_BG.gamma_multiply_u8(220));
+    crate::frameless::drag_area(ui, row, ui.id().with("mini_drag"), Sense::hover());
+    let cy = row.center().y;
+    let square = |x: f32| Rect::from_min_size(pos2(x, cy - BUTTON / 2.0), vec2(BUTTON, BUTTON));
+
+    let mut x = row.left() + PAD;
+    if play_button(ui, square(x).shrink(1.0), state, 6.5).clicked() {
+        out.push(Cmd::TogglePause);
+    }
+    x += BUTTON + GAP;
+    if speaker_button(ui, square(x), state) {
+        out.push(Cmd::ToggleMute);
+    }
+    x += BUTTON + 2.0;
+    let slider = Rect::from_min_max(pos2(x, cy - 7.0), pos2(x + SLIDER, cy + 7.0));
+    if let Some(cmd) = volume_slider(ui, slider, state) {
+        out.push(cmd);
+    }
+    x += SLIDER;
+
+    let seek = Rect::from_min_max(
+        pos2(x + 10.0, row.top()),
+        pos2(row.right() - 12.0, row.bottom()),
+    );
+    if seek.width() >= MIN_SEEK
+        && let Some(cmd) = seek_bar(ui, seek, state, false, drag)
+    {
+        out.push(cmd);
+    }
+
+    // The way back, on a ground of its own over the picture.
+    let back = Rect::from_min_size(
+        pos2(rect.right() - PAD - BUTTON, rect.top() + PAD),
+        vec2(BUTTON, BUTTON),
+    );
+    ui.painter()
+        .rect_filled(back.shrink(1.0), 5.0, style::BAR_BG.gamma_multiply_u8(220));
+    let tip = with_key(tr!("The player's window", "Окно плеера"), Cmd::ToggleMini);
+    if flat(ui, back, &tip, true, |p, o, c, _| {
+        icons::mini(p, o, ICON, c)
+    })
+    .clicked()
+    {
+        out.push(Cmd::ToggleMini);
+    }
+    out
+}
+
 /// The time as the bar shows it; its colour is chosen once the pointer is
 /// known, painted with the galley.
 fn time_galley(ui: &Ui, bar: &Bar<'_>) -> std::sync::Arc<egui::Galley> {

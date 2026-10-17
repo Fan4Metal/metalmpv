@@ -62,6 +62,7 @@ const KEYS: &str = "keys";
 const ACCENT: &str = "accent";
 const PLAYLIST_DETACHED: &str = "playlist_detached";
 const PLAYLIST_RECT: &str = "playlist_rect";
+const MINI_RECT: &str = "mini_rect";
 
 /// What the window shows around the picture.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -502,6 +503,9 @@ pub struct Settings {
     /// That window's visible rectangle in pixels (left, top, right,
     /// bottom), once it was open.
     pub playlist_rect: Option<[i32; 4]>,
+    /// The mini player's window rectangle in pixels, once it was shown;
+    /// not a setting, Reset keeps it.
+    pub mini_rect: Option<[i32; 4]>,
     /// Marks at the chapters' starts on the seek bar.
     pub chapter_marks: bool,
     /// What the time in the control bar shows (a click changes it).
@@ -644,6 +648,7 @@ impl Default for Settings {
             playlist_progress: true,
             playlist_detached: false,
             playlist_rect: None,
+            mini_rect: None,
             chapter_marks: true,
             time_mode: TimeMode::Both,
             fullscreen_transparency: 12.0,
@@ -780,6 +785,7 @@ impl Settings {
             playlist_progress: flag(PLAYLIST_PROGRESS, d.playlist_progress),
             playlist_detached: flag(PLAYLIST_DETACHED, d.playlist_detached),
             playlist_rect: get(PLAYLIST_RECT).and_then(|v| rect(&v)),
+            mini_rect: get(MINI_RECT).and_then(|v| rect(&v)),
             chapter_marks: flag(CHAPTER_MARKS, d.chapter_marks),
             time_mode: get(TIME_DISPLAY)
                 .as_deref()
@@ -1040,6 +1046,12 @@ impl Settings {
             ),
             None => storage.remove_string(PLAYLIST_RECT),
         }
+        match self.mini_rect {
+            Some(r) => {
+                storage.set_string(MINI_RECT, format!("{},{},{},{}", r[0], r[1], r[2], r[3]))
+            }
+            None => storage.remove_string(MINI_RECT),
+        }
         storage.set_string(CHAPTER_MARKS, self.chapter_marks.to_string());
         storage.set_string(TIME_DISPLAY, self.time_mode.name().into());
         storage.set_string(
@@ -1209,6 +1221,7 @@ mod tests {
             playlist_progress: false,
             playlist_detached: true,
             playlist_rect: Some([-1200, 40, -900, 700]),
+            mini_rect: Some([1500, 800, 1884, 1016]),
             chapter_marks: false,
             time_mode: TimeMode::Remaining,
             fullscreen_transparency: 40.0,

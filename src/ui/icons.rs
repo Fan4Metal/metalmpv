@@ -204,6 +204,22 @@ pub fn fullscreen(p: &Painter, o: Pos2, s: f32, c: Color32, leave: bool) {
     }
 }
 
+/// A screen with a small one in its bottom right corner: the mini player.
+pub fn mini(p: &Painter, o: Pos2, s: f32, c: Color32) {
+    let screen = egui::Rect::from_center_size(o, vec2(s * 2.0, s * 1.5));
+    p.rect_stroke(
+        screen,
+        s * 0.15,
+        Stroke::new(1.0, c),
+        egui::StrokeKind::Inside,
+    );
+    let small = egui::Rect::from_min_max(
+        screen.center() + vec2(s * 0.05, s * 0.05),
+        screen.right_bottom() - vec2(s * 0.3, s * 0.3),
+    );
+    p.rect_filled(small, s * 0.1, c);
+}
+
 /// A loudspeaker with waves for `level` (0 to 1), or crossed out.
 pub fn speaker(p: &Painter, o: Pos2, s: f32, c: Color32, level: f64, muted: bool) {
     let o = o - vec2(s * 0.35, 0.0);

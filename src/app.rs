@@ -41,6 +41,8 @@ use crate::update::Updates;
 use crate::video::Video;
 use crate::win;
 
+mod mini;
+
 /// How long the mouse may rest in fullscreen, away from the panels, before
 /// the pointer hides.
 const HIDE_AFTER: Duration = Duration::from_millis(500);
@@ -228,6 +230,16 @@ pub struct App {
     last_media: Option<(win::MediaKey, win::Via, Instant)>,
     /// The window is over the other windows now (`settings.on_top`).
     on_top: bool,
+    /// The mini player (`0`, `mini.rs`): the window before it.
+    mini: Option<mini::Before>,
+    /// The mini player was asked for in fullscreen: it comes once that has
+    /// ended.
+    mini_pending: bool,
+    /// The picture's shape the mini player was made for.
+    mini_aspect: Option<f64>,
+    /// The window's frame around its client area as the mini player came,
+    /// in pixels across and down.
+    mini_border: [i32; 2],
 }
 
 impl App {
@@ -414,6 +426,10 @@ impl App {
             smtc_failed: false,
             last_media: None,
             on_top: false,
+            mini: None,
+            mini_pending: false,
+            mini_aspect: None,
+            mini_border: [0, 0],
         };
         app.sized_for = app.settings.interface;
         app.open(files);
@@ -1321,6 +1337,14 @@ impl App {
 
     /// Run a command of a key, a button or a menu.
     fn run(&mut self, ctx: &egui::Context, frame: &eframe::Frame, cmd: Cmd) {
+        if self.mini.is_some() && mini::leaves_mini(&cmd) {
+            self.leave_mini(ctx);
+            // The playlist asked for in the mini player: shown.
+            if cmd == Cmd::TogglePlaylist {
+                self.settings.playlist_visible = true;
+                return;
+            }
+        }
         let state = self.state();
         match cmd {
             Cmd::TogglePause => {
@@ -1470,8 +1494,8 @@ impl App {
             Cmd::Escape => {
                 // The big cover and the information window first, the
                 // tracks window, the panel, the fullscreen playlist, then
-                // fullscreen, the interface after 7, then the program (as
-                // its close button: the settings are saved).
+                // fullscreen, the mini player, the interface after 7, then
+                // the program (as its close button: the settings are saved).
                 if self.info.close() {
                 } else if self.tracks_window.open {
                     self.tracks_window.open = false;
@@ -1481,6 +1505,8 @@ impl App {
                     self.fullscreen_playlist = false;
                 } else if frameless::is_fullscreen(ctx) {
                     self.set_fullscreen(ctx, frame, false);
+                } else if self.mini.is_some() {
+                    self.leave_mini(ctx);
                 } else if self.interface() == Interface::Bare {
                     self.run(ctx, frame, Cmd::ToggleInterface);
                 } else {
@@ -1863,6 +1889,7 @@ impl App {
                 self.run(ctx, frame, Cmd::SetInterface(next));
                 self.osd.show(Osd::Interface(next));
             }
+            Cmd::ToggleMini => self.toggle_mini(ctx, frame),
             Cmd::SetInterface(interface) => {
                 if self.settings.interface != Interface::Bare {
                     self.before_bare = self.settings.interface;
@@ -1889,6 +1916,11 @@ impl App {
     /// sound alone.
     fn fit_on_open(&mut self, ctx: &egui::Context, frame: &eframe::Frame, state: &State) {
         if !self.fit_on_open {
+            return;
+        }
+        // The mini player takes the picture's shape itself.
+        if self.mini.is_some() {
+            self.fit_on_open = false;
             return;
         }
         let no_picture = !state.tracks.is_empty()
@@ -2077,11 +2109,12 @@ impl App {
             .player
             .as_ref()
             .is_some_and(|p| !p.state.idle && !p.state.paused && !p.state.eof);
-        let on_top = match self.settings.on_top {
-            OnTop::Never => false,
-            OnTop::Always => true,
-            OnTop::Playing => playing,
-        };
+        let on_top = self.mini.is_some()
+            || match self.settings.on_top {
+                OnTop::Never => false,
+                OnTop::Always => true,
+                OnTop::Playing => playing,
+            };
         if on_top != self.on_top {
             self.on_top = on_top;
             ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(if on_top {
@@ -2195,6 +2228,7 @@ impl App {
         let shown = self.settings.playlist_visible
             && self.settings.playlist_detached
             && self.interface() != Interface::Bare
+            && self.mini.is_none()
             && !(self.fullscreen && over_player);
         if !shown {
             if self.playlist_builder.take().is_some() {
@@ -2371,7 +2405,9 @@ impl App {
         if frameless::is_fullscreen(ctx) {
             self.fullscreen_playlist
         } else {
-            self.settings.playlist_visible && self.interface() != Interface::Bare
+            self.settings.playlist_visible
+                && self.interface() != Interface::Bare
+                && self.mini.is_none()
         }
     }
 
@@ -2400,6 +2436,7 @@ impl App {
     fn fit_interface(&mut self, ctx: &egui::Context) {
         let now = self.interface();
         if self.sized_for == now
+            || self.mini.is_some()
             || frameless::is_fullscreen(ctx)
             || frameless::is_maximized(ctx)
             || ctx.input(|i| i.viewport().minimized.unwrap_or(false))
@@ -2776,8 +2813,13 @@ impl App {
         if visible && self.settings.navigator {
             self.corner_navigator(ui, rect, state);
         }
+        // In the mini player, the player's window again.
         if ui::double_clicked(&response) {
-            cmds.push(Cmd::ToggleFullscreen);
+            cmds.push(if self.mini.is_some() {
+                Cmd::ToggleMini
+            } else {
+                Cmd::ToggleFullscreen
+            });
         }
         // The middle button shows or hides the playlist when let go, however
         // the pointer moves meanwhile, as the right one opens the menu
@@ -2805,15 +2847,12 @@ impl App {
             }
         }
         // In only the picture the playlist is not shown: the menu offers it.
-        let playlist_visible = if self.fullscreen {
-            self.fullscreen_playlist
-        } else {
-            self.settings.playlist_visible && self.interface() != Interface::Bare
-        };
+        let playlist_visible = self.playlist_shown(ui.ctx());
         let chapter_marks = self.settings.chapter_marks;
         let marks = Marks {
             fill: self.fill,
             interface: self.interface(),
+            mini: self.mini.is_some(),
             aspect: self.adjust.aspect,
             repeat: self.settings.repeat,
             on_top: self.settings.on_top,
@@ -2964,6 +3003,8 @@ impl App {
         }
         let (bottom, right) = if self.fullscreen {
             (FULLSCREEN_BAR_ZONE, self.fullscreen_list_width)
+        } else if self.mini.is_some() {
+            (ui::controls::MINI_ROW + 8.0, 0.0)
         } else if self.interface() == Interface::Bare {
             (ui::controls::height(self.compact_bar()) + 16.0, 0.0)
         } else {
@@ -3527,7 +3568,14 @@ fn context_menu(
             ui.close();
         }
     };
-    if marks.interface == Interface::Bare {
+    if marks.mini {
+        item(
+            ui,
+            tr!("The player's window", "Окно плеера").into(),
+            Cmd::ToggleMini,
+        );
+        ui.separator();
+    } else if marks.interface == Interface::Bare {
         // First, where it is found without the interface.
         item(
             ui,
@@ -3599,6 +3647,9 @@ fn context_menu(
         tr!("Fullscreen", "Полный экран").into(),
         Cmd::ToggleFullscreen,
     );
+    if !marks.mini {
+        item(ui, tr!("Mini player", "Мини-плеер").into(), Cmd::ToggleMini);
+    }
     interface_menu(ui, marks.interface, &mut menu_cmds);
     zoom_menu(ui, state, marks.fill, &mut menu_cmds);
     on_top_menu(ui, marks.on_top, &mut menu_cmds);
@@ -3732,6 +3783,8 @@ struct Marks {
     fill: bool,
     /// The interface shown (`8`; only the picture, `7`).
     interface: Interface,
+    /// The mini player is shown (`0`).
+    mini: bool,
     aspect: crate::adjust::Aspect,
     repeat: Repeat,
     on_top: OnTop,
@@ -4025,7 +4078,7 @@ impl eframe::App for App {
             video.skip_unseen();
         }
         self.keep_awake(minimized);
-        win::set_playlist_follow(!self.fullscreen);
+        win::set_playlist_follow(!self.fullscreen && self.mini.is_none());
         self.follow_on_top(ctx);
         self.show_on_taskbar();
         self.follow_media_keys();
@@ -4057,6 +4110,8 @@ impl eframe::App for App {
         // restored window is made for it now.
         self.fit_interface(&ctx);
         let state = self.state();
+        self.follow_mini(&ctx, &state);
+        let mini = self.mini.is_some();
         let mut cmds = std::mem::take(&mut self.pending);
 
         self.drop_files(dropped_files(&ctx), &state);
@@ -4086,18 +4141,21 @@ impl eframe::App for App {
         let title = self.title(&state);
         let interface = self.interface();
         let (top_held, bottom_held) = Self::held(&ctx, self.shown_over);
-        self.title_strip =
-            !fullscreen && interface.title_over() && (top_held || self.wants_title_strip(&ctx));
+        self.title_strip = !fullscreen
+            && !mini
+            && interface.title_over()
+            && (top_held || self.wants_title_strip(&ctx));
         let bar_over = !fullscreen
+            && !mini
             && interface == Interface::Bare
             && (bottom_held || self.wants_bar_over(&ctx));
         if !fullscreen {
             self.shown_over = (self.title_strip, bar_over);
         }
-        let icon = (!fullscreen && (interface.title_row() || self.title_strip))
+        let icon = (!fullscreen && !mini && (interface.title_row() || self.title_strip))
             .then(|| ui::app_icon(&ctx, 16.0, &mut self.icon));
         let newer = self.updates.newer().map(str::to_owned);
-        if !fullscreen && interface != Interface::Bare {
+        if !fullscreen && !mini && interface != Interface::Bare {
             if let Some(icon) = icon.as_ref().filter(|_| interface.title_row()) {
                 egui::Panel::top("title")
                     .exact_size(style::TITLE_HEIGHT)
@@ -4164,6 +4222,9 @@ impl eframe::App for App {
                         cmds.push(cmd);
                     }
                 }
+                if mini {
+                    self.mini_controls(ui, ui.max_rect(), &state, &mut cmds);
+                }
                 if bar_over {
                     let compact = self.compact_bar();
                     let area = ui.max_rect();
@@ -4185,7 +4246,8 @@ impl eframe::App for App {
             .response
             .rect;
         self.picture_area = picture;
-        if !fullscreen {
+        // The chrome of the player's window, not the mini player's.
+        if !fullscreen && !mini {
             if interface != Interface::Bare {
                 self.playlist_inset = (ctx.content_rect().right() - picture.right()).max(0.0);
             }
@@ -4453,6 +4515,7 @@ impl eframe::App for App {
             };
             self.settings.window_normal = Some(r);
         }
+        self.save_mini(storage);
         self.settings.save(storage);
         self.remember_position();
         storage.set_string(POSITIONS_KEY, self.positions.to_text());

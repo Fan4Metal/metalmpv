@@ -30,7 +30,7 @@ MetalMPV is a video player for Windows with a classic layout: the picture fills 
 - **Audio tracks and subtitles** in one window by the volume (`T`); subtitles from a file of their own (see [Audio and subtitles](#audio-and-subtitles)).
 - **Video, sound and subtitles panel** (`U`): the picture's colour, zoom and pan, sharpness, noise reduction, aspect ratio, deinterlacing, HDR tone mapping and rotation; the output device, channels, volume boost up to 200 %, normalization, clearer speech, stereo to 5.1, the subwoofer, a ten-band equalizer and Dolby and DTS sent to a receiver undecoded; the look of the subtitles (see [Video, sound and subtitles panel](#video-sound-and-subtitles-panel)).
 - **File information** (`I`): the cover, the tags and the details of every track in a window over the player; the cover of an audio file fills the picture (see [File information](#file-information)).
-- **Window for the picture**: 50–200 % of the video's size, the largest window without black bars, fullscreen without black bars, four layouts of the interface (see [Window size and layouts](#window-size-and-layouts)).
+- **Window for the picture**: 50–200 % of the video's size, the largest window without black bars, fullscreen without black bars, four layouts of the interface, a mini player over the other windows (see [Window size and layouts](#window-size-and-layouts)).
 - **Chapters, A-B repeat, bookmarks, going to a time**: see [Chapters](#chapters), [A-B repeat](#a-b-repeat) (also saved as a file of its own), [Bookmarks](#bookmarks) and [Go to time](#go-to-time).
 - **Resume**: a film opened again goes on from where it was stopped, with the audio track and subtitles chosen in it (see [Settings](#settings)).
 - **Playlist**: files opened together or dropped onto the window, optionally the folder's files or an album's tracks; a search, M3U and IPTV lists with groups and channel logos, lines of how far each file was watched (see [Playlist](#playlist)).
@@ -83,7 +83,7 @@ The control bar holds the seek bar (a click or a drag moves there; the time unde
 
 ### Window size and layouts
 
-`1`–`4` size the window for 50 %, 100 %, 150 % or 200 % of the video, `5` makes the largest window without black bars, `` ` `` (the key left of `1`) fits the window to the picture, and `6` switches to fullscreen with the picture cropped to fill the screen. `8` switches between four layouts of the interface, and `7` leaves only the picture. The same commands are in the **Zoom** and **Interface** submenus of the picture's context menu.
+`1`–`4` size the window for 50 %, 100 %, 150 % or 200 % of the video, `5` makes the largest window without black bars, `` ` `` (the key left of `1`) fits the window to the picture, and `6` switches to fullscreen with the picture cropped to fill the screen. `8` switches between four layouts of the interface, `7` leaves only the picture, and `0` makes the window a mini player. The same commands are in the **Zoom** and **Interface** submenus of the picture's context menu.
 
 <details>
 <summary>More on the window's size and the layouts</summary>
@@ -92,6 +92,7 @@ The control bar holds the seek bar (a click or a drag moves there; the time unde
 - **Fullscreen without black bars**: `6` enlarges the picture to fill the screen, its edges cropped; `6` again shows the picture whole with the black bars, still in fullscreen, and leaving fullscreen does so too.
 - **Layouts**: **Full** (the title row and the control bar of two rows), **Without the title row**, **Compact** (no title row, the control bar in one row: Play, previous and next, the time and the seek bar from the left, the volume and the other buttons on the right; Open and Stop remain in the context menu and on the keys, and in a narrow window the less needed buttons are left out so that the seek bar keeps its room) and **Only the picture**. Without the title row, the title row with the window's buttons appears over the top of the picture while the pointer is there. The layout is kept between starts (also chosen on the General page of the settings); in fullscreen the control bar is compact in the compact layout. On a change of layout the window grows or shrinks by the difference, so the picture keeps its place and size; a maximised window or one in fullscreen keeps its size and is fitted once restored.
 - **Only the picture** (`7`) hides the title row, the control bar and the playlist. The title row appears over the picture's top and the control bar of the layout chosen over its bottom while the pointer is near the edge, and the window is still moved by dragging the picture and resized by its edges. `7` again, `Esc` or **Show the interface** at the top of the context menu brings back the layout shown before (the full one after a start with only the picture); so does asking for the playlist (`L`, the middle click, the context menu), which then shows it.
+- **Mini player** (`0`, the button left of Minimize in the title row, or **Mini player** in the context menu): the window becomes small and stays over the other windows, showing only the picture; the first time it is 384 points wide in the bottom right corner of the screen, later where it was left and of the size it had. Its shape follows the picture's, also while its edges are dragged and when another file is opened, and while it is moved it is drawn to the edges and corners of the screen. While the pointer moves over the picture, or nothing plays, Play, the sound and the volume and the seek bar appear at the bottom, and the button back to the player's window in the top right corner. The picture moves the window, the wheel sets the volume and the keys work as usual. `0` again, a double click on the picture, the button or **The player's window** at the top of the context menu bring back what was before it: the window as it was, maximised if it was, or fullscreen; `Esc` brings the window back; so do the playlist, fullscreen, the window sizes, the layouts, the tracks window, the panel and the file information.
 
 </details>
 
@@ -398,6 +399,7 @@ The keys below are the defaults; they can be changed in the settings (**Keyboard
 | `6` | Fullscreen without black bars (the picture cropped); again, with them |
 | `7` | Only the picture, without the title row, the control bar and the playlist; again, the interface returns |
 | `8` | Interface: full, without the title row, compact, only the picture, in turn (also in the context menu) |
+| `0` | Mini player over the other windows; again, the player's window returns |
 | `Ctrl+T` | Over the other windows: never, always, while playing (also in the settings and the context menu) |
 | `Ctrl+E` | Save the frame (into Pictures\MetalMPV unless another folder is chosen) |
 | `Q` | Reset the picture's settings: colour, zoom, filters, turns (as **Reset all** on the panel's Video tab) |
@@ -427,7 +429,7 @@ The keys below are the defaults; they can be changed in the settings (**Keyboard
 | `Ctrl+I` | The information's chips over the picture |
 | `F5`, `Ctrl+,` | Settings |
 | `F1` | About |
-| `Esc` | Closes the file information window, else the tracks window, else the Video, sound and subtitles panel, else the playlist shown in fullscreen, else leaves fullscreen, else brings the interface back after `7`, else closes the program |
+| `Esc` | Closes the file information window, else the tracks window, else the Video, sound and subtitles panel, else the playlist shown in fullscreen, else leaves fullscreen, else leaves the mini player, else brings the interface back after `7`, else closes the program |
 
 </details>
 

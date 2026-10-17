@@ -1,6 +1,7 @@
 //! The title row of the frameless window: the icon, the file's name in the
-//! middle, minimise, maximise and close on the right. Its free area drags
-//! the window; a double click maximises it or brings it back.
+//! middle, the information, the mini player, minimise, maximise and close
+//! on the right. Its free area drags the window; a double click maximises
+//! it or brings it back.
 
 use egui::{Align2, FontId, Rect, Sense, TextureHandle, Ui, pos2};
 
@@ -45,6 +46,10 @@ pub fn row(
         ),
         (Cmd::Minimize, tr!("Minimize", "Свернуть").to_owned()),
         (
+            Cmd::ToggleMini,
+            crate::keymap::with_key(tr!("Mini player", "Мини-плеер"), Cmd::ToggleMini),
+        ),
+        (
             Cmd::ToggleInfo,
             crate::keymap::with_key(tr!("File information", "Сведения о файле"), Cmd::ToggleInfo),
         ),
@@ -52,8 +57,8 @@ pub fn row(
     let mut right = rect.right();
     for (kind, tip) in buttons {
         let r = Rect::from_min_max(pos2(right - BUTTON, rect.top()), pos2(right, rect.bottom()));
-        // The information button is narrower than the window's own.
-        let r = if kind == Cmd::ToggleInfo {
+        // The app's buttons are narrower than the window's own.
+        let r = if matches!(kind, Cmd::ToggleInfo | Cmd::ToggleMini) {
             Rect::from_min_max(pos2(r.right() - 34.0, r.top()), r.max)
         } else {
             r
@@ -79,6 +84,7 @@ pub fn row(
             Cmd::Close => icons::close(ui.painter(), o, 5.0, color),
             Cmd::ToggleMaximize => icons::maximize(ui.painter(), o, 5.0, color, maximized),
             Cmd::ToggleInfo => icons::info(ui.painter(), o, 6.5, color),
+            Cmd::ToggleMini => icons::mini(ui.painter(), o, 6.0, color),
             _ => icons::minimize(ui.painter(), o, 5.0, color),
         }
         if response.on_hover_text(tip).clicked() {

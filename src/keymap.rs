@@ -373,6 +373,7 @@ actions! {
     ZoomReset "zoom_reset" Window Cmd::ZoomReset, [Chord::alt(Key::Backspace)];
     Interface "interface" Window Cmd::ToggleInterface, [Chord::key(Key::Num7)];
     Interfaces "interfaces" Window Cmd::CycleInterface, [Chord::key(Key::Num8)];
+    Mini "mini_player" Window Cmd::ToggleMini, [Chord::key(Key::Num0)];
     OnTop "on_top" Window Cmd::CycleOnTop, [Chord::ctrl(Key::T)];
     Minimize "minimize" Window Cmd::Minimize, [];
     Maximize "maximize" Window Cmd::ToggleMaximize, [];
@@ -565,6 +566,10 @@ impl Action {
             Action::Interfaces => tr!(
                 "Interface: full, without the title row, compact, only the picture",
                 "Интерфейс: полный, без заголовка, компактный, только видео"
+            ),
+            Action::Mini => tr!(
+                "Mini player / the player's window again",
+                "Мини-плеер / вернуть окно плеера"
             ),
             Action::OnTop => tr!(
                 "Over the other windows: never, always, while playing",
