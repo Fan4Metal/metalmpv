@@ -34,6 +34,8 @@ const ROW: f32 = 22.0;
 pub const MIN_WIDTH: f32 = 288.0;
 /// The height of the chapters' header.
 const HEADER: f32 = 26.0;
+/// The room round the chapters inside their ground.
+const CHAPTERS_MARGIN: f32 = 4.0;
 /// The search field's id: while it has the focus, the keys are its own.
 const SEARCH_ID: &str = "playlist_search";
 
@@ -364,12 +366,16 @@ pub fn panel(ui: &mut Ui, panel: Panel<'_>) -> Vec<Cmd> {
     // The chapters take up to half of the height, the files the rest.
     let open_id = ui.id().with("chapters_open");
     let open = ui.data_mut(|d| *d.get_persisted_mut_or(open_id, true));
+    // The spacing egui puts after the files and after the header counted
+    // too: without it the last chapter ran into the list's bottom edge.
+    let gap = ui.spacing().item_spacing.y;
     let chapters_height = if chapters.is_empty() {
         0.0
     } else if open {
-        HEADER + (chapters.len() as f32 * ROW + 4.0).min(ui.available_height() * 0.5)
+        let list = chapters.len() as f32 * ROW + 2.0 * CHAPTERS_MARGIN;
+        HEADER + 2.0 * gap + list.min(ui.available_height() * 0.5)
     } else {
-        HEADER
+        HEADER + gap
     };
     let files = vec2(
         ui.available_width(),
@@ -983,7 +989,7 @@ fn chapters_list(ui: &mut Ui, chapters: &[Chapter], time: Option<f64>, out: &mut
     let frame = egui::Frame::new()
         .fill(style::LIST_BG)
         .corner_radius(3.0)
-        .inner_margin(egui::Margin::same(2));
+        .inner_margin(egui::Margin::same(CHAPTERS_MARGIN as i8));
     frame.show(ui, |ui| {
         ui.set_min_size(ui.available_size());
         egui::ScrollArea::vertical()
