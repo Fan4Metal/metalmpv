@@ -202,9 +202,6 @@ pub struct App {
     /// How wide it was drawn in the last frame (0 while closed), in points:
     /// the panels over the picture keep off it.
     fullscreen_list_width: f32,
-    /// The information's chips over the picture's top right corner
-    /// (`Ctrl+I`), while the information window is closed.
-    info_overlay: bool,
     /// The video area of the last frame, in points.
     picture_area: Rect,
     /// The title row, the control bar and the playlist around the video
@@ -407,7 +404,6 @@ impl App {
             middle_press: false,
             fullscreen_playlist: false,
             fullscreen_list_width: 0.0,
-            info_overlay: false,
             picture_area: Rect::NOTHING,
             chrome: egui::Vec2::ZERO,
             pending_picture: None,
@@ -677,7 +673,7 @@ impl App {
     /// The file's information is shown: its window or its chips over the
     /// picture.
     fn info_wanted(&self) -> bool {
-        self.info.open || self.info_overlay
+        self.info.open || self.settings.info_overlay
     }
 
     /// Read what the container of the file playing says while its
@@ -1492,7 +1488,7 @@ impl App {
                 }
             }
             Cmd::ToggleInfo => self.info.toggle(),
-            Cmd::ToggleInfoOverlay => self.info_overlay = !self.info_overlay,
+            Cmd::ToggleInfoOverlay => self.settings.info_overlay = !self.settings.info_overlay,
             Cmd::ToggleVideoPanel => {
                 self.video_panel.toggle();
                 if self.video_panel.open {
@@ -2822,7 +2818,7 @@ impl App {
             repeat: self.settings.repeat,
             on_top: self.settings.on_top,
             playlist_detached: self.settings.playlist_detached,
-            info_overlay: self.info_overlay,
+            info_overlay: self.settings.info_overlay,
             bookmarks: self
                 .settings
                 .bookmarks
@@ -2935,7 +2931,11 @@ impl App {
         self.osd
             .paint(ui.ctx(), osd_rect, state, look, scale, self.settings.osd);
         // The window says it all while open.
-        if self.info_overlay && !self.info.open && !state.idle && self.engine_error.is_none() {
+        if self.settings.info_overlay
+            && !self.info.open
+            && !state.idle
+            && self.engine_error.is_none()
+        {
             let mut area = osd_rect;
             if self.fullscreen {
                 area.max.x -= self.fullscreen_list_width;
@@ -2946,7 +2946,8 @@ impl App {
                 &subject,
                 crate::info::Unfolded::default(),
             );
-            ui::info::overlay(ui.ctx(), area, &rows);
+            let transparency = self.settings.info_overlay_transparency as f32;
+            ui::info::overlay(ui.ctx(), area, &rows, transparency);
         }
     }
 
@@ -4286,7 +4287,7 @@ impl eframe::App for App {
             .and_then(|c| c.loaded.as_ref())
             .map(|(cover, texture)| CoverView { cover, texture });
         if let Some(player) = &mut self.player {
-            if self.info.open || self.info_overlay {
+            if self.info.open || self.settings.info_overlay {
                 player.ask_scan();
             }
             // The figures of the moment, for the information window and

@@ -312,6 +312,8 @@ const INFRASONIC_HZ: &str = "infrasonic_hz";
 const EQ_PRESETS: &str = "eq_presets";
 const KEEP_ADJUST: &str = "keep_adjust";
 const NAVIGATOR: &str = "navigator";
+const INFO_OVERLAY: &str = "info_overlay";
+const INFO_OVERLAY_TRANSPARENCY: &str = "info_overlay_transparency";
 const ADJUST: &str = "adjust";
 const OSD: &str = "osd";
 const OSD_COLOR: &str = "osd_color";
@@ -573,6 +575,11 @@ pub struct Settings {
     pub adjust: crate::adjust::Adjust,
     /// The navigator over the picture's corner while it is zoomed in.
     pub navigator: bool,
+    /// The information's chips over the picture's corner (`Ctrl+I`).
+    pub info_overlay: bool,
+    /// How transparent their ground is, in percent (0 to 100: the text
+    /// alone, with its shadow).
+    pub info_overlay_transparency: f64,
     /// The OSD line is shown; off, only the line of a stop where the data
     /// ran out is.
     pub osd: bool,
@@ -669,6 +676,8 @@ impl Default for Settings {
             track_prefs: crate::tracks::TrackPrefs::default(),
             keep_adjust: false,
             navigator: true,
+            info_overlay: false,
+            info_overlay_transparency: 40.0,
             adjust: crate::adjust::Adjust::default(),
             osd: true,
             osd_style: OsdStyle::default(),
@@ -934,6 +943,12 @@ impl Settings {
             },
             keep_adjust: flag(KEEP_ADJUST, d.keep_adjust),
             navigator: flag(NAVIGATOR, d.navigator),
+            info_overlay: flag(INFO_OVERLAY, d.info_overlay),
+            info_overlay_transparency: number(
+                INFO_OVERLAY_TRANSPARENCY,
+                0.0..=100.0,
+                d.info_overlay_transparency,
+            ),
             adjust: get(ADJUST)
                 .filter(|_| flag(KEEP_ADJUST, d.keep_adjust))
                 .map(|v| crate::adjust::Adjust::from_text(&v))
@@ -1070,6 +1085,11 @@ impl Settings {
         storage.set_string(SUB_MARGINS, self.sub_margins.to_string());
         storage.set_string(KEEP_ADJUST, self.keep_adjust.to_string());
         storage.set_string(NAVIGATOR, self.navigator.to_string());
+        storage.set_string(INFO_OVERLAY, self.info_overlay.to_string());
+        storage.set_string(
+            INFO_OVERLAY_TRANSPARENCY,
+            format!("{:.0}", self.info_overlay_transparency),
+        );
         let adjust = if self.keep_adjust {
             self.adjust.to_text()
         } else {
@@ -1254,6 +1274,8 @@ mod tests {
                 ..crate::adjust::Adjust::default()
             },
             navigator: false,
+            info_overlay: true,
+            info_overlay_transparency: 65.0,
             sub_presets: vec![sub_style::Own {
                 name: "Вечер".into(),
                 style: SubStyle {

@@ -764,16 +764,17 @@ fn chip(ui: &mut Ui, chip: &info::Chip) -> egui::Response {
 }
 
 /// The chips of the header over the picture's top right corner (`Ctrl+I`):
-/// on a see-through dark ground, each row's chips right-aligned and
-/// wrapped within `WIDEST` of `area`'s width. Only painted: the picture
-/// under them keeps the pointer.
-pub fn overlay(ctx: &egui::Context, area: Rect, rows: &[Vec<info::Chip>]) {
+/// on a dark ground `transparency` percent see-through (the text stays),
+/// each row's chips right-aligned and wrapped within `WIDEST` of `area`'s
+/// width. Only painted: the picture under them keeps the pointer.
+pub fn overlay(ctx: &egui::Context, area: Rect, rows: &[Vec<info::Chip>], transparency: f32) {
     const MARGIN: f32 = 12.0;
     const GAP: f32 = 4.0;
     const HEIGHT: f32 = 21.0;
     const PAD: f32 = 14.0;
     /// The share of the area's width the chips may take.
     const WIDEST: f32 = 0.6;
+    let opacity = (1.0 - transparency / 100.0).clamp(0.0, 1.0);
     let painter = ctx
         .layer_painter(egui::LayerId::new(
             egui::Order::Foreground,
@@ -817,8 +818,12 @@ pub fn overlay(ctx: &egui::Context, area: Rect, rows: &[Vec<info::Chip>]) {
                     Rect::from_min_size(egui::pos2(x, y), vec2(galley.size().x + PAD, HEIGHT));
                 // The chip's own ground is tinted for the window's: over a
                 // picture a dark one goes under it.
-                painter.rect_filled(rect, 4.0, Color32::from_black_alpha(130));
-                painter.rect_filled(rect, 4.0, ground.gamma_multiply(0.8));
+                painter.rect_filled(
+                    rect,
+                    4.0,
+                    Color32::from_black_alpha((217.0 * opacity) as u8),
+                );
+                painter.rect_filled(rect, 4.0, ground.gamma_multiply((1.33 * opacity).min(1.0)));
                 if chip.selected {
                     painter.rect_stroke(
                         rect,

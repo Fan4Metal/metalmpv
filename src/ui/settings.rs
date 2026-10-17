@@ -1282,6 +1282,51 @@ fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>, chan
             );
         },
     );
+    section(
+        ui,
+        tr!("Information over the picture", "Сведения поверх картинки"),
+        |ui| {
+            row(
+                ui,
+                tr!("Show", "Показывать"),
+                Some(&crate::keymap::with_key(
+                    tr!(
+                        "The file information's chips in the picture's top right corner",
+                        "Чипы сведений о файле в правом верхнем углу изображения"
+                    ),
+                    Cmd::ToggleInfoOverlay,
+                )),
+                50.0,
+                |ui| switch(ui, &mut settings.info_overlay),
+            );
+            divider(ui);
+            row(
+                ui,
+                tr!("Transparency", "Прозрачность"),
+                Some(tr!(
+                    "The chips' ground; the text stays, with its shadow.",
+                    "Фон чипов; текст с тенью остаётся."
+                )),
+                SLIDER_ROW,
+                |ui| {
+                    let default = Settings::default().info_overlay_transparency;
+                    back_to(
+                        ui,
+                        &mut settings.info_overlay_transparency,
+                        default,
+                        &format!("{default:.0} %"),
+                    );
+                    ui.spacing_mut().slider_width = 160.0;
+                    ui.add(
+                        egui::Slider::new(&mut settings.info_overlay_transparency, 0.0..=100.0)
+                            .step_by(1.0)
+                            .fixed_decimals(0)
+                            .suffix(" %"),
+                    );
+                },
+            );
+        },
+    );
     changed.frames_folder |= frames_section(ui, settings);
 }
 
@@ -2184,6 +2229,8 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.remember_recent = d.remember_recent;
     settings.fullscreen_transparency = d.fullscreen_transparency;
     settings.fullscreen_title = d.fullscreen_title;
+    settings.info_overlay = d.info_overlay;
+    settings.info_overlay_transparency = d.info_overlay_transparency;
     settings.snap_to_centre = d.snap_to_centre;
     settings.on_top = d.on_top;
     settings.window_on_open = d.window_on_open;
