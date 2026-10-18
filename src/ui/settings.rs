@@ -1339,6 +1339,88 @@ fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>, chan
         },
     );
     changed.frames_folder |= frames_section(ui, settings);
+    video_map_section(ui, settings);
+}
+
+/// How the video map (`Ctrl+M`, `video_map.rs`) is laid out.
+fn video_map_section(ui: &mut Ui, settings: &mut Settings) {
+    use crate::video_map::{COLUMNS, ROWS, WIDTHS};
+    section(ui, tr!("Video map", "Карта видео"), |ui| {
+        let map = &mut settings.video_map;
+        row(
+            ui,
+            tr!("Frames", "Кадры"),
+            Some(tr!(
+                "Columns × rows, taken at equal steps through the file. An upright video gets twice the columns and half the rows.",
+                "Столбцы × ряды, кадры берутся через равные промежутки по всему файлу. У вертикального видео столбцов вдвое больше, а рядов вдвое меньше."
+            )),
+            230.0,
+            |ui| {
+                ui.horizontal(|ui| {
+                    ui.add(egui::DragValue::new(&mut map.columns).range(COLUMNS));
+                    ui.label("×");
+                    ui.add(egui::DragValue::new(&mut map.rows).range(ROWS));
+                    ui.label(tr!(
+                        format!("= {}", map.frames()),
+                        format!("= {}", map.frames())
+                    ));
+                });
+            },
+        );
+        divider(ui);
+        row(
+            ui,
+            tr!("Width", "Ширина"),
+            Some(tr!(
+                "Of the whole picture. Models scale a larger one down: about 1536 pixels is the most they take in whole.",
+                "Всей картинки. Модели уменьшают картинку крупнее: около 1536 пикселей — наибольшее, что они воспринимают целиком."
+            )),
+            230.0,
+            |ui| {
+                egui::ComboBox::from_id_salt("settings_video_map_width")
+                    .selected_text(format!("{} px", map.width))
+                    .width(120.0)
+                    .show_ui(ui, |ui| {
+                        for w in WIDTHS {
+                            ui.selectable_value(&mut map.width, w, format!("{w} px"));
+                        }
+                    });
+            },
+        );
+        divider(ui);
+        row(ui, tr!("Format", "Формат"), None, 230.0, |ui| {
+            egui::ComboBox::from_id_salt("settings_video_map_format")
+                .selected_text(map.format.label())
+                .width(220.0)
+                .show_ui(ui, |ui| {
+                    for f in FrameFormat::ALL {
+                        ui.selectable_value(&mut map.format, f, f.label());
+                    }
+                });
+        });
+        divider(ui);
+        row(
+            ui,
+            tr!("The file's details on top", "Сведения о файле сверху"),
+            Some(tr!(
+                "The name, duration, picture size, codec, frame rate and file size.",
+                "Имя, длительность, размер кадра, кодек, частота кадров и размер файла."
+            )),
+            50.0,
+            |ui| switch(ui, &mut map.header),
+        );
+        divider(ui);
+        row(
+            ui,
+            tr!("Copy to the clipboard", "Копировать в буфер обмена"),
+            Some(tr!(
+                "The map is also put on the clipboard, to be pasted into a chat.",
+                "Карта также помещается в буфер обмена, чтобы вставить её в чат."
+            )),
+            50.0,
+            |ui| switch(ui, &mut settings.video_map_copy),
+        );
+    });
 }
 
 /// Where Save the frame writes, and in which format; whether Choose… was
@@ -2272,6 +2354,8 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.window_on_open = d.window_on_open;
     settings.frames_folder = d.frames_folder;
     settings.frames_format = d.frames_format;
+    settings.video_map = d.video_map;
+    settings.video_map_copy = d.video_map_copy;
     settings.media_keys = d.media_keys;
     settings.interface = d.interface;
     changed.accent |= settings.accent != d.accent;

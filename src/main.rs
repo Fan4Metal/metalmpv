@@ -47,6 +47,7 @@ mod type_icon;
 mod ui;
 mod update;
 mod video;
+mod video_map;
 mod win;
 mod worker;
 
@@ -139,6 +140,12 @@ fn main() -> eframe::Result {
                 }
                 return Ok(());
             }
+            Some("--map") => {
+                // The video map of files (video_map.rs), for scripts and
+                // agents: the pictures' paths on stdout.
+                win::attach_parent_console();
+                std::process::exit(video_map::command_line(args));
+            }
             Some("-V" | "--version") => {
                 win::attach_parent_console();
                 let _ = writeln!(std::io::stdout(), "{APP_NAME} {VERSION}");
@@ -148,7 +155,7 @@ fn main() -> eframe::Result {
                 win::attach_parent_console();
                 let _ = writeln!(
                     std::io::stdout(),
-                    "{APP_NAME} {VERSION}\n\nmetalmpv [FILE...]\nmetalmpv --version | --help | --export-icon FILE.ico\nmetalmpv --register | --unregister   (the file types, for the installer)"
+                    "{APP_NAME} {VERSION}\n\nmetalmpv [FILE...]\nmetalmpv --version | --help | --export-icon FILE.ico\nmetalmpv --map VIDEO... [-o FILE|FOLDER] [--grid 4x4] [--width 1536] [--png] [--no-info]\n   (a video map: frames in a grid on one picture, beside the video unless -o says)\nmetalmpv --register | --unregister   (the file types, for the installer)"
                 );
                 return Ok(());
             }

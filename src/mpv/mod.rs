@@ -29,6 +29,8 @@ pub enum Value {
     List(Vec<Value>),
     /// A map with its keys in mpv's order (`MPV_FORMAT_NODE_MAP`).
     Map(Vec<(String, Value)>),
+    /// Raw bytes (`MPV_FORMAT_BYTE_ARRAY`: `screenshot-raw`'s picture).
+    Bytes(Vec<u8>),
 }
 
 impl Value {
@@ -221,7 +223,10 @@ impl Mpv {
     /// and maps are not set.
     pub fn set(&self, name: &str, value: &Value) {
         // Nodes are only read (track-list), never set.
-        if matches!(value, Value::None | Value::List(_) | Value::Map(_)) {
+        if matches!(
+            value,
+            Value::None | Value::List(_) | Value::Map(_) | Value::Bytes(_)
+        ) {
             return;
         }
         let n = cstring(name);
@@ -235,7 +240,7 @@ impl Mpv {
             (self.api.mpv_set_property_async)(self.handle, id, n.as_ptr(), format, data)
         };
         let code = match value {
-            Value::None | Value::List(_) | Value::Map(_) => return,
+            Value::None | Value::List(_) | Value::Map(_) | Value::Bytes(_) => return,
             Value::Flag(v) => {
                 let mut flag = c_int::from(*v);
                 set(sys::MPV_FORMAT_FLAG, (&raw mut flag).cast())
@@ -635,6 +640,16 @@ unsafe fn node(n: &sys::mpv_node) -> Value {
             sys::MPV_FORMAT_FLAG => Value::Flag(n.u.flag != 0),
             sys::MPV_FORMAT_INT64 => Value::Int(n.u.int64),
             sys::MPV_FORMAT_DOUBLE => Value::Double(n.u.double_),
+            sys::MPV_FORMAT_BYTE_ARRAY => {
+                let ba = n.u.ba;
+                if ba.is_null() || (*ba).data.is_null() {
+                    Value::Bytes(Vec::new())
+                } else {
+                    Value::Bytes(
+                        std::slice::from_raw_parts((*ba).data as *const u8, (*ba).size).to_vec(),
+                    )
+                }
+            }
             sys::MPV_FORMAT_NODE_ARRAY | sys::MPV_FORMAT_NODE_MAP => {
                 let list = n.u.list;
                 if list.is_null() || (*list).num <= 0 || (*list).values.is_null() {

@@ -226,6 +226,12 @@ When the file has chapters, the seek bar is cut at the start of each, and the to
 
 </details>
 
+### Video map
+
+`Ctrl+M` or **Save a video map** in the picture's context menu saves a video map of the file playing: frames taken at equal steps through the whole file (16 at first, 4 × 4), in a grid on one picture, each with its time in its corner, under a line with the file's name, duration, picture size, codec, frame rate and file size. Such a picture shows a language model (or a person) what the video holds at a glance, with the times to ask about. The frames are taken by a second engine without a window while playback goes on (about 2 s for 16 frames), and the on-screen message counts them; the map is written as a JPG into the folder of saved frames as `<file> map.jpg` and, unless turned off, also put on the clipboard, ready to be pasted into a chat. An upright video gets twice the columns and half the rows, so that the picture stays wider than it is tall. The grid, the width (1536 pixels at first, about the most a model takes in whole), the format and the line on top are chosen under **Video map** on the Video page of the settings.
+
+The same from the command line, without the window, for scripts and agents: `metalmpv.exe --map video.mkv [more videos] [-o FILE|FOLDER] [--grid 4x4] [--width 1536] [--png] [--no-info]` writes each map next to its video (or as `-o` says) and prints the pictures' paths, one a line.
+
 ### File information
 
 `I`, the **i** button in the title row or **File information** in the picture's context menu opens a window over the player; playback and the keys go on while it is open, and `I` or `Esc` closes it. At the top it shows the cover with the title, the artist and the album, and under them the main facts in rows of chips: the file, the picture and the sound, a chip per audio track (a click on one plays that track), and the subtitles. Below come sections with every detail of the file, the playback and the tracks.
@@ -332,6 +338,11 @@ The sound and the look of the subtitles are set on the [Video, sound and subtitl
 | Video | Panel transparency | 12 % | Transparency of the control bar and the file's name over the picture in fullscreen, 0–80 % |
 | Video | Saving a frame: folder | Pictures\MetalMPV | Where **Save the frame** writes; **Choose…** picks another folder, **Default** goes back |
 | Video | Saving a frame: format | PNG | PNG keeps every pixel; a JPG file is several times smaller, at a little loss |
+| Video | Video map: frames | 4 × 4 | Columns × rows of the [video map](#video-map) |
+| Video | Video map: width | 1536 px | The whole picture's width, 1024 to 3840 |
+| Video | Video map: format | JPG | As for a frame |
+| Video | Video map: the file's details on top | on | The name, duration, picture size, codec, frame rate and file size over the frames |
+| Video | Video map: copy to the clipboard | on | The map is also put on the clipboard |
 | Updates | Check at start-up | off | See [Update check and privacy](#update-check-and-privacy); **Check now** asks at once, and the date of the last check is shown |
 
 </details>
@@ -402,6 +413,7 @@ The keys below are the defaults; they can be changed in the settings (**Keyboard
 | `0` | Mini player over the other windows; again, the player's window returns |
 | `Ctrl+T` | Over the other windows: never, always, while playing (also in the settings and the context menu) |
 | `Ctrl+E` | Save the frame (into Pictures\MetalMPV unless another folder is chosen) |
+| `Ctrl+M` | Save a [video map](#video-map): frames of the whole file on one picture, also copied to the clipboard |
 | `Q` | Reset the picture's settings: colour, zoom, filters, turns (as **Reset all** on the panel's Video tab) |
 | `Ctrl+R` | Turn the picture 90° clockwise |
 | `Ctrl+A` | Aspect ratio in turn: as in the file, 4:3, 16:9, 16:10, 1.85:1, 2.35:1, 2.39:1 |

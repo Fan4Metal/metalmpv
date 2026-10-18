@@ -30,6 +30,7 @@ pub const MPV_FORMAT_DOUBLE: mpv_format = 5;
 pub const MPV_FORMAT_NODE: mpv_format = 6;
 pub const MPV_FORMAT_NODE_ARRAY: mpv_format = 7;
 pub const MPV_FORMAT_NODE_MAP: mpv_format = 8;
+pub const MPV_FORMAT_BYTE_ARRAY: mpv_format = 9;
 
 pub type mpv_event_id = c_int;
 pub const MPV_EVENT_NONE: mpv_event_id = 0;
@@ -88,7 +89,14 @@ pub union mpv_node_u {
     pub int64: i64,
     pub double_: f64,
     pub list: *mut mpv_node_list,
-    pub ba: *mut c_void,
+    pub ba: *mut mpv_byte_array,
+}
+
+/// Raw bytes (`screenshot-raw`'s picture).
+#[repr(C)]
+pub struct mpv_byte_array {
+    pub data: *mut c_void,
+    pub size: usize,
 }
 
 /// The entries of an array or a map (`keys` is null for an array).
@@ -333,6 +341,7 @@ mod tests {
         assert_eq!(size_of::<mpv_opengl_fbo>(), 16);
         assert_eq!(size_of::<mpv_node>(), 16);
         assert_eq!(size_of::<mpv_node_list>(), 24);
+        assert_eq!(size_of::<mpv_byte_array>(), 16);
     }
 
     #[test]

@@ -399,6 +399,7 @@ actions! {
     VideoPanel "video_panel" Files Cmd::ToggleVideoPanel, [Chord::key(Key::U), Chord::key(Key::F7)];
     Equalizer "equalizer" Files Cmd::ShowEqualizer, [];
     SaveFrame "save_frame" Files Cmd::SaveFrame, [Chord::ctrl(Key::E)];
+    VideoMap "video_map" Files Cmd::SaveVideoMap, [Chord::ctrl(Key::M)];
     ShowFrames "show_frames" Files Cmd::ShowFrames, [];
     SaveCover "save_cover" Files Cmd::SaveCover, [];
     Settings "settings" Files Cmd::Settings, [Chord::key(Key::F5), Chord::ctrl(Key::Comma)];
@@ -616,6 +617,10 @@ impl Action {
             ),
             Action::Equalizer => tr!("Equalizer", "Эквалайзер"),
             Action::SaveFrame => tr!("Save the frame", "Сохранить кадр"),
+            Action::VideoMap => tr!(
+                "Save a video map (frames on one picture)",
+                "Сохранить карту видео (кадры на одной картинке)"
+            ),
             Action::ShowFrames => tr!(
                 "Open the folder of saved frames",
                 "Открыть папку сохранённых кадров"

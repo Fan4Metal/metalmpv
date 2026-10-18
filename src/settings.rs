@@ -52,6 +52,8 @@ const WINDOW_ON_OPEN: &str = "window_on_open";
 const FRAMES_FOLDER: &str = "frames_folder";
 const FRAMES_FORMAT: &str = "frames_format";
 const CLIP: &str = "clip";
+const VIDEO_MAP: &str = "video_map";
+const VIDEO_MAP_COPY: &str = "video_map_copy";
 const INTERFACE: &str = "interface";
 const MEDIA_KEYS: &str = "media_keys";
 const AUDIO_LANGUAGES: &str = "audio_languages";
@@ -526,6 +528,10 @@ pub struct Settings {
     /// Where frames are saved; `None`: Pictures\MetalMPV.
     pub frames_folder: Option<PathBuf>,
     pub frames_format: FrameFormat,
+    /// How the video map is laid out (`video_map.rs`).
+    pub video_map: crate::video_map::Layout,
+    /// The video map is also put on the clipboard.
+    pub video_map_copy: bool,
     /// How an A-B stretch was encoded last (`clip.rs`); not a setting of
     /// the window, Reset keeps it.
     pub clip: crate::clip::Encode,
@@ -659,6 +665,8 @@ impl Default for Settings {
             window_on_open: WindowOnOpen::Keep,
             frames_folder: None,
             frames_format: FrameFormat::Png,
+            video_map: crate::video_map::Layout::default(),
+            video_map_copy: true,
             clip: crate::clip::Encode::default(),
             interface: Interface::Full,
             media_keys: MediaKeys::Always,
@@ -817,6 +825,10 @@ impl Settings {
                 .as_deref()
                 .and_then(FrameFormat::from_name)
                 .unwrap_or(d.frames_format),
+            video_map: get(VIDEO_MAP)
+                .as_deref()
+                .map_or(d.video_map, crate::video_map::Layout::from_text),
+            video_map_copy: flag(VIDEO_MAP_COPY, d.video_map_copy),
             clip: get(CLIP)
                 .as_deref()
                 .map_or(d.clip, crate::clip::Encode::from_text),
@@ -1074,6 +1086,8 @@ impl Settings {
                 .unwrap_or_default(),
         );
         storage.set_string(FRAMES_FORMAT, self.frames_format.name().into());
+        storage.set_string(VIDEO_MAP, self.video_map.to_text());
+        storage.set_string(VIDEO_MAP_COPY, self.video_map_copy.to_string());
         storage.set_string(CLIP, self.clip.to_text());
         storage.set_string(INTERFACE, self.interface.name().into());
         storage.set_string(MEDIA_KEYS, self.media_keys.name().into());
@@ -1232,6 +1246,14 @@ mod tests {
             window_on_open: WindowOnOpen::Fit,
             frames_folder: Some(PathBuf::from(r"D:\Кадры")),
             frames_format: FrameFormat::Jpg,
+            video_map: crate::video_map::Layout {
+                columns: 6,
+                rows: 5,
+                width: 1920,
+                header: false,
+                format: FrameFormat::Png,
+            },
+            video_map_copy: false,
             clip: crate::clip::Encode {
                 nvenc: true,
                 ..crate::clip::Encode::default()

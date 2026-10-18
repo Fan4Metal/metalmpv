@@ -129,6 +129,9 @@ pub enum Cmd {
     ShowEqualizer,
     /// Save the frame on screen into Pictures\MetalMPV (`Ctrl+E`).
     SaveFrame,
+    /// Save a video map of the file playing, its frames in a grid on one
+    /// picture, into the frames' folder (`Ctrl+M`, `video_map.rs`).
+    SaveVideoMap,
     /// Open the folder of the saved frames.
     ShowFrames,
     /// Save the file's cover as a picture file.

@@ -85,6 +85,8 @@ pub struct App {
     url_dialog: ui::url::UrlDialog,
     goto_dialog: ui::goto::GoToDialog,
     clip_dialog: ui::clip::ClipDialog,
+    /// The video map being made, and the frames the OSD said were taken.
+    video_map: Option<(crate::video_map::Job, u32)>,
     /// The Video, sound and subtitles panel (`U`, `F7`) and the picture's adjustments it edits.
     video_panel: VideoPanel,
     /// Where the control bar drew the panel's button this frame.
@@ -367,6 +369,7 @@ impl App {
             url_dialog: ui::url::UrlDialog::default(),
             goto_dialog: ui::goto::GoToDialog::default(),
             clip_dialog: ui::clip::ClipDialog::default(),
+            video_map: None,
             video_panel: VideoPanel::default(),
             panel_button: None,
             tracks_window: ui::tracks::TracksWindow::default(),
@@ -824,7 +827,7 @@ impl App {
     /// what stops it is said on the OSD.
     fn save_frame(&mut self, state: &State) {
         let ext = self.settings.frames_format.name();
-        let (Some(player), Some(dir)) = (&mut self.player, self.settings.frames_dir()) else {
+        let (Some(_), Some(dir)) = (&self.player, self.settings.frames_dir()) else {
             return;
         };
         if state.idle {
@@ -845,18 +848,7 @@ impl App {
             self.osd.show_always(Osd::Text(folder_missing(&dir)));
             return;
         }
-        // A channel's name (a stream's file is all "index"), else the
-        // file's; without the characters a file name cannot hold.
-        let current = self.playlist.current_path();
-        let stem = current
-            .and_then(|p| self.playlist.channel(p)?.title.clone())
-            .or_else(|| {
-                current
-                    .and_then(Path::file_stem)
-                    .map(|s| s.to_string_lossy().into_owned())
-            })
-            .map(|s| s.replace(['\\', '/', ':', '*', '?', '"', '<', '>', '|'], "_"))
-            .unwrap_or_else(|| "frame".into());
+        let stem = self.frame_stem();
         let time = crate::format::time(state.time, true).replace(':', "-");
         let mut path = dir.join(format!("{stem} {time}.{ext}"));
         for n in 2.. {
@@ -865,8 +857,152 @@ impl App {
             }
             path = dir.join(format!("{stem} {time} ({n}).{ext}"));
         }
-        player.save_frame(&path);
+        if let Some(player) = &mut self.player {
+            player.save_frame(&path);
+        }
         self.frames_saving.push_back(path);
+    }
+
+    /// The start of a saved frame's or map's name: a channel's name (a
+    /// stream's file is all "index"), else the file's; without the
+    /// characters a file name cannot hold.
+    fn frame_stem(&self) -> String {
+        let current = self.playlist.current_path();
+        current
+            .and_then(|p| self.playlist.channel(p)?.title.clone())
+            .or_else(|| {
+                current
+                    .and_then(Path::file_stem)
+                    .map(|s| s.to_string_lossy().into_owned())
+            })
+            .map(|s| s.replace(['\\', '/', ':', '*', '?', '"', '<', '>', '|'], "_"))
+            .unwrap_or_else(|| "frame".into())
+    }
+
+    /// Make a video map of the file playing (`video_map.rs`): its frames
+    /// in a grid on one picture, written into the frames' folder on a
+    /// thread of its own while it plays on; `follow_video_map` says how it
+    /// goes and puts it on the clipboard.
+    fn save_video_map(&mut self, ctx: &egui::Context, state: &State) {
+        if state.idle {
+            return;
+        }
+        if self.video_map.is_some() {
+            self.osd.show_always(Osd::Text(
+                tr!(
+                    "[ The video map is being made ]",
+                    "[ Карта видео уже создаётся ]"
+                )
+                .to_owned(),
+            ));
+            return;
+        }
+        let Some(input) = state.path.as_deref().map(PathBuf::from) else {
+            return;
+        };
+        if video_size(state).is_none() {
+            self.osd.show_always(Osd::Text(
+                tr!("[ No picture for a map ]", "[ Нет изображения для карты ]").to_owned(),
+            ));
+            return;
+        }
+        if !state.duration.is_some_and(|d| d > 0.0) {
+            self.osd.show_always(Osd::Text(
+                tr!(
+                    "[ A map needs a file of known duration ]",
+                    "[ Для карты нужна известная длительность ]"
+                )
+                .to_owned(),
+            ));
+            return;
+        }
+        let Some(dir) = self.settings.frames_dir() else {
+            return;
+        };
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            log::warn!("cannot make {}: {e}", dir.display());
+            self.osd.show_always(Osd::Text(folder_missing(&dir)));
+            return;
+        }
+        let current = self.playlist.current_path();
+        let title = current
+            .and_then(|p| self.playlist.channel(p)?.title.clone())
+            .or_else(|| {
+                current
+                    .and_then(Path::file_name)
+                    .map(|n| n.to_string_lossy().into_owned())
+            })
+            .unwrap_or_else(|| input.to_string_lossy().into_owned());
+        let layout = self.settings.video_map;
+        let request = crate::video_map::Request {
+            output: crate::video_map::file_name(&dir, &self.frame_stem(), layout.format),
+            input,
+            title,
+            layout,
+            hwdec: if self.settings.hwdec {
+                "auto-copy-safe"
+            } else {
+                "no"
+            },
+        };
+        let wake = ctx.clone();
+        match crate::video_map::Job::start(request, move || wake.request_repaint()) {
+            Ok(job) => {
+                self.osd.show_always(Osd::Text(map_progress(0, job.frames)));
+                self.video_map = Some((job, 0));
+            }
+            Err(e) => self.osd.show_always(Osd::Text(map_failed(&e))),
+        }
+    }
+
+    /// How the video map goes: the frames taken on the OSD, then where it
+    /// was written, the picture put on the clipboard when wanted.
+    fn follow_video_map(&mut self, ctx: &egui::Context) {
+        let Some((job, shown)) = &mut self.video_map else {
+            return;
+        };
+        match job.take() {
+            None => {
+                let done = job.progress();
+                if done != *shown {
+                    *shown = done;
+                    let text = map_progress(done, job.frames);
+                    self.osd.show_always(Osd::Text(text));
+                }
+            }
+            Some(Ok(made)) => {
+                let name = made
+                    .output
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let copy = self.settings.video_map_copy;
+                if copy {
+                    let (w, h) = made.image.dimensions();
+                    ctx.copy_image(egui::ColorImage::from_rgba_unmultiplied(
+                        [w as usize, h as usize],
+                        made.image.as_raw(),
+                    ));
+                }
+                self.osd.show_always(Osd::Text(if copy {
+                    tr!(
+                        format!("[ Video map saved and copied: {name} ]"),
+                        format!("[ Карта видео сохранена и скопирована: {name} ]")
+                    )
+                } else {
+                    tr!(
+                        format!("[ Video map saved: {name} ]"),
+                        format!("[ Карта видео сохранена: {name} ]")
+                    )
+                }));
+                self.video_map = None;
+            }
+            Some(Err(e)) => {
+                log::warn!("video map: {e}");
+                self.osd.show_always(Osd::Text(map_failed(&e)));
+                self.video_map = None;
+            }
+        }
     }
 
     /// mpv wrote the frame asked for first, or could not (`error`).
@@ -1523,6 +1659,7 @@ impl App {
             }
             Cmd::ShowEqualizer => self.video_panel.open_on(ui::picture::Tab::Sound),
             Cmd::SaveFrame => self.save_frame(&state),
+            Cmd::SaveVideoMap => self.save_video_map(ctx, &state),
             Cmd::OpenRecent(i) => {
                 if let Some(path) = self.settings.recent.get(i).cloned() {
                     if path.is_file() {
@@ -3468,6 +3605,21 @@ fn folder_missing(dir: &Path) -> String {
     )
 }
 
+/// The OSD's line while a video map is made.
+fn map_progress(done: u32, frames: u32) -> String {
+    tr!(
+        format!("[ Video map: {done}/{frames} ]"),
+        format!("[ Карта видео: {done}/{frames} ]")
+    )
+}
+
+fn map_failed(why: &str) -> String {
+    tr!(
+        format!("Cannot make the video map: {why}"),
+        format!("Не удалось создать карту видео: {why}")
+    )
+}
+
 fn video_size(state: &State) -> Option<[f64; 2]> {
     match (state.width, state.height) {
         (Some(w), Some(h)) => Some([w as f64, h as f64]),
@@ -3618,6 +3770,11 @@ fn context_menu(
             ui,
             tr!("Save the frame", "Сохранить кадр").into(),
             Cmd::SaveFrame,
+        );
+        item(
+            ui,
+            tr!("Save a video map", "Сохранить карту видео").into(),
+            Cmd::SaveVideoMap,
         );
     }
     ui.separator();
@@ -4063,6 +4220,7 @@ impl eframe::App for App {
             storage.flush();
         }
         self.follow_audio_device();
+        self.follow_video_map(ctx);
         let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         // eframe calls no `ui` for a minimised window: the thumbnail
         // buttons' commands run here, else they waited for the window.
@@ -4528,6 +4686,9 @@ impl eframe::App for App {
         // A stretch being saved is cancelled, and its thread is given a
         // moment to delete the file half written.
         self.clip_dialog.cancel();
+        if let Some((job, _)) = &self.video_map {
+            job.cancel();
+        }
         if let Some(video) = &mut self.video {
             video.free(gl);
         }
