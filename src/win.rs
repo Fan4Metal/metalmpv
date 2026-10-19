@@ -418,6 +418,11 @@ pub fn window_rect(hwnd: isize) -> Option<[i32; 4]> {
     (unsafe { GetWindowRect(hwnd as _, &mut r) } != 0).then_some([r.left, r.top, r.right, r.bottom])
 }
 
+/// Whether the window is minimised.
+pub fn is_minimised(hwnd: isize) -> bool {
+    unsafe { windows_sys::Win32::UI::WindowsAndMessaging::IsIconic(hwnd as _) != 0 }
+}
+
 /// Restore a maximized window; the window's rectangle and the size of its
 /// client area, in pixels.
 pub fn restored_rects(hwnd: isize) -> Option<([i32; 4], [i32; 2])> {

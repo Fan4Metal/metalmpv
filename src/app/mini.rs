@@ -31,6 +31,9 @@ pub(super) struct Before {
     maximized: bool,
     /// The mini player came from fullscreen: the way back goes there.
     fullscreen: bool,
+    /// Pixels per point on the window's monitor then: its size in points
+    /// for eframe, wherever the mini player went.
+    ppp: f32,
 }
 
 /// Commands that want the player's window: the mini player ends first.
@@ -108,10 +111,12 @@ impl App {
             "mini player, the window was {before:?} (maximized: {maximized}, \
              fullscreen: {fullscreen})"
         );
+        let ppp = ctx.pixels_per_point();
         self.mini = Some(Before {
             rect: before,
             maximized,
             fullscreen,
+            ppp,
         });
         self.mini_border = border;
         // Their places are the player's window's.
@@ -124,7 +129,6 @@ impl App {
             minimized: true,
             maximize: false,
         });
-        let ppp = ctx.pixels_per_point();
         let aspect = aspect(self.picture_size(&self.state()));
         let saved = self.settings.mini_rect.filter(|r| win::on_a_monitor(*r));
         let start = saved.unwrap_or_else(|| {
@@ -157,15 +161,22 @@ impl App {
             return before.fullscreen;
         };
         if !frameless::is_maximized(ctx)
-            && let Some(rect) = win::window_rect(hwnd)
+            && let Some(rect) = mini_rect(hwnd)
         {
             self.settings.mini_rect = Some(rect);
         }
-        log::debug!("the player's window again: {:?}", before.rect);
-        if before.maximized {
-            win::show_maximized(hwnd, Some(before.rect), crate::DEFAULT_SIZE);
+        // Its monitor may be gone meanwhile: then on the nearest one's work
+        // area.
+        let rect = if win::on_a_monitor(before.rect) {
+            before.rect
         } else {
-            win::set_rect(hwnd, before.rect);
+            on_work_area(before.rect)
+        };
+        log::debug!("the player's window again: {rect:?}");
+        if before.maximized {
+            win::show_maximized(hwnd, Some(rect), crate::DEFAULT_SIZE);
+        } else {
+            win::set_rect(hwnd, rect);
         }
         before.fullscreen
     }
@@ -178,21 +189,28 @@ impl App {
             return;
         };
         let border = self.mini_border;
+        let Some(rect) = from.or_else(|| win::window_rect(hwnd)) else {
+            return;
+        };
+        let work = win::work_area_at(rect);
         let least = sizing::mini_least(aspect);
-        let least = [
+        let mut least = [
             (least[0] * f64::from(ppp)).round() as i32 + border[0],
             (least[1] * f64::from(ppp)).round() as i32 + border[1],
         ];
+        // A very wide or tall picture: not over the screen.
+        if let Some(work) = work {
+            least[0] = least[0].min(work[2] - work[0]);
+            least[1] = least[1].min(work[3] - work[1]);
+        }
         // Before the window is made smaller: winit's least size is the
         // player's.
         win::set_mini(Some(win::Mini { least, aspect }));
         self.mini_aspect = aspect;
-        let Some(rect) = from.or_else(|| win::window_rect(hwnd)) else {
-            return;
-        };
-        let fitted = match (aspect, win::work_area_at(rect)) {
+        let fitted = match (aspect, work) {
             (Some(a), Some(work)) => sizing::mini_fitted(rect, a, border, least, work),
-            _ => rect,
+            // Sound alone: the size as it is, on the work area too.
+            _ => on_work_area(rect),
         };
         if from.is_some() || fitted != rect {
             log::debug!("mini player for a picture of {aspect:?}: {fitted:?}");
@@ -222,7 +240,17 @@ impl App {
             (None, None) => true,
             _ => false,
         };
-        if !same {
+        // Aero Snap (Win+arrows, an edge of the screen) sizes it without
+        // `WM_SIZING`: the window of another shape than the picture's.
+        let snapped = aspect.is_some_and(|a| {
+            ctx.input(|i| {
+                !i.pointer.any_down()
+                    && i.viewport().inner_rect.is_some_and(|r| {
+                        r.height() > 0.0 && (f64::from(r.aspect_ratio()) / a - 1.0).abs() > 0.02
+                    })
+            })
+        });
+        if !same || snapped {
             self.fit_mini(ctx.pixels_per_point(), aspect, None);
         }
     }
@@ -273,14 +301,32 @@ impl App {
         let Some(before) = &self.mini else {
             return;
         };
-        if let Some(rect) = self.hwnd.and_then(win::window_rect) {
+        if let Some(rect) = self.hwnd.and_then(mini_rect) {
             self.settings.mini_rect = Some(rect);
         }
         self.settings.window_normal = Some(before.rect);
         storage.set_string(
             "window",
-            window_settings(before.rect, self.mini_border, before.maximized, self.ppp),
+            window_settings(before.rect, self.mini_border, before.maximized, before.ppp),
         );
+    }
+}
+
+/// The mini player's rectangle to keep; none while it is minimised (its
+/// rectangle is then far off the screen).
+fn mini_rect(hwnd: isize) -> Option<[i32; 4]> {
+    if win::is_minimised(hwnd) {
+        return None;
+    }
+    win::window_rect(hwnd)
+}
+
+/// `rect` (pixels) moved onto the work area of the monitor it is mostly on,
+/// else the nearest one, as far as it fits.
+fn on_work_area(rect: [i32; 4]) -> [i32; 4] {
+    match win::work_area_at(rect) {
+        Some(work) => sizing::placed(rect, [rect[2] - rect[0], rect[3] - rect[1]], work),
+        None => rect,
     }
 }
 
