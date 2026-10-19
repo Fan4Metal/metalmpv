@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::adjust::{Adjust, Color};
+use crate::adjust::{Adjust, Color, ToneMap};
 use crate::audio::{self, Channels, Device, Passthrough};
 use crate::chapters::{self, Chapter};
 use crate::incomplete;
@@ -796,6 +796,11 @@ pub struct Player {
     hwdec_copy: bool,
     /// Filters on the processor are set (`vf` not empty).
     filters_on: bool,
+    /// HDR on SDR is off (`ToneMap::Off`): an HDR file's picture as it is.
+    hdr_off: bool,
+    /// The `target-trc` and `target-prim` given to mpv for it; none:
+    /// `auto`, mpv's own (the screen's).
+    hdr_target: Option<(String, String)>,
     /// A new file starts without subtitles (`tracks::SubMode::Off`).
     subs_off: bool,
     /// Subtitles of a file of their own remembered for the file loading,
@@ -845,6 +850,8 @@ impl Player {
             hwdec: true,
             hwdec_copy: false,
             filters_on: false,
+            hdr_off: false,
+            hdr_target: None,
             subs_off: false,
             sub_file: None,
             last_seek: None,
@@ -923,6 +930,9 @@ impl Player {
                         }
                         let was_eof = self.state.eof;
                         self.state.apply(prop, &value);
+                        if prop == Prop::VideoParams {
+                            self.follow_hdr_target();
+                        }
                         if prop == Prop::EofReached && self.state.eof && !was_eof {
                             if self.loading || self.stopped {
                                 log::debug!("end of the file before the one loading: ignored");
@@ -1466,7 +1476,34 @@ impl Player {
         if old.tone_map != new.tone_map {
             self.mpv
                 .set("tone-mapping", &Value::Str(new.tone_map.option().into()));
+            self.hdr_off = new.tone_map == ToneMap::Off;
+            self.follow_hdr_target();
         }
+    }
+
+    /// With HDR on SDR off, the screen is taken for the HDR file's own
+    /// (`target-trc` and `target-prim` of its `video-params`), so nothing
+    /// is converted and the picture looks as the signal is, washed out on
+    /// an ordinary screen; any other file, or with it on, mpv's `auto`.
+    /// Not for every file: an SDR picture into PQ is washed out too.
+    fn follow_hdr_target(&mut self) {
+        let wanted = self.state.video_params.as_ref().and_then(|p| {
+            let gamma = p.gamma.as_deref().filter(|g| matches!(*g, "pq" | "hlg"))?;
+            let primaries = p.primaries.as_deref().unwrap_or("bt.2020");
+            self.hdr_off
+                .then(|| (gamma.to_owned(), primaries.to_owned()))
+        });
+        if wanted == self.hdr_target {
+            return;
+        }
+        let (trc, prim) = match &wanted {
+            Some((trc, prim)) => (trc.clone(), prim.clone()),
+            None => ("auto".to_owned(), "auto".to_owned()),
+        };
+        log::debug!("HDR target: {trc}, {prim}");
+        self.mpv.set("target-trc", &Value::Str(trc));
+        self.mpv.set("target-prim", &Value::Str(prim));
+        self.hdr_target = wanted;
     }
 
     /// Save the frame on screen as it was decoded (without subtitles) to
@@ -1804,6 +1841,8 @@ mod tests {
             hwdec: true,
             hwdec_copy: false,
             filters_on: false,
+            hdr_off: false,
+            hdr_target: None,
             subs_off: false,
             sub_file: None,
             last_seek: None,
@@ -1897,6 +1936,8 @@ mod tests {
             hwdec: true,
             hwdec_copy: false,
             filters_on: false,
+            hdr_off: false,
+            hdr_target: None,
             subs_off: false,
             sub_file: None,
             last_seek: None,
@@ -2025,6 +2066,8 @@ mod tests {
                 hwdec: true,
                 hwdec_copy: false,
                 filters_on: false,
+                hdr_off: false,
+                hdr_target: None,
                 subs_off: false,
                 sub_file: None,
                 last_seek: None,
@@ -2109,6 +2152,8 @@ mod tests {
             hwdec: true,
             hwdec_copy: false,
             filters_on: false,
+            hdr_off: false,
+            hdr_target: None,
             subs_off: false,
             sub_file: None,
             last_seek: None,
@@ -2188,6 +2233,8 @@ mod tests {
             hwdec: true,
             hwdec_copy: false,
             filters_on: false,
+            hdr_off: false,
+            hdr_target: None,
             subs_off: false,
             sub_file: None,
             last_seek: None,
@@ -2299,6 +2346,8 @@ mod tests {
             hwdec: true,
             hwdec_copy: false,
             filters_on: false,
+            hdr_off: false,
+            hdr_target: None,
             subs_off: false,
             sub_file: None,
             last_seek: None,
@@ -2385,6 +2434,8 @@ mod tests {
             hwdec: true,
             hwdec_copy: false,
             filters_on: false,
+            hdr_off: false,
+            hdr_target: None,
             subs_off: false,
             sub_file: None,
             last_seek: None,
@@ -2504,6 +2555,8 @@ mod tests {
             hwdec: true,
             hwdec_copy: false,
             filters_on: false,
+            hdr_off: false,
+            hdr_target: None,
             subs_off: false,
             sub_file: None,
             last_seek: None,
@@ -2738,6 +2791,8 @@ mod tests {
             hwdec: true,
             hwdec_copy: false,
             filters_on: false,
+            hdr_off: false,
+            hdr_target: None,
             subs_off: false,
             sub_file: None,
             last_seek: None,
@@ -2908,6 +2963,9 @@ mod tests {
         let wanted: Vec<(&str, Value)> = vec![
             ("deinterlace", Value::Str("auto".into())),
             ("tone-mapping", Value::Str("bt.2390".into())),
+            // HDR on SDR off, for an HDR10 file.
+            ("target-trc", Value::Str("pq".into())),
+            ("target-prim", Value::Str("bt.2020".into())),
             ("video-zoom", Value::Double(0.5)),
             ("video-pan-x", Value::Double(-0.1)),
             ("sub-ass-override", Value::Str("force".into())),
@@ -3134,6 +3192,8 @@ mod tests {
             hwdec: true,
             hwdec_copy: false,
             filters_on: false,
+            hdr_off: false,
+            hdr_target: None,
             subs_off: false,
             sub_file: None,
             last_seek: None,

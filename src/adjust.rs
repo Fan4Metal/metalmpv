@@ -88,7 +88,9 @@ impl Deinterlace {
 }
 
 /// How an HDR picture is brought down to an ordinary screen
-/// (`tone-mapping`); an HDR screen takes it as it is.
+/// (`tone-mapping`); an HDR screen takes it as it is. Off: not brought
+/// down at all, the signal shown as it is (washed out; `Player::adjust`
+/// gives mpv the file's own `target-trc` and `target-prim`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ToneMap {
     #[default]
@@ -98,22 +100,32 @@ pub enum ToneMap {
     Mobius,
     Reinhard,
     Clip,
+    Off,
 }
 
 impl ToneMap {
-    pub const ALL: [ToneMap; 6] = [
+    pub const ALL: [ToneMap; 7] = [
         ToneMap::Auto,
         ToneMap::Bt2390,
         ToneMap::Hable,
         ToneMap::Mobius,
         ToneMap::Reinhard,
         ToneMap::Clip,
+        ToneMap::Off,
     ];
 
-    /// mpv's `tone-mapping`, also the stored name.
+    /// The stored name.
+    pub fn name(self) -> &'static str {
+        match self {
+            ToneMap::Off => "off",
+            other => other.option(),
+        }
+    }
+
+    /// mpv's `tone-mapping` (off converts nothing, so any).
     pub fn option(self) -> &'static str {
         match self {
-            ToneMap::Auto => "auto",
+            ToneMap::Auto | ToneMap::Off => "auto",
             ToneMap::Bt2390 => "bt.2390",
             ToneMap::Hable => "hable",
             ToneMap::Mobius => "mobius",
@@ -130,6 +142,7 @@ impl ToneMap {
             ToneMap::Mobius => tr!("Möbius, bright", "Möbius, яркий"),
             ToneMap::Reinhard => tr!("Reinhard, soft", "Reinhard, мягкий"),
             ToneMap::Clip => tr!("Clip, no compression", "Обрезка, без компрессии"),
+            ToneMap::Off => tr!("Off", "Выкл."),
         }
     }
 }
@@ -332,7 +345,7 @@ impl Adjust {
             parts.push(format!("deinterlace={}", self.deinterlace.option()));
         }
         if self.tone_map != d.tone_map {
-            parts.push(format!("tone_map={}", self.tone_map.option()));
+            parts.push(format!("tone_map={}", self.tone_map.name()));
         }
         parts.join(" ")
     }
@@ -378,7 +391,7 @@ impl Adjust {
                     }
                 }
                 ("tone_map", _) => {
-                    if let Some(x) = ToneMap::ALL.into_iter().find(|x| x.option() == value) {
+                    if let Some(x) = ToneMap::ALL.into_iter().find(|x| x.name() == value) {
                         a.tone_map = x;
                     }
                 }
@@ -419,6 +432,14 @@ mod tests {
         assert_eq!(odd.rotate, 0);
         assert_eq!(odd.pan_x, -50.0);
         assert_eq!(odd.tone_map, ToneMap::Auto);
+        // Off is kept by its own name; mpv's tone mapping is left alone.
+        let off = Adjust {
+            tone_map: ToneMap::Off,
+            ..Adjust::default()
+        };
+        assert_eq!(off.to_text(), "tone_map=off");
+        assert_eq!(Adjust::from_text("tone_map=off").tone_map, ToneMap::Off);
+        assert_eq!(ToneMap::Off.option(), "auto");
         assert!((Adjust::default().zoom_option()).abs() < 1e-9);
         let z = Adjust {
             zoom: 200,
