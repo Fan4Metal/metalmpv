@@ -184,7 +184,7 @@ A function's settings show only while it is on. **Reset all** puts the rest back
 - **Style for ASS too**: the font, the colours and the outline replace those of ASS subtitles as well, whose signs and effects then lose their look.
 - **Delay**: a slider of ±5 s, not kept between runs. Under it a timeline shows a stretch of time round the position, the vertical line in the middle, with the lines of a subtitle file of its own (SRT, WebVTT, ASS) as blocks moved by the delay. Dragging the blocks sets the delay, and a line's start stops for a moment on the position line; so a pause where a line is spoken and its block put on the line match the subtitles to the speech. The arrow buttons at its ends put the line before or after the one on screen at the position (`Ctrl+Shift+←` and `Ctrl+Shift+→`, for any subtitles), and − and + widen or narrow the stretch, from 10 s to 5 min 20 s.
 
-**Reset all** puts the look back. Without **Style for ASS too**, the size and the height apply to all subtitles, the font and the colours to text subtitles (SRT and the like). All but the delay are kept between runs.
+**Reset all** puts the look, the place and the delay back. Without **Style for ASS too**, the size and the height apply to all subtitles, the font and the colours to text subtitles (SRT and the like). All but the delay are kept between runs.
 
 </details>
 

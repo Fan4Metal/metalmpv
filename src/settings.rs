@@ -634,6 +634,13 @@ pub struct Settings {
     pub bookmarks: Vec<crate::bookmarks::Bookmark>,
 }
 
+/// The default settings, made once: views that compare with them each
+/// frame (the panel's Reset all) need not build them, keys and all.
+pub fn defaults() -> &'static Settings {
+    static DEFAULTS: std::sync::LazyLock<Settings> = std::sync::LazyLock::new(Settings::default);
+    &DEFAULTS
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {

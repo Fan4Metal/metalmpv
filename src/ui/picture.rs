@@ -830,7 +830,7 @@ fn sound_tab(
 
     // What the sound is made into; where it goes (the device, a receiver)
     // and the user's own gains stay.
-    let d = crate::settings::Settings::default();
+    let d = crate::settings::defaults();
     let changed = *kept.channels != d.audio_channels
         || *kept.volume_max != d.volume_max
         || *kept.normalize != d.normalize
@@ -853,7 +853,7 @@ fn sound_tab(
         *kept.upmix = d.upmix;
         *kept.upmix_lfe = d.upmix_lfe;
         *kept.subwoofer = d.subwoofer;
-        *kept.equalizer = d.equalizer;
+        *kept.equalizer = d.equalizer.clone();
         if now.audio_delay != 0.0 {
             out.push(Cmd::SetAudioDelay(0.0));
         }
@@ -1395,9 +1395,20 @@ fn subtitles_tab(
         );
     }
 
+    // The look, the place and the timing, as the Sound tab's delay.
+    let s = crate::settings::defaults();
+    let changed = *kept.subs != d
+        || *kept.sub_margins != s.sub_margins
+        || *kept.sub_ass_override != s.sub_ass_override
+        || now.sub_delay != 0.0;
     ui.add_space(10.0);
-    if reset_all(ui, *style != d) {
-        *style = d;
+    if reset_all(ui, changed) {
+        *kept.subs = d;
+        *kept.sub_margins = s.sub_margins;
+        *kept.sub_ass_override = s.sub_ass_override;
+        if now.sub_delay != 0.0 {
+            out.push(Cmd::SetSubDelay(0.0));
+        }
     }
 }
 
