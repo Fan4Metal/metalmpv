@@ -58,8 +58,10 @@ const MIN_LOOP: f64 = 0.1;
 /// another). Short: a double click on another file comes later and
 /// plays it; with 1.5 s it was added to the playlist.
 const SAME_BATCH: Duration = Duration::from_millis(300);
-/// How long the window stays cloaked at most while it is being maximized.
+/// How long the window stays cloaked at most as it is shown (maximized).
 const UNCLOAK_TIMEOUT: Duration = Duration::from_secs(1);
+/// Frames the window paints, cloaked, before it is shown.
+const PAINTED_TO_SHOW: u64 = 3;
 /// The storage key of where the files were left (`resume.rs`).
 const POSITIONS_KEY: &str = "resume_positions";
 
@@ -148,8 +150,10 @@ pub struct App {
     last_received: Option<Instant>,
     /// The window title shown, to change it only when it changes.
     shown_title: String,
-    /// The window is cloaked until its first maximized frame.
-    cloak: Option<(Instant, u64)>,
+    /// The window is cloaked until it has painted a few frames (else it
+    /// flashed white as it showed), and been maximized when it is to be:
+    /// the time it is shown anyway, the frame it was cloaked in, maximized.
+    cloak: Option<(Instant, u64, bool)>,
     /// Commands from `logic` (other starts, the player), run in `ui`.
     pending: Vec<Cmd>,
     /// The first video frame has been logged (`METALMPV_TRACE`).
@@ -288,14 +292,19 @@ impl App {
             win::hook_window(hwnd, move || wake.request_repaint());
             win::set_snap(settings.snap_to_centre);
             crate::instance::listen(ctx, hwnd);
-            if crate::MAXIMIZE_WHEN_SHOWN.swap(false, Ordering::Relaxed) {
-                win::cloak(hwnd, true);
+            win::cloak(hwnd, true);
+            let maximized = crate::MAXIMIZE_WHEN_SHOWN.swap(false, Ordering::Relaxed);
+            if maximized {
                 // A rectangle on a monitor no longer there would restore
                 // the window off the screen.
                 let normal = settings.window_normal.filter(|r| win::on_a_monitor(*r));
                 win::show_maximized(hwnd, normal, crate::DEFAULT_SIZE);
-                cloak = Some((Instant::now() + UNCLOAK_TIMEOUT, ctx.cumulative_frame_nr()));
             }
+            cloak = Some((
+                Instant::now() + UNCLOAK_TIMEOUT,
+                ctx.cumulative_frame_nr(),
+                maximized,
+            ));
         }
 
         // The core was started on its own thread meanwhile; the render
@@ -2930,10 +2939,13 @@ impl App {
 
     /// Show the window once it is maximized (see `win::show_maximized`).
     fn uncloak(&mut self, ctx: &egui::Context) {
-        let Some((until, frame)) = self.cloak else {
+        let Some((until, frame, maximized)) = self.cloak else {
             return;
         };
-        let ready = ctx.cumulative_frame_nr() > frame && frameless::is_maximized(ctx);
+        // A few frames painted (Windows showed the window white until its
+        // first one was), and maximized when it is to be.
+        let ready = ctx.cumulative_frame_nr() >= frame + PAINTED_TO_SHOW
+            && (!maximized || frameless::is_maximized(ctx));
         if ready || Instant::now() >= until {
             if let Some(hwnd) = self.hwnd {
                 win::cloak(hwnd, false);
