@@ -115,9 +115,10 @@ pub struct SettingsDialog {
     /// The press that gave the choice up: its click must not start it
     /// again.
     gave_up: Option<(Action, Option<usize>)>,
-    /// The last key chosen, the action that lost it and the keys before,
-    /// for Undo.
-    taken: Option<(Chord, Action, Keymap)>,
+    /// What the last change of keys did that may not have been meant (a
+    /// key taken from another action, an action's own keys reset) and the
+    /// keys before, for Undo.
+    taken: Option<(String, Keymap)>,
     /// What the Keys page shows: actions whose name or keys have it.
     key_filter: String,
 }
@@ -2015,7 +2016,7 @@ impl SettingsDialog {
                 let before = keys.clone();
                 self.taken = keys
                     .assign(action, slot, chord)
-                    .map(|other| (chord, other, before));
+                    .map(|other| (lost_keys(&[(chord, other)]), before));
                 self.capture = None;
                 changed.keys = true;
                 break;
@@ -2065,17 +2066,10 @@ impl SettingsDialog {
             );
         });
         let mut undo = None;
-        if let Some((chord, other, before)) = &self.taken {
+        if let Some((what, before)) = &self.taken {
             ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(tr!(
-                        format!("{} no longer does “{}”.", chord.label(), other.name()),
-                        format!("{} больше не делает «{}».", chord.label(), other.name())
-                    ))
-                    .size(12.5)
-                    .color(style::OSD),
-                );
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new(what).size(12.5).color(style::OSD));
                 if ui.small_button(tr!("Undo", "Отменить")).clicked() {
                     undo = Some(before.clone());
                 }
@@ -2196,7 +2190,16 @@ impl SettingsDialog {
             let before = keys.clone();
             let taken = keys.reset(action);
             self.capture = None;
-            self.taken = taken.first().map(|&(chord, other)| (chord, other, before));
+            // Its own keys besides the defaults go too: Undo brings them back.
+            let what = if taken.is_empty() {
+                tr!(
+                    format!("“{}” has its default keys again.", action.name()),
+                    format!("У «{}» снова клавиши по умолчанию.", action.name())
+                )
+            } else {
+                lost_keys(&taken)
+            };
+            self.taken = Some((what, before));
             changed.keys = true;
         }
         let add = ui
@@ -2246,6 +2249,20 @@ enum Chip {
 /// The label of a key waiting for a press.
 fn waiting() -> String {
     tr!("Press a key…", "Нажмите клавишу…").to_owned()
+}
+
+/// What the actions that lost their keys no longer do, a sentence each.
+fn lost_keys(taken: &[(Chord, Action)]) -> String {
+    taken
+        .iter()
+        .map(|(chord, other)| {
+            tr!(
+                format!("{} no longer does “{}”.", chord.label(), other.name()),
+                format!("{} больше не делает «{}».", chord.label(), other.name())
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// A key on a keycap ground with a cross that removes it; while it waits
