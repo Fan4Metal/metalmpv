@@ -518,12 +518,21 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, kept: &mut Kept<'_>, now: Now<'_>
     ) {
         // The angle chosen as one of four, the flips as two switches side
         // by side, both rows as wide as the others' controls.
-        let turn_tip = crate::keymap::with_key(tr!("Clockwise", "По часовой стрелке"), Cmd::Rotate);
         let angles = [0, 90, 180, 270].map(|a| Segment {
             icon: None,
             text: format!("{a}°"),
             on: adjust.rotate == a,
-            tip: turn_tip.clone(),
+            tip: crate::keymap::with_key(
+                &if a == 0 {
+                    tr!("As the file says", "Как задано в файле").to_owned()
+                } else {
+                    tr!(
+                        format!("Turned {a}° clockwise"),
+                        format!("Повёрнуто на {a}° по часовой стрелке")
+                    )
+                },
+                Cmd::Rotate,
+            ),
         });
         let rotation = tr!("Rotation", "Поворот");
         labelled_tip(ui, rotation, None, |ui| {
@@ -538,7 +547,7 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, kept: &mut Kept<'_>, now: Now<'_>
                 on: adjust.flip,
                 tip: tr!(
                     "Turned upside down (on the processor)",
-                    "Перевернуть вертикально (на процессоре)"
+                    "Перевёрнуто сверху вниз (на процессоре)"
                 )
                 .into(),
             },
@@ -548,7 +557,7 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, kept: &mut Kept<'_>, now: Now<'_>
                 on: adjust.mirror,
                 tip: tr!(
                     "Mirrored left to right (on the processor)",
-                    "Отразить слева направо (на процессоре)"
+                    "Отражено слева направо (на процессоре)"
                 )
                 .into(),
             },

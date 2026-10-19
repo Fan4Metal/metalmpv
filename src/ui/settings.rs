@@ -1262,7 +1262,7 @@ fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>, chan
                 )),
                 SLIDER_ROW,
                 |ui| {
-                    let default = Settings::default().fullscreen_transparency;
+                    let default = crate::settings::defaults().fullscreen_transparency;
                     back_to(
                         ui,
                         &mut settings.fullscreen_transparency,
@@ -1303,7 +1303,7 @@ fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>, chan
             divider(ui);
             row(
                 ui,
-                tr!("Briefly", "Кратко"),
+                tr!("In brief", "Кратко"),
                 Some(tr!(
                     "One row: the format, the picture's codec, size and HDR, the sound and the subtitles playing. Off, every chip of the information window.",
                     "Одна строка: формат, кодек, размер и HDR изображения, играющие звук и субтитры. Если выключено — все чипы окна сведений."
@@ -1321,7 +1321,7 @@ fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>, chan
                 )),
                 SLIDER_ROW,
                 |ui| {
-                    let default = Settings::default().info_overlay_transparency;
+                    let default = crate::settings::defaults().info_overlay_transparency;
                     back_to(
                         ui,
                         &mut settings.info_overlay_transparency,
@@ -1536,7 +1536,7 @@ fn shorten(text: &str, chars: usize) -> String {
 
 /// The OSD line: on or off, its font, size and look, with a sample.
 fn osd_section(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
-    let d = Settings::default();
+    let d = crate::settings::defaults();
     section(
         ui,
         tr!("On-screen messages", "Экранные сообщения"),
