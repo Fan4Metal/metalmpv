@@ -766,7 +766,10 @@ fn chip(ui: &mut Ui, chip: &info::Chip) -> egui::Response {
 /// The chips of the header over the picture's top right corner (`Ctrl+I`):
 /// on a dark ground `transparency` percent see-through (the text stays),
 /// each row's chips right-aligned and wrapped within `WIDEST` of `area`'s
-/// width. Only painted: the picture under them keeps the pointer.
+/// width. Only painted: the picture under them keeps the pointer. In the
+/// middle order, under the menus, the popovers, the fullscreen panels and the
+/// modals (a painted layer comes after every area of its order); the
+/// information window, the only window of that order, hides them.
 pub fn overlay(ctx: &egui::Context, area: Rect, rows: &[Vec<info::Chip>], transparency: f32) {
     const MARGIN: f32 = 12.0;
     const GAP: f32 = 4.0;
@@ -777,7 +780,7 @@ pub fn overlay(ctx: &egui::Context, area: Rect, rows: &[Vec<info::Chip>], transp
     let opacity = (1.0 - transparency / 100.0).clamp(0.0, 1.0);
     let painter = ctx
         .layer_painter(egui::LayerId::new(
-            egui::Order::Foreground,
+            egui::Order::Middle,
             egui::Id::new("info_overlay"),
         ))
         .with_clip_rect(area);

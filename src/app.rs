@@ -690,9 +690,9 @@ impl App {
     }
 
     /// The file's information is shown: its window or its chips over the
-    /// picture.
+    /// picture (not in the mini player).
     fn info_wanted(&self) -> bool {
-        self.info.open || self.settings.info_overlay
+        self.info.open || (self.settings.info_overlay && self.mini.is_none())
     }
 
     /// Read what the container of the file playing says while its
@@ -3106,9 +3106,11 @@ impl App {
         let look = &self.settings.osd_style;
         self.osd
             .paint(ui.ctx(), osd_rect, state, look, scale, self.settings.osd);
-        // The window says it all while open.
+        // The window says it all while open; the mini player shows only the
+        // picture.
         if self.settings.info_overlay
             && !self.info.open
+            && self.mini.is_none()
             && !state.idle
             && self.engine_error.is_none()
         {
@@ -4507,8 +4509,9 @@ impl eframe::App for App {
             .as_ref()
             .and_then(|c| c.loaded.as_ref())
             .map(|(cover, texture)| CoverView { cover, texture });
+        let info_wanted = self.info_wanted();
         if let Some(player) = &mut self.player {
-            if self.info.open || self.settings.info_overlay {
+            if info_wanted {
                 player.ask_scan();
             }
             // The figures of the moment, for the information window and
