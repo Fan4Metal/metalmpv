@@ -135,6 +135,11 @@ pub struct App {
     /// is open, and its handle once found.
     playlist_builder: Option<egui::ViewportBuilder>,
     playlist_hwnd: Option<isize>,
+    /// The playlist's window made hidden (no white flash): frames it was
+    /// looked for, and frames painted since it was shown (uncloaked at
+    /// `PLAYLIST_PAINTED`).
+    playlist_looked: u32,
+    playlist_painted: u32,
     /// The seek bar is being dragged: the position under the pointer.
     seek_drag: Option<f64>,
     /// When the last file came from another start, or this start's own
@@ -394,6 +399,8 @@ impl App {
             window_icon: style::Accent::Blue,
             playlist_builder: None,
             playlist_hwnd: None,
+            playlist_looked: 0,
+            playlist_painted: 0,
             seek_drag: None,
             last_received: (!files.is_empty()).then(Instant::now),
             shown_title: String::new(),
@@ -2377,6 +2384,7 @@ impl App {
         if !shown {
             if self.playlist_builder.take().is_some() {
                 self.playlist_hwnd = None;
+                self.playlist_looked = 0;
                 win::playlist_closed();
             }
             return;
@@ -2392,7 +2400,10 @@ impl App {
             .playlist_builder
             .get_or_insert_with(|| {
                 // Frameless as the player's: the title row is the app's own.
+                // Made hidden: Windows showed a new window white until its
+                // first frame. It is shown, cloaked, once found below.
                 let builder = egui::ViewportBuilder::default()
+                    .with_visible(false)
                     .with_title(tr!("Playlist", "Плейлист"))
                     .with_decorations(false)
                     .with_resizable(true)
@@ -2411,6 +2422,7 @@ impl App {
                 }
             })
             .clone();
+        let title = builder.title.clone().unwrap_or_default();
         let id = egui::ViewportId::from_hash_of("playlist_window");
         let mut close = false;
         let mut dropped = Vec::new();
@@ -2466,8 +2478,8 @@ impl App {
         if close {
             self.settings.playlist_visible = false;
         }
-        // eframe gives no handle for the window: the visible one of this
-        // thread that is not the player's. Found again if it was made anew
+        // eframe gives no handle for the window: the one of this thread with
+        // its title, hidden as it is made. Found again if it was made anew
         // (its handle may then be the old one's: not owned by the player
         // yet).
         if let (Some(h), Some(main)) = (self.playlist_hwnd, self.hwnd)
@@ -2475,11 +2487,22 @@ impl App {
         {
             self.playlist_hwnd = None;
         }
+        if self.playlist_hwnd.is_none() {
+            self.playlist_looked += 1;
+            // Not found: shown as it is rather than never.
+            if self.playlist_looked == PLAYLIST_LOOKED {
+                ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Visible(true));
+            }
+            ctx.request_repaint();
+        }
         if self.playlist_hwnd.is_none()
             && let Some(main) = self.hwnd
-            && let Some(child) = win::thread_windows().into_iter().find(|h| *h != main)
+            && let Some(child) = win::thread_window(&title).filter(|h| *h != main)
         {
             self.playlist_hwnd = Some(child);
+            // Shown cloaked, uncloaked once it has painted.
+            win::cloak(child, true);
+            self.playlist_painted = 0;
             let first = || {
                 let main = win::visible_rect(main)?;
                 Some(crate::dock::first_place(
@@ -2492,6 +2515,16 @@ impl App {
                 win::set_visible_rect(child, rect);
             }
             win::adopt_playlist(child, main);
+            ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Visible(true));
+        }
+        if let Some(h) = self.playlist_hwnd
+            && self.playlist_painted < PLAYLIST_PAINTED
+        {
+            self.playlist_painted += 1;
+            if self.playlist_painted == PLAYLIST_PAINTED {
+                win::cloak(h, false);
+            }
+            ctx.request_repaint();
         }
         // A minimised window is far off the screen.
         if let Some(rect) = self.playlist_hwnd.and_then(win::visible_rect)
@@ -3933,6 +3966,10 @@ fn info_subject<'a>(
 
 /// The width of the playlist's own window the first time, in points.
 const PLAYLIST_WIDTH: f32 = 300.0;
+/// Frames the playlist's window is looked for before it is shown anyway,
+/// and frames it paints, cloaked, before it is uncloaked.
+const PLAYLIST_LOOKED: u32 = 10;
+const PLAYLIST_PAINTED: u32 = 3;
 
 /// The files dropped on the window `ctx` is drawing.
 fn dropped_files(ctx: &egui::Context) -> Vec<PathBuf> {

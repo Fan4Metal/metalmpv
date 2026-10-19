@@ -1044,30 +1044,33 @@ pub fn set_visible_rect(hwnd: isize, rect: [i32; 4]) {
     );
 }
 
-/// The visible top-level windows of this thread, for the window egui makes
-/// for a child viewport: eframe gives no handle for it (metalmd's way).
-pub fn thread_windows() -> Vec<isize> {
+/// The top-level window of this thread titled `title`, hidden or not: the
+/// window egui makes for a child viewport (made hidden, so as not to flash
+/// white), for which eframe gives no handle.
+pub fn thread_window(title: &str) -> Option<isize> {
     use windows_sys::Win32::Foundation::{HWND, LPARAM};
     use windows_sys::Win32::System::Threading::GetCurrentThreadId;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{EnumThreadWindows, IsWindowVisible};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{EnumThreadWindows, GetWindowTextW};
     unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> i32 {
         // SAFETY: `lparam` is the pointer to `out` passed below, and the
         // callback runs only during the call.
         let out = unsafe { &mut *(lparam as *mut Vec<isize>) };
-        if unsafe { IsWindowVisible(hwnd) } != 0 {
-            out.push(hwnd as isize);
-        }
+        out.push(hwnd as isize);
         1
     }
-    let mut out: Vec<isize> = Vec::new();
+    let mut all: Vec<isize> = Vec::new();
     unsafe {
         EnumThreadWindows(
             GetCurrentThreadId(),
             Some(collect),
-            (&raw mut out) as LPARAM,
+            (&raw mut all) as LPARAM,
         )
     };
-    out
+    all.into_iter().find(|&h| {
+        let mut text = [0u16; 128];
+        let n = unsafe { GetWindowTextW(h as _, text.as_mut_ptr(), text.len() as i32) };
+        n > 0 && String::from_utf16_lossy(&text[..n as usize]) == title
+    })
 }
 
 /// The playlist's window, while it is open, and the player's edge it is
