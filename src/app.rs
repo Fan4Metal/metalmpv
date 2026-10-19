@@ -934,6 +934,18 @@ impl App {
             })
             .unwrap_or_else(|| input.to_string_lossy().into_owned());
         let layout = self.settings.video_map;
+        // The picture as shown: the turn, the shape, the deinterlacing and
+        // a mirror (upside down is one turned half round); not the colour,
+        // the zoom or the other filters.
+        let a = &self.adjust;
+        let mut picture = vec![
+            ("video-rotate", a.rotation().to_string()),
+            ("video-aspect-override", a.aspect.option().to_owned()),
+            ("deinterlace", a.deinterlace.option().to_owned()),
+        ];
+        if a.mirror != a.flip {
+            picture.push(("vf", "lavfi=[hflip]".to_owned()));
+        }
         let request = crate::video_map::Request {
             output: crate::video_map::file_name(&dir, &self.frame_stem(), layout.format),
             input,
@@ -944,6 +956,8 @@ impl App {
             } else {
                 "no"
             },
+            picture,
+            copy: self.settings.video_map_copy,
         };
         let wake = ctx.clone();
         match crate::video_map::Job::start(request, move || wake.request_repaint()) {
@@ -956,8 +970,8 @@ impl App {
     }
 
     /// How the video map goes: the frames taken on the OSD, then where it
-    /// was written, the picture put on the clipboard when wanted.
-    fn follow_video_map(&mut self, ctx: &egui::Context) {
+    /// was written and whether it went on the clipboard.
+    fn follow_video_map(&mut self) {
         let Some((job, shown)) = &mut self.video_map else {
             return;
         };
@@ -976,15 +990,7 @@ impl App {
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_default();
-                let copy = self.settings.video_map_copy;
-                if copy {
-                    let (w, h) = made.image.dimensions();
-                    ctx.copy_image(egui::ColorImage::from_rgba_unmultiplied(
-                        [w as usize, h as usize],
-                        made.image.as_raw(),
-                    ));
-                }
-                self.osd.show_always(Osd::Text(if copy {
+                self.osd.show_always(Osd::Text(if made.copied {
                     tr!(
                         format!("[ Video map saved and copied: {name} ]"),
                         format!("[ Карта видео сохранена и скопирована: {name} ]")
@@ -3617,6 +3623,7 @@ fn map_progress(done: u32, frames: u32) -> String {
 }
 
 fn map_failed(why: &str) -> String {
+    let why = crate::video_map::reason_in(crate::i18n::lang(), why);
     tr!(
         format!("Cannot make the video map: {why}"),
         format!("Не удалось создать карту видео: {why}")
@@ -4223,7 +4230,7 @@ impl eframe::App for App {
             storage.flush();
         }
         self.follow_audio_device();
-        self.follow_video_map(ctx);
+        self.follow_video_map();
         let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         // eframe calls no `ui` for a minimised window: the thumbnail
         // buttons' commands run here, else they waited for the window.
@@ -4687,11 +4694,11 @@ impl eframe::App for App {
     /// the core.
     fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
         crate::instance::closing();
-        // A stretch being saved is cancelled, and its thread is given a
-        // moment to delete the file half written.
+        // A stretch or a map being saved is cancelled, and its thread is
+        // given a moment to delete the file half written.
         self.clip_dialog.cancel();
         if let Some((job, _)) = &self.video_map {
-            job.cancel();
+            job.cancel_and_wait(std::time::Duration::from_secs(3));
         }
         if let Some(video) = &mut self.video {
             video.free(gl);

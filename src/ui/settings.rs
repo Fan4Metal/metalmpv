@@ -1377,12 +1377,13 @@ fn video_map_section(ui: &mut Ui, settings: &mut Settings) {
             )),
             230.0,
             |ui| {
+                let px = |w: u32| tr!(format!("{w} px"), format!("{w} пикс."));
                 egui::ComboBox::from_id_salt("settings_video_map_width")
-                    .selected_text(format!("{} px", map.width))
+                    .selected_text(px(map.width))
                     .width(120.0)
                     .show_ui(ui, |ui| {
                         for w in WIDTHS {
-                            ui.selectable_value(&mut map.width, w, format!("{w} px"));
+                            ui.selectable_value(&mut map.width, w, px(w));
                         }
                     });
             },

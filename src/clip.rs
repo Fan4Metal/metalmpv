@@ -434,7 +434,7 @@ pub fn file_name(folder: &Path, input: &Path, from: f64, to: f64) -> PathBuf {
 
 /// `name` as a file name Windows takes: `<>:"/\|?*` and control characters
 /// as `_`, no dots or spaces at the end, at most 150 characters.
-fn safe_name(name: &str) -> String {
+pub(crate) fn safe_name(name: &str) -> String {
     let name: String = name
         .chars()
         .map(|c| {

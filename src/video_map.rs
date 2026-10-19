@@ -132,13 +132,42 @@ pub struct Request {
     /// mpv's `hwdec`: `no` or `auto-copy-safe` (the frames come back for
     /// the processor).
     pub hwdec: &'static str,
+    /// mpv's options of the picture as the player shows it: the turn, the
+    /// shape, the deinterlacing, a mirror (`App::adjust`).
+    pub picture: Vec<(&'static str, String)>,
+    /// Put the picture on the clipboard too, from the map's thread: arboard
+    /// encodes a PNG beside the bitmap, which held the window's frames.
+    pub copy: bool,
 }
 
-/// A map made: where it was written and the picture (for the clipboard).
+/// A map made: where it was written, and whether it is on the clipboard.
 pub struct Made {
     pub output: PathBuf,
-    pub image: RgbaImage,
+    pub copied: bool,
 }
+
+/// Why a map was not made, in the interface's language: the map's own
+/// reasons translated, mpv's as they are.
+pub fn reason_in(lang: crate::i18n::Lang, why: &str) -> String {
+    let ru = lang == crate::i18n::Lang::Ru;
+    let text = match why {
+        NO_DURATION if ru => "у файла нет длительности",
+        NO_PICTURE if ru => "в файле нет изображения",
+        NO_FRAME if ru => "mpv не отдал ни одного кадра",
+        CANCELLED if ru => "отменено",
+        FAILED if ru => "ошибка при создании",
+        STOPPED if ru => "ядро mpv остановилось",
+        other => other,
+    };
+    text.to_owned()
+}
+
+const NO_DURATION: &str = "the file has no duration";
+const NO_PICTURE: &str = "the file has no picture";
+const NO_FRAME: &str = "no frame could be taken";
+const CANCELLED: &str = "cancelled";
+const FAILED: &str = "the map failed";
+const STOPPED: &str = "the core stopped";
 
 /// A map being made.
 pub struct Job {
@@ -158,7 +187,7 @@ impl Job {
         let (p, c) = (done_frames.clone(), cancel.clone());
         crate::worker::spawn("video map", move || {
             let result = crate::worker::guarded(|| make(&request, &p, &c, &wake))
-                .unwrap_or_else(|| Err("the map failed".into()));
+                .unwrap_or_else(|| Err(FAILED.into()));
             let _ = send.send(result);
             wake();
         })
@@ -176,8 +205,11 @@ impl Job {
         self.done_frames.load(Ordering::Relaxed)
     }
 
-    pub fn cancel(&self) {
+    /// Cancel it and wait up to `wait` for its thread to end (the program
+    /// closing: else its file was left half written).
+    pub fn cancel_and_wait(&self, wait: Duration) {
         self.cancel.store(true, Ordering::Relaxed);
+        let _ = self.done.recv_timeout(wait);
     }
 
     /// How it ended, once it has.
@@ -201,6 +233,9 @@ pub fn make(
     let layout = request.layout;
     let grabbed = grab(request, progress, cancel, wake)?;
     let image = compose(&request.title, &grabbed);
+    if cancel.load(Ordering::Relaxed) {
+        return Err(CANCELLED.into());
+    }
     write(&image, &request.output, layout.format)?;
     log::info!(
         "video map of {} ({}×{} frames) in {:.0} ms: {}",
@@ -210,10 +245,28 @@ pub fn make(
         started.elapsed().as_secs_f64() * 1e3,
         request.output.display()
     );
+    let copied = request.copy && !cancel.load(Ordering::Relaxed) && copy(&image);
     Ok(Made {
         output: request.output.clone(),
-        image,
+        copied,
     })
+}
+
+/// Put `image` on the clipboard; whether it went.
+fn copy(image: &RgbaImage) -> bool {
+    let (w, h) = image.dimensions();
+    let data = arboard::ImageData {
+        width: w as usize,
+        height: h as usize,
+        bytes: std::borrow::Cow::Borrowed(image.as_raw()),
+    };
+    match arboard::Clipboard::new().and_then(|mut c| c.set_image(data)) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!("video map: the clipboard: {e}");
+            false
+        }
+    }
 }
 
 /// `metalmpv --map`: the maps of the files named, each beside its file
@@ -222,8 +275,7 @@ pub fn make(
 /// arguments not understood.
 pub fn command_line(args: impl Iterator<Item = std::ffi::OsString>) -> i32 {
     use std::io::Write;
-    const USAGE: &str =
-        "metalmpv --map VIDEO... [-o FILE|FOLDER] [--grid 4x4] [--width 1536] [--png] [--no-info]";
+    const USAGE: &str = "metalmpv --map VIDEO... [-o FILE|FOLDER] [--grid 4x4] [--width 1536] [--png|--jpg] [--no-info]";
     let mut layout = Layout::default();
     let mut inputs = Vec::new();
     let mut out: Option<PathBuf> = None;
@@ -235,8 +287,8 @@ pub fn command_line(args: impl Iterator<Item = std::ffi::OsString>) -> i32 {
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("-o" | "--out") => match args.next() {
-                Some(o) => out = Some(PathBuf::from(o)),
-                None => return bad("-o needs a path"),
+                Some(o) if !o.to_string_lossy().starts_with("--") => out = Some(PathBuf::from(o)),
+                _ => return bad("-o needs a path"),
             },
             Some("--grid") => {
                 let grid = args.next().map(|g| g.to_string_lossy().to_lowercase());
@@ -266,33 +318,38 @@ pub fn command_line(args: impl Iterator<Item = std::ffi::OsString>) -> i32 {
     if inputs.is_empty() {
         return bad("no video named");
     }
-    let to_file = out
-        .as_ref()
-        .is_some_and(|o| o.extension().is_some() && !o.is_dir());
+    // A path with an extension names the picture, unless it is a folder.
+    let to_file = match out.as_ref() {
+        Some(o) if o.extension().is_some() && !o.is_dir() => {
+            let ext = o.extension().unwrap_or_default().to_string_lossy();
+            match ext.to_ascii_lowercase().as_str() {
+                "png" => layout.format = FrameFormat::Png,
+                "jpg" | "jpeg" => layout.format = FrameFormat::Jpg,
+                _ => return bad("-o names a .jpg or .png picture, or a folder"),
+            }
+            true
+        }
+        _ => false,
+    };
     if to_file && inputs.len() > 1 {
         return bad("-o names one picture, but several videos were named");
     }
     let mut code = 0;
     for input in inputs {
+        let url = crate::playlist::is_url(&input);
         let stem = input
             .file_stem()
-            .map(|s| s.to_string_lossy().into_owned())
+            .map(|s| crate::clip::safe_name(&s.to_string_lossy()))
+            .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "video".into());
         let output = match &out {
-            Some(o) if to_file => {
-                let png = o.extension().is_some_and(|e| e.eq_ignore_ascii_case("png"));
-                layout.format = if png {
-                    FrameFormat::Png
-                } else {
-                    FrameFormat::Jpg
-                };
-                o.clone()
-            }
+            Some(o) if to_file => o.clone(),
             Some(folder) => file_name(folder, &stem, layout.format),
+            // Beside the video; an address's beside the command.
             None => file_name(
                 input
                     .parent()
-                    .filter(|p| !p.as_os_str().is_empty())
+                    .filter(|p| !url && !p.as_os_str().is_empty())
                     .unwrap_or(Path::new(".")),
                 &stem,
                 layout.format,
@@ -307,13 +364,25 @@ pub fn command_line(args: impl Iterator<Item = std::ffi::OsString>) -> i32 {
             layout,
             output,
             hwdec: "auto-copy-safe",
+            picture: Vec::new(),
+            copy: false,
         };
-        match make(
-            &request,
-            &AtomicU32::new(0),
-            &AtomicBool::new(false),
-            &|| {},
-        ) {
+        // On a worker's thread: a panic there is an error of this file,
+        // not a message box that a script would wait on for good.
+        let made = crate::worker::spawn("video map", move || {
+            crate::worker::guarded(|| {
+                make(
+                    &request,
+                    &AtomicU32::new(0),
+                    &AtomicBool::new(false),
+                    &|| {},
+                )
+            })
+            .unwrap_or_else(|| Err(FAILED.into()))
+        })
+        .map_err(|e| e.to_string())
+        .and_then(|thread| thread.join().unwrap_or_else(|_| Err(FAILED.into())));
+        match made {
             Ok(made) => {
                 let _ = writeln!(std::io::stdout(), "{}", made.output.display());
             }
@@ -452,6 +521,8 @@ fn grab(
         // Nothing read ahead past the frame wanted.
         ("cache", "no"),
     ];
+    let picture = request.picture.iter().map(|(k, v)| (*k, v.as_str()));
+    let options: Vec<(&str, &str)> = options.into_iter().chain(picture).collect();
     let mut mpv = Mpv::new(api, &options)?;
     mpv.request_log_messages("warn");
     let input = request.input.to_string_lossy();
@@ -476,10 +547,19 @@ fn grab(
 
     loop {
         if cancel.load(Ordering::Relaxed) {
-            return Err("cancelled".into());
+            return Err(CANCELLED.into());
         }
         if last_event.elapsed() > STALL {
-            return Err("mpv gave no frame".into());
+            // A stream that does not seek, a share gone: the frames taken
+            // so far, the rest blank.
+            if params.is_none() || frames.iter().all(|(_, f)| f.is_none()) {
+                return Err(NO_FRAME.into());
+            }
+            log::warn!("video map: mpv went silent after {} frames", frames.len());
+            while let Some(&t) = times.get(frames.len()) {
+                frames.push((t, None));
+            }
+            break;
         }
         let Some(event) = mpv.next_event() else {
             std::thread::sleep(Duration::from_millis(5));
@@ -510,7 +590,7 @@ fn grab(
                 DURATION => {
                     let duration = value.double().filter(|d| d.is_finite() && *d > 0.0);
                     let Some(duration) = duration else {
-                        return Err("the file has no duration".into());
+                        return Err(NO_DURATION.into());
                     };
                     about.duration = duration;
                     times = self::times(duration, layout.frames());
@@ -520,12 +600,12 @@ fn grab(
                 BYTES => about.bytes = value.int().filter(|b| *b > 0),
                 PARAMS => {
                     let Some(p) = Params::of(&value) else {
-                        return Err("the file has no picture".into());
+                        return Err(NO_PICTURE.into());
                     };
                     params = Some(p);
                     about.size = Some(p.shown());
                     if times.is_empty() {
-                        return Err("the file has no duration".into());
+                        return Err(NO_DURATION.into());
                     }
                     next(&mpv, &frames, &times);
                 }
@@ -542,6 +622,11 @@ fn grab(
                 if let Some(e) = error {
                     log::warn!("video map: seek to frame {}: {e}", frames.len() + 1);
                     frames.push((times[frames.len()], None));
+                    progress.store(frames.len() as u32, Ordering::Relaxed);
+                    wake();
+                    if frames.len() == times.len() {
+                        break;
+                    }
                     next(&mpv, &frames, &times);
                 } else {
                     seeking = true;
@@ -584,13 +669,13 @@ fn grab(
                 level,
                 text,
             } => log::info!("video map mpv {level} [{prefix}] {text}"),
-            Event::Shutdown => return Err("the core stopped".into()),
+            Event::Shutdown => return Err(STOPPED.into()),
             _ => {}
         }
     }
     drop(mpv);
     if frames.iter().all(|(_, f)| f.is_none()) {
-        return Err("no frame could be taken".into());
+        return Err(NO_FRAME.into());
     }
     let p = params.expect("params");
     Ok(Grabbed {
@@ -658,6 +743,20 @@ fn codec_name(format: &str) -> String {
         "prores" => "ProRes".into(),
         other => other.to_uppercase(),
     }
+}
+
+/// A frame's time: `MM:SS` (`H:MM:SS` in a file of an hour or more), with
+/// the tenths after a point when wanted.
+fn frame_time(seconds: f64, long: bool, tenths: bool) -> String {
+    if !tenths {
+        return crate::format::time(Some(seconds), long);
+    }
+    let t = (seconds.max(0.0) * 10.0).round() as u64;
+    format!(
+        "{}.{}",
+        crate::format::time(Some((t / 10) as f64), long),
+        t % 10
+    )
 }
 
 /// The line under the title: duration, picture, codec, frame rate, size.
@@ -747,10 +846,12 @@ fn compose(title: &str, grabbed: &Grabbed) -> RgbaImage {
     }
     // The times at each frame's bottom right, white on a dark ground.
     let long = grabbed.about.duration >= 3600.0;
+    // Frames less than 2 s apart (a short file) would share their seconds.
+    let tenths = grabbed.about.duration / (grabbed.frames.len().max(1) as f64) < 2.0;
     let time_px = (tw as f32 / 13.0).clamp(11.0, 34.0);
     for (i, (t, _)) in grabbed.frames.iter().enumerate() {
         let (x, y) = place(i as u32);
-        let label = crate::format::time(Some(*t), long);
+        let label = frame_time(*t, long, tenths);
         let w = text.width(&label, time_px, true);
         let pad = f64::from(time_px) * 0.35;
         let inset = f64::from(time_px) * 0.3;
@@ -774,18 +875,23 @@ fn compose(title: &str, grabbed: &Grabbed) -> RgbaImage {
     canvas
 }
 
-/// Write `image` as `format`; nothing is left of a file not written whole.
+/// Write `image` as `format`: as `<name>.part`, renamed to `path` only when
+/// whole, so that a failure (or the program closing) leaves nothing and a
+/// file at `path` is replaced only by a map written whole.
 fn write(image: &RgbaImage, path: &Path, format: FrameFormat) -> Result<(), String> {
     use image::ImageEncoder;
-    if let Some(dir) = path.parent() {
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
+    let mut part = path.as_os_str().to_owned();
+    part.push(".part");
+    let part = PathBuf::from(part);
+    let file = std::fs::File::create(&part).map_err(|e| e.to_string())?;
     let mut out = std::io::BufWriter::new(file);
     let (w, h) = image.dimensions();
     let result = match format {
         FrameFormat::Jpg => {
-            let rgb = image::DynamicImage::ImageRgba8(image.clone()).into_rgb8();
+            let rgb: image::RgbImage = image::buffer::ConvertBuffer::convert(image);
             image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 90).write_image(
                 rgb.as_raw(),
                 w,
@@ -803,8 +909,9 @@ fn write(image: &RgbaImage, path: &Path, format: FrameFormat) -> Result<(), Stri
     .map_err(|e| e.to_string())
     .and_then(|()| std::io::Write::flush(&mut out).map_err(|e| e.to_string()));
     drop(out);
+    let result = result.and_then(|()| std::fs::rename(&part, path).map_err(|e| e.to_string()));
     if result.is_err() {
-        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(&part);
     }
     result
 }
@@ -1057,6 +1164,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn frame_times_of_short_files_have_tenths() {
+        assert_eq!(frame_time(125.4, false, false), "02:05");
+        assert_eq!(frame_time(0.125, false, true), "00:00.1");
+        assert_eq!(frame_time(1.96, false, true), "00:02.0");
+        assert_eq!(frame_time(3.25, true, true), "0:00:03.3");
+    }
+
+    #[test]
+    fn the_map_own_reasons_are_translated() {
+        use crate::i18n::Lang;
+        assert_eq!(reason_in(Lang::Ru, NO_PICTURE), "в файле нет изображения");
+        assert_eq!(reason_in(Lang::En, NO_PICTURE), NO_PICTURE);
+        // mpv's own, as they are.
+        assert_eq!(reason_in(Lang::Ru, "loading failed"), "loading failed");
+    }
+
+    #[test]
     fn layout_round_trip() {
         let l = Layout {
             columns: 5,
@@ -1161,18 +1285,35 @@ mod tests {
             } else {
                 "auto-copy-safe"
             },
+            // The player's look as the app passes it (METALMPV_MAP_ROTATE:
+            // a turn, METALMPV_MAP_MIRROR: a mirror).
+            picture: [
+                ("deinterlace", "auto".to_owned()),
+                ("video-aspect-override", "-1".to_owned()),
+                (
+                    "video-rotate",
+                    std::env::var("METALMPV_MAP_ROTATE").unwrap_or_else(|_| "0".into()),
+                ),
+            ]
+            .into_iter()
+            .chain(std::env::var_os("METALMPV_MAP_MIRROR").map(|_| ("vf", "lavfi=[hflip]".into())))
+            .collect(),
+            copy: std::env::var_os("METALMPV_MAP_COPY").is_some(),
         };
         let progress = AtomicU32::new(0);
         let started = Instant::now();
         let made = make(&request, &progress, &AtomicBool::new(false), &|| {}).unwrap();
+        let (w, h) = image::image_dimensions(&made.output).unwrap();
         println!(
-            "{} ({}×{}) in {:.0} ms",
+            "{} ({w}×{h}, copied: {}) in {:.0} ms",
             made.output.display(),
-            made.image.width(),
-            made.image.height(),
+            made.copied,
             started.elapsed().as_secs_f64() * 1e3
         );
         assert_eq!(progress.load(Ordering::Relaxed), 16);
         assert!(std::fs::metadata(&output).unwrap().len() > 10_000);
+        let mut part = output.into_os_string();
+        part.push(".part");
+        assert!(!PathBuf::from(part).exists());
     }
 }

@@ -42,6 +42,9 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png"]
 # egui's own rasterizer of its glyphs (the same version and features): the
 # text of the video map (video_map.rs), drawn from skrifa's outlines.
 vello_cpu = { version = "0.1.0", default-features = false, features = ["std", "u8_pipeline", "f32_pipeline"] }
+# egui-winit's clipboard (the same version): the video map put on it from its
+# own thread, as arboard encodes a PNG beside the bitmap.
+arboard = { version = "3.6.1", default-features = false, features = ["image-data"] }
 # eframe's own, to check that the settings file reads before a copy of it is kept.
 ron = "0.12.2"
 
