@@ -34,16 +34,35 @@ pub fn error_box(title: &str, text: &str) {
 
 /// The release build is a GUI-subsystem program with no console of its own,
 /// so text printed by the command line modes (`--version`, `--help`,
-/// `--bench`) would be lost when started from cmd or PowerShell. Attach to
-/// the parent's console in that case; output already redirected (a pipe or
-/// a file) is left untouched. A GUI program started by Python's
-/// `subprocess` gets no handles either, hence the check.
+/// `--map`) would be lost when started from cmd or PowerShell. Attach to
+/// the parent's console when stdout or stderr has no handle; one already
+/// redirected (a pipe or a file) keeps it, and one without gets the
+/// console's (`> out.txt` alone leaves stderr, the errors, without). A GUI
+/// program started by Python's `subprocess` gets no handles either, hence
+/// the check.
 pub fn attach_parent_console() {
-    use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
-    if std::io::stdout().as_raw_handle().is_null() {
-        unsafe {
-            AttachConsole(ATTACH_PARENT_PROCESS);
+    use std::os::windows::io::{AsRawHandle, IntoRawHandle};
+    use windows_sys::Win32::System::Console::{
+        ATTACH_PARENT_PROCESS, AttachConsole, GetStdHandle, STD_ERROR_HANDLE, STD_HANDLE,
+        STD_OUTPUT_HANDLE, SetStdHandle,
+    };
+    let out = std::io::stdout().as_raw_handle();
+    let err = std::io::stderr().as_raw_handle();
+    if !out.is_null() && !err.is_null() {
+        return;
+    }
+    if unsafe { AttachConsole(ATTACH_PARENT_PROCESS) } == 0 {
+        return;
+    }
+    for (which, before) in [(STD_OUTPUT_HANDLE, out), (STD_ERROR_HANDLE, err)] {
+        let which: STD_HANDLE = which;
+        if !before.is_null() {
+            // Redirected: kept, whatever attaching did.
+            unsafe { SetStdHandle(which, before as _) };
+        } else if unsafe { GetStdHandle(which) }.is_null()
+            && let Ok(console) = std::fs::OpenOptions::new().write(true).open("CONOUT$")
+        {
+            unsafe { SetStdHandle(which, console.into_raw_handle() as _) };
         }
     }
 }
