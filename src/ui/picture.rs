@@ -1728,12 +1728,19 @@ const REPEAT_AFTER: f64 = 0.4;
 const REPEAT_EVERY: f64 = 0.06;
 
 /// An arrow at a slider's end, `forward` pointing right, in `rect`: whether
-/// it steps the value this frame (pressed, or held long enough).
+/// it steps the value this frame (pressed, or held long enough). Only the
+/// primary button steps it, and a held one only while the pointer is on
+/// the arrow, as Windows' scroll bar arrows.
 fn stepper(ui: &mut Ui, rect: Rect, id: egui::Id, forward: bool) -> bool {
     let response = ui.interact(rect, id, Sense::click());
     let held = id.with("next");
     let mut step = false;
-    if response.is_pointer_button_down_on() {
+    let down = response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down());
+    if down {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_secs_f64(REPEAT_EVERY));
+    }
+    if down && response.contains_pointer() {
         let now = ui.input(|i| i.time);
         let next = ui.data(|d| d.get_temp::<f64>(held));
         let wait = match next {
@@ -1745,9 +1752,7 @@ fn stepper(ui: &mut Ui, rect: Rect, id: egui::Id, forward: bool) -> bool {
             step = true;
             ui.data_mut(|d| d.insert_temp(held, now + wait));
         }
-        ui.ctx()
-            .request_repaint_after(std::time::Duration::from_secs_f64(REPEAT_EVERY));
-    } else {
+    } else if !down {
         ui.data_mut(|d| d.remove::<f64>(held));
     }
     if ui.is_rect_visible(rect) {
