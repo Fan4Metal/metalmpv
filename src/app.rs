@@ -1475,8 +1475,9 @@ impl App {
     fn run(&mut self, ctx: &egui::Context, frame: &eframe::Frame, cmd: Cmd) {
         if self.mini.is_some() && mini::leaves_mini(&cmd) {
             self.leave_mini(ctx);
-            // The playlist asked for in the mini player: shown.
-            if cmd == Cmd::TogglePlaylist {
+            // The playlist asked for in the mini player: shown (from only
+            // the picture, the interface comes back with it below).
+            if cmd == Cmd::TogglePlaylist && self.interface() != Interface::Bare {
                 self.settings.playlist_visible = true;
                 return;
             }
