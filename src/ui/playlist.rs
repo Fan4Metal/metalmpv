@@ -379,7 +379,8 @@ pub fn panel(ui: &mut Ui, panel: Panel<'_>) -> Vec<Cmd> {
     };
     let files = vec2(
         ui.available_width(),
-        ui.available_height() - chapters_height,
+        // A very low window: no room, not a negative size.
+        (ui.available_height() - chapters_height).max(0.0),
     );
     let now = time.zip(duration);
     ui.allocate_ui(files, |ui| {
