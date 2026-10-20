@@ -3429,9 +3429,10 @@ impl App {
         out
     }
 
-    /// How long the mouse has rested.
+    /// How long the mouse has rested: for ever before it first moves (egui
+    /// gives infinity then, which `Duration::from_secs_f32` panics on).
     fn pointer_rest(ctx: &egui::Context) -> Duration {
-        Duration::from_secs_f32(ctx.input(|i| i.pointer.time_since_last_movement()).max(0.0))
+        rest_of(ctx.input(|i| i.pointer.time_since_last_movement()))
     }
 
     /// Which panels over the picture are shown in fullscreen, each on its
@@ -3611,6 +3612,12 @@ impl App {
             self.shown_title = wanted;
         }
     }
+}
+
+/// A rest of `seconds` as a `Duration`: infinity (no move yet) the longest,
+/// NaN or less than zero none.
+fn rest_of(seconds: f32) -> Duration {
+    Duration::try_from_secs_f32(seconds.max(0.0)).unwrap_or(Duration::MAX)
 }
 
 /// Media key `key` at `at`, come by `via`, is the press `last` was, come
@@ -4764,6 +4771,14 @@ impl eframe::App for App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pointer_never_moved_has_rested_for_ever() {
+        assert_eq!(rest_of(f32::INFINITY), Duration::MAX);
+        assert_eq!(rest_of(f32::NAN), Duration::ZERO);
+        assert_eq!(rest_of(-1.0), Duration::ZERO);
+        assert_eq!(rest_of(0.5), Duration::from_millis(500));
+    }
 
     #[test]
     fn a_media_key_counts_once() {
