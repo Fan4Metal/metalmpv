@@ -1931,12 +1931,13 @@ fn updates_page(ui: &mut Ui, updates: &mut Updates) {
 }
 
 /// When updates were last checked for, as the user reads dates; none
-/// before the first check.
+/// before the first check, and for a time past what Windows can hold (an
+/// edited settings file: adding it would panic).
 fn check_date(unix_seconds: u64) -> Option<String> {
     if unix_seconds == 0 {
         return None;
     }
-    let time = std::time::UNIX_EPOCH + std::time::Duration::from_secs(unix_seconds);
+    let time = std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_secs(unix_seconds))?;
     let local = crate::win::local_time(time)?;
     Some(crate::format::date_in(crate::i18n::lang(), local))
 }
@@ -2387,4 +2388,16 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.osd_scale = d.osd_scale;
     settings.osd_duration = d.osd_duration;
     updates.enabled = d.check_updates;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_check_date_past_windows_time_is_none() {
+        assert_eq!(check_date(0), None);
+        assert_eq!(check_date(u64::MAX), None);
+        assert!(check_date(1_790_000_000).is_some());
+    }
 }
