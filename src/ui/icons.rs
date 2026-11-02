@@ -484,24 +484,31 @@ pub fn sliders(p: &Painter, o: Pos2, s: f32, c: Color32) {
     }
 }
 
-/// A round arrow turning back (↺): back to the default.
+/// Metalamp's RotateLeft: a round arrow back to the default.
 pub fn reset(p: &Painter, o: Pos2, s: f32, c: Color32) {
-    let stroke = Stroke::new(1.4, c);
-    let r = 0.8 * s;
-    // From the top round the left and the bottom to the right, where the
-    // arrow points up: three quarters of a turn, against the clock.
-    let points: Vec<Pos2> = (0..=18)
+    let k = s / 7.0;
+    let stroke = Stroke::new(1.3 * k, c);
+    // The arrow stands above the arc, so its centre sits a little low.
+    let centre = o + vec2(0.0, k);
+    let r = 5.0 * k;
+    let end = 1.5 * std::f32::consts::PI;
+    let arc: Vec<Pos2> = (0..=24)
         .map(|i| {
-            let a = (270.0 - 15.0 * i as f32).to_radians();
-            o + vec2(a.cos(), a.sin()) * r
+            let a = end - 1.62 * std::f32::consts::PI * (1.0 - i as f32 / 24.0);
+            centre + r * vec2(-a.cos(), a.sin())
         })
         .collect();
-    let tip = o + vec2(r, -0.1 * s);
-    p.add(Shape::line(points, stroke));
-    p.add(Shape::line(
-        vec![tip + vec2(-0.4, 0.4) * s, tip, tip + vec2(0.4, 0.4) * s],
-        stroke,
-    ));
+    let tip = centre + vec2(0.0, -r);
+    p.add(Shape::line(arc, stroke));
+    tri(
+        p,
+        [
+            tip + vec2(2.0, -3.0) * k,
+            tip + vec2(-2.6, 0.0) * k,
+            tip + vec2(2.0, 3.0) * k,
+        ],
+        c,
+    );
 }
 
 /// A triangle and its mirror image across a dashed line: turned upside
