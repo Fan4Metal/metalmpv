@@ -38,6 +38,8 @@ pub enum Theme {
     Midnight,
     /// Dark greys with a touch of violet.
     Plum,
+    /// Deep green greys.
+    Forest,
     /// Warm dark browns.
     Espresso,
     /// Neutral dark greys: the player's first look.
@@ -165,6 +167,27 @@ const PLUM: Grounds = Grounds {
     sunk: hex(0x1d1824),
 };
 
+const FOREST: Grounds = Grounds {
+    title_bg: hex(0x15201b),
+    bar_bg: hex(0x111a16),
+    panel_bg: hex(0x1a2520),
+    list_bg: hex(0x0e1612),
+    sidebar_bg: hex(0x131d18),
+    card_bg: hex(0x23302a),
+    key_bg: hex(0x314139),
+    key_hover: hex(0x3d4f46),
+    line: hex(0x2a3832),
+    text: hex(0xd3e0d9),
+    text_weak: hex(0x87998f),
+    hover: hex(0x22302a),
+    pressed: hex(0x2d3d35),
+    track: hex(0x34463d),
+    widget: hex(0x35453d),
+    widget_hover: hex(0x405248),
+    widget_active: hex(0x303f37),
+    sunk: hex(0x161f1b),
+};
+
 const ESPRESSO: Grounds = Grounds {
     title_bg: hex(0x211c18),
     bar_bg: hex(0x1b1714),
@@ -208,10 +231,11 @@ const DIMMED: Grounds = Grounds {
 };
 
 impl Theme {
-    pub const ALL: [Theme; 6] = [
+    pub const ALL: [Theme; 7] = [
         Theme::Black,
         Theme::Midnight,
         Theme::Plum,
+        Theme::Forest,
         Theme::Espresso,
         Theme::Graphite,
         Theme::Dimmed,
@@ -224,6 +248,7 @@ impl Theme {
             Theme::Midnight => "midnight",
             Theme::Graphite => "graphite",
             Theme::Plum => "plum",
+            Theme::Forest => "forest",
             Theme::Espresso => "espresso",
             Theme::Dimmed => "dimmed",
         }
@@ -239,6 +264,7 @@ impl Theme {
             Theme::Midnight => tr!("Midnight blue", "Тёмно-синяя"),
             Theme::Graphite => tr!("Graphite", "Графитовая"),
             Theme::Plum => tr!("Plum", "Сливовая"),
+            Theme::Forest => tr!("Forest green", "Тёмно-зелёная"),
             Theme::Espresso => tr!("Espresso", "Кофейная"),
             Theme::Dimmed => tr!("Dimmed", "Приглушённая"),
         }
@@ -250,6 +276,7 @@ impl Theme {
             Theme::Midnight => &MIDNIGHT,
             Theme::Graphite => &GRAPHITE,
             Theme::Plum => &PLUM,
+            Theme::Forest => &FOREST,
             Theme::Espresso => &ESPRESSO,
             Theme::Dimmed => &DIMMED,
         }
@@ -259,7 +286,7 @@ impl Theme {
 /// The theme in use, its index in [`Theme::ALL`].
 static THEME: AtomicU32 = AtomicU32::new(DEFAULT_THEME);
 /// Graphite's index.
-const DEFAULT_THEME: u32 = 4;
+const DEFAULT_THEME: u32 = 5;
 
 /// Make `theme` the one the interface is drawn in ([`apply`] for egui's
 /// own widgets).
