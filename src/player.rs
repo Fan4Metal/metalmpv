@@ -246,7 +246,7 @@ const SUB_DELAY: u64 = 105;
 /// The figures of the playback, asked for while the information window is
 /// open ([`Player::ask_live`]): the replies' numbers from [`LIVE_FIRST`].
 const LIVE_FIRST: u64 = 110;
-const LIVE: [(&str, sys::mpv_format); 10] = [
+const LIVE: [(&str, sys::mpv_format); 12] = [
     ("video-bitrate", sys::MPV_FORMAT_DOUBLE),
     ("audio-bitrate", sys::MPV_FORMAT_DOUBLE),
     ("frame-drop-count", sys::MPV_FORMAT_INT64),
@@ -257,6 +257,8 @@ const LIVE: [(&str, sys::mpv_format); 10] = [
     ("demuxer-cache-duration", sys::MPV_FORMAT_DOUBLE),
     ("cache-speed", sys::MPV_FORMAT_INT64),
     ("demuxer-via-network", sys::MPV_FORMAT_FLAG),
+    ("display-sync-active", sys::MPV_FORMAT_FLAG),
+    ("mistimed-frame-count", sys::MPV_FORMAT_INT64),
 ];
 /// How often the figures are asked for.
 const LIVE_EVERY: std::time::Duration = std::time::Duration::from_secs(1);
@@ -384,6 +386,10 @@ pub struct Live {
     pub cache_speed: Option<i64>,
     /// The file comes over the network.
     pub network: bool,
+    /// Frames are shown to the screen's beat (the smooth motion), and how
+    /// many missed it.
+    pub display_sync: bool,
+    pub mistimed: Option<i64>,
 }
 
 /// What mpv gives the sound device (`audio-out-params`).
@@ -419,6 +425,8 @@ impl Live {
             7 => self.cache = value.double().filter(|c| *c >= 0.0),
             8 => self.cache_speed = value.int(),
             9 => self.network = value.flag(),
+            10 => self.display_sync = value.flag(),
+            11 => self.mistimed = value.int(),
             _ => {}
         }
     }

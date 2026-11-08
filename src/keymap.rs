@@ -371,6 +371,8 @@ actions! {
     PanUp "pan_up" Window Cmd::Pan(0, -PAN_STEP), [Chord::alt(Key::ArrowUp)];
     PanDown "pan_down" Window Cmd::Pan(0, PAN_STEP), [Chord::alt(Key::ArrowDown)];
     ZoomReset "zoom_reset" Window Cmd::ZoomReset, [Chord::alt(Key::Backspace)];
+    Shaders "shaders" Window Cmd::ToggleShaders, [];
+    Smooth "smooth_motion" Window Cmd::ToggleSmooth, [];
     Interface "interface" Window Cmd::ToggleInterface, [Chord::key(Key::Num7)];
     Interfaces "interfaces" Window Cmd::CycleInterface, [Chord::key(Key::Num8)];
     Mini "mini_player" Window Cmd::ToggleMini, [Chord::key(Key::Num0)];
@@ -534,6 +536,11 @@ impl Action {
                 "Сбросить настройки изображения (цвет, масштаб, фильтры, повороты)"
             ),
             Action::Rotate => tr!("Turn 90° clockwise", "Повернуть на 90° по часовой"),
+            Action::Shaders => tr!("Shaders on or off", "Включить или выключить шейдеры"),
+            Action::Smooth => tr!(
+                "Smooth motion on or off",
+                "Включить или выключить плавное движение"
+            ),
             Action::Aspect => tr!(
                 "Aspect ratio: as in the file, 4:3, 16:9…",
                 "Пропорции: как в файле, 4:3, 16:9…"

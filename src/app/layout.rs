@@ -308,6 +308,61 @@ impl App {
         }
     }
 
+    /// mpv draws the picture as the settings say (`quality.rs`): only what
+    /// changed is given, also the screen's refresh rate for the smooth
+    /// motion when the window goes to another monitor or the rate changes.
+    pub(super) fn follow_quality(&mut self) {
+        let s = &self.settings;
+        let wanted = crate::quality::Quality {
+            scaling: s.scaling,
+            shaders: if s.shaders_on {
+                s.shaders.clone()
+            } else {
+                Vec::new()
+            },
+            smooth: s.smooth_motion,
+            refresh: if s.smooth_motion {
+                self.refresh_rate()
+            } else {
+                None
+            },
+        };
+        if self.quality.as_ref() == Some(&wanted) {
+            return;
+        }
+        let Some(player) = &self.player else {
+            return;
+        };
+        for (name, value) in wanted.changes(self.quality.as_ref()) {
+            log::debug!("quality: {name}={value}");
+            player.mpv().set(name, &crate::mpv::Value::Str(value));
+        }
+        self.quality = Some(wanted);
+    }
+
+    /// The refresh rate of the window's screen, read again every few
+    /// seconds (a mode changed) or when the window is on another monitor.
+    fn refresh_rate(&mut self) -> Option<f64> {
+        const AGAIN: Duration = Duration::from_secs(3);
+        let hwnd = self.hwnd?;
+        let monitor = win::monitor_of(hwnd);
+        if let Some((m, at, rate)) = self.refresh
+            && m == monitor
+            && at.elapsed() < AGAIN
+        {
+            return rate;
+        }
+        let rate = win::refresh_rate(hwnd);
+        if self
+            .refresh
+            .is_none_or(|(m, _, r)| m != monitor || r != rate)
+        {
+            log::debug!("screen refresh rate: {rate:?}");
+        }
+        self.refresh = Some((monitor, Instant::now(), rate));
+        rate
+    }
+
     /// mpv's options of the picture as shown, for the second cores (the
     /// video map, the seek bar's frames): the turn, the shape and a mirror
     /// (upside down is one turned half round); not the colour, the zoom or

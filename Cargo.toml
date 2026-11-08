@@ -51,6 +51,7 @@ ron = "0.12.2"
 [target.'cfg(windows)'.dependencies]
 # Keep the feature list minimal; add a feature only for an API that is used.
 windows-sys = { version = "0.61", features = [
+    "Win32_Devices_Display",          # QueryDisplayConfig: the screen's refresh rate
     "Win32_Foundation",
     "Win32_Globalization",            # GetUserDefaultUILanguage (i18n)
     "Win32_Graphics_Gdi",             # WNDCLASSW (instance.rs)

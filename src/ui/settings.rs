@@ -138,6 +138,8 @@ pub struct Changed {
     /// Choose… of the frames' folder: the app shows the dialog
     /// (`dialog.rs`).
     pub frames_folder: bool,
+    /// Add… of the shaders: the app shows the dialog.
+    pub add_shaders: bool,
 }
 
 impl SettingsDialog {
@@ -1340,6 +1342,7 @@ fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>, chan
             |ui| ui.label(RichText::new(now).color(style::TEXT_BRIGHT)),
         );
     });
+    changed.add_shaders |= quality_section(ui, settings);
     section(
         ui,
         tr!("Fullscreen", "Полноэкранный режим"),
@@ -1443,6 +1446,129 @@ fn video(ui: &mut Ui, settings: &mut Settings, hwdec_current: Option<&str>, chan
     );
     changed.frames_folder |= frames_section(ui, settings);
     video_map_section(ui, settings);
+}
+
+/// How the picture is drawn (`quality.rs`): the scaling, the smooth
+/// motion, the user's shaders; whether Add… was clicked.
+fn quality_section(ui: &mut Ui, settings: &mut Settings) -> bool {
+    use crate::quality::Scaling;
+    let mut add = false;
+    section(
+        ui,
+        tr!("Picture quality", "Качество изображения"),
+        |ui| {
+            row(
+                ui,
+                tr!("Scaling", "Масштабирование"),
+                Some(tr!(
+                    "How the picture is enlarged or reduced to the window. High quality is sharper and needs a stronger graphics card; Fast suits a weak one.",
+                    "Как изображение увеличивается или уменьшается до размера окна. Высокое качество чётче и требует видеокарты помощнее; быстрое подойдёт слабой."
+                )),
+                230.0,
+                |ui| {
+                    egui::ComboBox::from_id_salt("settings_scaling")
+                        .selected_text(settings.scaling.label())
+                        .width(220.0)
+                        .show_ui(ui, |ui| {
+                            for s in Scaling::ALL {
+                                ui.selectable_value(&mut settings.scaling, s, s.label());
+                            }
+                        });
+                },
+            );
+            divider(ui);
+            row(
+                ui,
+                tr!("Smooth motion", "Плавное движение"),
+                Some(&crate::keymap::with_key(
+                    tr!(
+                        "Frames are shown to the screen's refresh rate and blended between them, so 24 fps on a 60 Hz screen does not judder; the sound is resampled a little to keep pace. Needs more of the graphics card.",
+                        "Кадры выводятся в такт частоте обновления экрана и смешиваются между собой, поэтому 24 кадра/с на экране 60 Гц не дёргаются; звук слегка пересчитывается, чтобы не отставать. Нагружает видеокарту сильнее."
+                    ),
+                    Cmd::ToggleSmooth,
+                )),
+                50.0,
+                |ui| switch(ui, &mut settings.smooth_motion),
+            );
+            divider(ui);
+            row(
+                ui,
+                tr!("Shaders", "Шейдеры"),
+                Some(&crate::keymap::with_key(
+                    tr!(
+                        "mpv's user shaders (.glsl, .hook): upscalers such as FSR or Anime4K, sharpening, and others, run in the order of the list.",
+                        "Пользовательские шейдеры mpv (.glsl, .hook): увеличение вроде FSR или Anime4K, повышение резкости и другие; выполняются в порядке списка."
+                    ),
+                    Cmd::ToggleShaders,
+                )),
+                50.0,
+                |ui| switch(ui, &mut settings.shaders_on),
+            );
+            let mut action = None;
+            let count = settings.shaders.len();
+            for (i, path) in settings.shaders.iter().enumerate() {
+                divider(ui);
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let folder = path
+                    .parent()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default();
+                let missing = !path.is_file();
+                let folder = if missing {
+                    tr!(
+                        format!("{folder} — not found"),
+                        format!("{folder} — не найден")
+                    )
+                } else {
+                    folder
+                };
+                row(ui, &name, Some(&folder), 90.0, |ui| {
+                    ui.horizontal(|ui| {
+                        let chevron = |up: bool| {
+                            move |p: &egui::Painter, o: egui::Pos2, c: egui::Color32| {
+                                let d = if up { -2.5 } else { 2.5 };
+                                let stroke = Stroke::new(1.5, c);
+                                p.line_segment([o + vec2(-4.5, -d), o + vec2(0.0, d)], stroke);
+                                p.line_segment([o + vec2(0.0, d), o + vec2(4.5, -d)], stroke);
+                            }
+                        };
+                        if super::tool(ui, tr!("Earlier", "Раньше"), i > 0, chevron(true)).clicked()
+                        {
+                            action = Some((i, -1));
+                        }
+                        if super::tool(ui, tr!("Later", "Позже"), i + 1 < count, chevron(false))
+                            .clicked()
+                        {
+                            action = Some((i, 1));
+                        }
+                        if super::tool(ui, tr!("Remove", "Убрать"), true, |p, o, c| {
+                            super::icons::close(p, o, 4.0, c)
+                        })
+                        .clicked()
+                        {
+                            action = Some((i, 0));
+                        }
+                    });
+                });
+            }
+            match action {
+                Some((i, 0)) => {
+                    settings.shaders.remove(i);
+                }
+                Some((i, -1)) => settings.shaders.swap(i, i - 1),
+                Some((i, _)) => settings.shaders.swap(i, i + 1),
+                None => {}
+            }
+            divider(ui);
+            row(ui, "", None, 120.0, |ui| {
+                add = ui.button(tr!("Add…", "Добавить…")).clicked();
+            });
+        },
+    );
+    add
 }
 
 /// How the video map (`Ctrl+M`, `video_map.rs`) is laid out.
@@ -2453,6 +2579,9 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.seek_short = d.seek_short;
     settings.seek_long = d.seek_long;
     settings.hwdec = d.hwdec;
+    settings.scaling = d.scaling;
+    settings.shaders_on = d.shaders_on;
+    settings.smooth_motion = d.smooth_motion;
     settings.fill_playlist = d.fill_playlist;
     settings.fill_audio_only = d.fill_audio_only;
     settings.channel_logos = d.channel_logos;

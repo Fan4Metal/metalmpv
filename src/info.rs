@@ -808,6 +808,13 @@ pub fn live_rows_in(lang: Lang, s: &Subject) -> Vec<(String, String)> {
                 let screen = if ru { "экран" } else { "screen" };
                 text = format!("{text}, {screen} {}", hertz_in(lang, hz));
             }
+            if live.display_sync {
+                text.push_str(if ru {
+                    ", в такт экрану"
+                } else {
+                    ", to the screen's beat"
+                });
+            }
             rows.push((label("Frames shown", "Показ кадров"), text));
         }
         if let Some(dropped) = live.dropped {
@@ -818,6 +825,12 @@ pub fn live_rows_in(lang: Lang, s: &Subject) -> Vec<(String, String)> {
                 (d, true) => format!("вывод {dropped}, декодер {d}"),
             };
             rows.push((label("Dropped frames", "Пропущено кадров"), text));
+        }
+        if let Some(mistimed) = live.mistimed.filter(|_| live.display_sync) {
+            rows.push((
+                label("Frames off the beat", "Кадров вне такта"),
+                mistimed.to_string(),
+            ));
         }
     }
     if let Some(text) = live.audio_out.as_ref().and_then(|o| audio_out_in(lang, o)) {

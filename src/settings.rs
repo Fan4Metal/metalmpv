@@ -28,6 +28,10 @@ const MUTE: &str = "mute";
 const SEEK_SHORT: &str = "seek_short";
 const SEEK_LONG: &str = "seek_long";
 const HWDEC: &str = "hwdec";
+const SCALING: &str = "scaling";
+const SHADERS: &str = "shaders";
+const SHADERS_ON: &str = "shaders_on";
+const SMOOTH_MOTION: &str = "smooth_motion";
 const FILL_PLAYLIST: &str = "fill_playlist_from_folder";
 const FILL_AUDIO_ONLY: &str = "fill_playlist_audio_only";
 const CHANNEL_LOGOS: &str = "channel_logos";
@@ -489,6 +493,15 @@ pub struct Settings {
     pub seek_long: f64,
     /// Hardware decoding (`hwdec=auto-safe`), else software.
     pub hwdec: bool,
+    /// The scalers (`quality.rs`).
+    pub scaling: crate::quality::Scaling,
+    /// The user's shader files, in the order mpv runs them. Not a setting,
+    /// so Reset keeps them.
+    pub shaders: Vec<PathBuf>,
+    /// The shaders are used.
+    pub shaders_on: bool,
+    /// Smooth motion: frames to the screen's beat, blended between them.
+    pub smooth_motion: bool,
     /// Opening one file lists the media files of its folder.
     pub fill_playlist: bool,
     /// ... only for a sound file, and only with the folder's sound files.
@@ -662,6 +675,10 @@ impl Default for Settings {
             seek_short: 10.0,
             seek_long: 60.0,
             hwdec: true,
+            scaling: crate::quality::Scaling::Standard,
+            shaders: Vec::new(),
+            shaders_on: true,
+            smooth_motion: false,
             fill_playlist: false,
             fill_audio_only: false,
             channel_logos: true,
@@ -804,6 +821,19 @@ impl Settings {
             seek_short: number(SEEK_SHORT, MIN_STEP..=MAX_STEP, d.seek_short),
             seek_long: number(SEEK_LONG, MIN_STEP..=MAX_STEP, d.seek_long),
             hwdec: flag(HWDEC, d.hwdec),
+            scaling: get(SCALING)
+                .and_then(|v| crate::quality::Scaling::from_name(&v))
+                .unwrap_or(d.scaling),
+            shaders: get(SHADERS)
+                .map(|v| {
+                    v.lines()
+                        .filter(|l| !l.trim().is_empty())
+                        .map(PathBuf::from)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            shaders_on: flag(SHADERS_ON, d.shaders_on),
+            smooth_motion: flag(SMOOTH_MOTION, d.smooth_motion),
             fill_playlist: flag(FILL_PLAYLIST, d.fill_playlist),
             fill_audio_only: flag(FILL_AUDIO_ONLY, d.fill_audio_only),
             channel_logos: flag(CHANNEL_LOGOS, d.channel_logos),
@@ -1069,6 +1099,15 @@ impl Settings {
         storage.set_string(SEEK_SHORT, self.seek_short.to_string());
         storage.set_string(SEEK_LONG, self.seek_long.to_string());
         storage.set_string(HWDEC, self.hwdec.to_string());
+        storage.set_string(SCALING, self.scaling.name().into());
+        let shaders: Vec<String> = self
+            .shaders
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect();
+        storage.set_string(SHADERS, shaders.join("\n"));
+        storage.set_string(SHADERS_ON, self.shaders_on.to_string());
+        storage.set_string(SMOOTH_MOTION, self.smooth_motion.to_string());
         storage.set_string(FILL_PLAYLIST, self.fill_playlist.to_string());
         storage.set_string(FILL_AUDIO_ONLY, self.fill_audio_only.to_string());
         storage.set_string(CHANNEL_LOGOS, self.channel_logos.to_string());
@@ -1255,6 +1294,13 @@ mod tests {
             seek_short: 5.0,
             seek_long: 30.5,
             hwdec: false,
+            scaling: crate::quality::Scaling::High,
+            shaders: vec![
+                PathBuf::from(r"C:\Shaders\FSR.glsl"),
+                PathBuf::from(r"D:\b.hook"),
+            ],
+            shaders_on: false,
+            smooth_motion: true,
             fill_playlist: true,
             fill_audio_only: true,
             channel_logos: false,

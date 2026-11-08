@@ -386,6 +386,66 @@ pub fn show_maximized(hwnd: isize, normal: Option<[i32; 4]>, default: [f32; 2]) 
     unsafe { SetWindowPlacement(hwnd as _, &placement) };
 }
 
+/// The monitor the window is mostly on (a handle, to tell when it moved to
+/// another).
+pub fn monitor_of(hwnd: isize) -> isize {
+    use windows_sys::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONEAREST, MonitorFromWindow};
+    unsafe { MonitorFromWindow(hwnd as _, MONITOR_DEFAULTTONEAREST) as isize }
+}
+
+/// The refresh rate of the monitor the window is mostly on, exactly
+/// (59.94 Hz as 60000/1001: `EnumDisplaySettings` says 59): the display
+/// configuration's path whose source is that monitor's GDI device.
+pub fn refresh_rate(hwnd: isize) -> Option<f64> {
+    use windows_sys::Win32::Devices::Display::{
+        DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, DISPLAYCONFIG_MODE_INFO,
+        DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_SOURCE_DEVICE_NAME, DisplayConfigGetDeviceInfo,
+        GetDisplayConfigBufferSizes, QDC_ONLY_ACTIVE_PATHS, QueryDisplayConfig,
+    };
+    use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITORINFOEXW};
+    let mut info = MONITORINFOEXW::default();
+    info.monitorInfo.cbSize = std::mem::size_of::<MONITORINFOEXW>() as u32;
+    if unsafe { GetMonitorInfoW(monitor_of(hwnd) as _, (&raw mut info).cast()) } == 0 {
+        return None;
+    }
+    let device = &info.szDevice[..info.szDevice.iter().position(|c| *c == 0)?];
+    let (mut paths, mut modes) = (0u32, 0u32);
+    if unsafe { GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut paths, &mut modes) } != 0 {
+        return None;
+    }
+    let mut path_info = vec![DISPLAYCONFIG_PATH_INFO::default(); paths as usize];
+    let mut mode_info = vec![DISPLAYCONFIG_MODE_INFO::default(); modes as usize];
+    let code = unsafe {
+        QueryDisplayConfig(
+            QDC_ONLY_ACTIVE_PATHS,
+            &mut paths,
+            path_info.as_mut_ptr(),
+            &mut modes,
+            mode_info.as_mut_ptr(),
+            std::ptr::null_mut(),
+        )
+    };
+    if code != 0 {
+        return None;
+    }
+    path_info.truncate(paths as usize);
+    path_info.iter().find_map(|path| {
+        let mut name = DISPLAYCONFIG_SOURCE_DEVICE_NAME::default();
+        name.header.r#type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+        name.header.size = std::mem::size_of::<DISPLAYCONFIG_SOURCE_DEVICE_NAME>() as u32;
+        name.header.adapterId = path.sourceInfo.adapterId;
+        name.header.id = path.sourceInfo.id;
+        if unsafe { DisplayConfigGetDeviceInfo(&mut name.header) } != 0 {
+            return None;
+        }
+        let gdi = &name.viewGdiDeviceName;
+        let gdi = &gdi[..gdi.iter().position(|c| *c == 0).unwrap_or(gdi.len())];
+        let rate = path.targetInfo.refreshRate;
+        (gdi == device && rate.Denominator != 0 && rate.Numerator != 0)
+            .then(|| f64::from(rate.Numerator) / f64::from(rate.Denominator))
+    })
+}
+
 /// The work area (left, top, right, bottom in pixels: the screen without
 /// the taskbar) of the monitor the window is mostly on.
 pub fn work_area(hwnd: isize) -> Option<[i32; 4]> {

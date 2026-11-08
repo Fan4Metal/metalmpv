@@ -195,6 +195,11 @@ pub struct App {
     session: crate::session::Stored,
     /// The frames over the seek bar (`seek_preview`).
     thumbs: Option<crate::thumbs::Thumbs>,
+    /// How the picture is drawn, as mpv was given it last (`quality.rs`).
+    quality: Option<crate::quality::Quality>,
+    /// The screen's refresh rate for the smooth motion: the monitor it was
+    /// read for and when.
+    refresh: Option<(isize, Instant, Option<f64>)>,
     /// The file being loaded gets the tracks most like the last chosen
     /// (`prefer_last_tracks`), once it is loaded (`pick_ready`).
     pick_tracks: bool,
@@ -452,6 +457,8 @@ impl App {
             positions,
             session: crate::session::Stored::Unknown,
             thumbs: None,
+            quality: None,
+            refresh: None,
             pick_tracks: false,
             pick_ready: false,
             fit_on_open: false,
@@ -484,6 +491,8 @@ impl App {
             mini_border: [0, 0],
         };
         app.sized_for = app.settings.interface;
+        // Before the first file: the scalers, shaders and sync it starts with.
+        app.follow_quality();
         if files.is_empty() {
             app.restore_playlist();
         } else {
@@ -739,6 +748,7 @@ impl eframe::App for App {
             storage.flush();
         }
         self.follow_audio_device();
+        self.follow_quality();
         self.follow_video_map();
         let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         // eframe calls no `ui` for a minimised window: the thumbnail
@@ -984,6 +994,9 @@ impl eframe::App for App {
         }
         if changed.frames_folder {
             self.pick_frames_folder(&ctx);
+        }
+        if changed.add_shaders {
+            self.pick_shaders(&ctx);
         }
         if changed.forget_positions {
             self.positions.clear();

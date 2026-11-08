@@ -35,6 +35,7 @@ mod mpv;
 mod player;
 mod playlist;
 mod probe;
+mod quality;
 mod resume;
 mod session;
 mod settings;

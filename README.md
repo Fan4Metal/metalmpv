@@ -27,6 +27,7 @@ MetalMPV is a video player for Windows with a classic layout: the picture fills 
 - **Instant seeking on keyframes** with the arrow keys, exact seeking and frame stepping on other keys (see [Keyboard shortcuts](#keyboard-shortcuts)); every seek is reported on the screen.
 - **Every common format**: MP4, MKV, AVI, MOV, WebM, TS, WMV and more, audio files included; subtitles next to the video are loaded automatically.
 - **Hardware decoding** (NVDEC, D3D11VA and others, chosen by libmpv), which can be turned off in the settings.
+- **Picture quality**: fast, standard or high-quality scaling, mpv's user shaders (FSR, Anime4K and the like) and smooth motion, frames shown to the screen's refresh rate and blended between them (see [Settings](#settings)).
 - **Audio tracks and subtitles** in one window by the volume (`T`); subtitles from a file of their own (see [Audio and subtitles](#audio-and-subtitles)).
 - **Video, sound and subtitles panel** (`U`): the picture's colour, zoom and pan, sharpness, noise reduction, aspect ratio, deinterlacing, HDR tone mapping and rotation; the output device, channels, volume boost up to 200 %, normalization, clearer speech, stereo to 5.1, the subwoofer, a ten-band equalizer and Dolby and DTS sent to a receiver undecoded; the look of the subtitles (see [Video, sound and subtitles panel](#video-sound-and-subtitles-panel)).
 - **File information** (`I`): the cover, the tags and the details of every track in a window over the player, or its main facts alone over the picture (`Ctrl+I`); the cover of an audio file fills the picture (see [File information](#file-information)).
@@ -339,6 +340,9 @@ The sound and the look of the subtitles are set on the [Video, sound and subtitl
 | Category | Setting | Default | Meaning |
 |---|---|---|---|
 | Video | Hardware decoding (GPU) | on | Decoding on the graphics card where possible; the decoder in use is shown below |
+| Video | Scaling | standard | How the picture is enlarged or reduced to the window: **Fast** (bilinear, for a weak graphics card), **Standard** (mpv's own) or **High quality** (polar Lanczos, sharper and heavier on the graphics card) |
+| Video | Smooth motion | off | Frames are shown to the refresh rate of the screen the window is on and blended between them, so 24 fps on a 60 Hz screen does not judder; the sound is resampled a little to keep pace. The information window then says *to the screen's beat* by the frame rate and counts the frames that missed it. Also on a key of one's own |
+| Video | Shaders | on | mpv's user shaders (`.glsl`, `.hook`), added with **Add…**, run in the order of the list (the arrows move them; a file no longer there is marked); the switch, also on a key of one's own, turns them all off without losing the list |
 | Video | File name at the top | on | A strip with the file's name across the top in fullscreen, shown while the pointer is near the top edge |
 | Video | Panel transparency | 12 % | Transparency of the control bar and the file's name over the picture in fullscreen, 0–80 % |
 | Video | Information over the picture: show | off | The file information's chips in the picture's top right corner (`Ctrl+I`), see [File information](#file-information) |
@@ -463,7 +467,7 @@ In the settings, the **Keyboard shortcuts** category lists the actions in groups
 - A combination another action had is taken from that action, and the page says so, with **Undo** beside.
 - A search field above the groups leaves the actions whose name or keys contain the text typed.
 - The round arrow at the right of an action puts its own keys back (taken from the action that had them, with Undo), and **Reset the keys** puts them all back. The menus and tooltips show the keys as they are set.
-- A few actions without a default key can be given one: Stop, A-B repeat: start, end, off (one key for the three in turn), Load subtitles, Equalizer, Reset the equalizer (flat, off), Reset the subtitles' look, Chapter marks on the seek bar, Time: both, elapsed, remaining, Shuffle, Sort and Clear the playlist, Show the file in its folder, Open the folder of saved frames, Save the cover…, Playlist in a window of its own / in the player, IPTV groups in the playlist, How far files were watched in the playlist, Minimize, Maximize and Close the program.
+- A few actions without a default key can be given one: Stop, A-B repeat: start, end, off (one key for the three in turn), Load subtitles, Equalizer, Reset the equalizer (flat, off), Reset the subtitles' look, Chapter marks on the seek bar, Shaders on or off, Smooth motion on or off, Time: both, elapsed, remaining, Shuffle, Sort and Clear the playlist, Show the file in its folder, Open the folder of saved frames, Save the cover…, Playlist in a window of its own / in the player, IPTV groups in the playlist, How far files were watched in the playlist, Minimize, Maximize and Close the program.
 - The mouse wheel, the double and middle clicks and the media keys stay as described; `Ctrl+V` and `Shift+Insert` cannot be chosen, and `Ctrl+Insert` is taken as `Ctrl+C`.
 
 </details>

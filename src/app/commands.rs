@@ -76,6 +76,33 @@ impl App {
             Cmd::ToggleChapterMarks => {
                 self.settings.chapter_marks = !self.settings.chapter_marks;
             }
+            Cmd::ToggleShaders => {
+                let text = if self.settings.shaders.is_empty() {
+                    tr!(
+                        "[ No shaders: they are added in the settings, Video ]",
+                        "[ Шейдеров нет: они добавляются в настройках, «Видео» ]"
+                    )
+                } else {
+                    self.settings.shaders_on = !self.settings.shaders_on;
+                    if self.settings.shaders_on {
+                        tr!("[ Shaders: on ]", "[ Шейдеры: вкл. ]")
+                    } else {
+                        tr!("[ Shaders: off ]", "[ Шейдеры: выкл. ]")
+                    }
+                };
+                self.osd.show(Osd::Text(text.into()));
+            }
+            Cmd::ToggleSmooth => {
+                self.settings.smooth_motion = !self.settings.smooth_motion;
+                self.osd.show(Osd::Text(
+                    if self.settings.smooth_motion {
+                        tr!("[ Smooth motion: on ]", "[ Плавное движение: вкл. ]")
+                    } else {
+                        tr!("[ Smooth motion: off ]", "[ Плавное движение: выкл. ]")
+                    }
+                    .into(),
+                ));
+            }
             Cmd::CycleTime => self.settings.time_mode = self.settings.time_mode.next(),
             Cmd::Frame { forward } => {
                 if let Some(player) = &mut self.player

@@ -390,7 +390,36 @@ impl App {
             }
             Ask::FramesFolder => self.settings.frames_folder = Some(path),
             Ask::SaveClip => self.clip_dialog.set_path(&path),
+            Ask::Shaders => {
+                let added = crate::quality::shader_files(answer.paths, &self.settings.shaders);
+                self.settings.shaders.extend(added);
+            }
         }
+    }
+
+    /// Ask for shader files to add to the list (the settings' Video page),
+    /// in the folder of the last one listed.
+    pub(super) fn pick_shaders(&mut self, ctx: &egui::Context) {
+        let dir = self
+            .settings
+            .shaders
+            .last()
+            .and_then(|p| p.parent())
+            .filter(|d| d.is_dir())
+            .map(Path::to_path_buf);
+        let make = move || {
+            let dialog = rfd::FileDialog::new()
+                .set_title(tr!("Add shaders", "Добавить шейдеры"))
+                .add_filter(
+                    tr!("mpv shaders", "Шейдеры mpv"),
+                    &crate::quality::SHADER_EXTENSIONS,
+                );
+            match dir {
+                Some(dir) => dialog.set_directory(dir),
+                None => dialog,
+            }
+        };
+        self.ask(ctx, Ask::Shaders, make, dialog::pick_files);
     }
 
     /// Ask for media files to play (`add`: append them to the playlist).

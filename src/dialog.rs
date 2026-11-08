@@ -29,6 +29,8 @@ pub enum Ask {
     FramesFolder,
     /// The file an A-B stretch goes to.
     SaveClip,
+    /// Shader files to add to the list (`quality.rs`).
+    Shaders,
 }
 
 impl Ask {
@@ -42,6 +44,7 @@ impl Ask {
             Ask::SaveCover(_) => "the cover",
             Ask::FramesFolder => "the frames' folder",
             Ask::SaveClip => "the stretch",
+            Ask::Shaders => "shaders",
         }
     }
 }

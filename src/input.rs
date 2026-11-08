@@ -120,6 +120,10 @@ pub enum Cmd {
     Chapter(usize),
     /// Show or hide the chapter marks on the seek bar.
     ToggleChapterMarks,
+    /// Turn the user's shaders on or off (`quality.rs`).
+    ToggleShaders,
+    /// Turn the smooth motion on or off (`quality.rs`).
+    ToggleSmooth,
     /// Open or close the file's information window (`I`).
     ToggleInfo,
     /// Show or hide the information's chips over the picture (`Ctrl+I`).
