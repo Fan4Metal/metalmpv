@@ -71,6 +71,7 @@ A file is opened with the **Open** button (the eject symbol, `Ctrl+O`), by dropp
 - **IPTV lists**: the `#EXTINF` lines name the entries. The playlist, the window title and saved frames show the channel's name instead of the stream's file name, the tooltip of an entry shows its group, and the channel's logo (`tvg-logo`) is shown beside the name (see **Channel logos** in the settings); **Save the list** writes the names, logos and groups back.
 - **Addresses**: a direct link to a video or a stream (http, https, rtsp, rtmp, udp and others; an address on the command line works too). Pages of YouTube and other sites are not supported, since the player does not use yt-dlp.
 - **Recent files**: the start screen lists the files played last under the RECENT heading, centred under the hint (up to eight, as many as the window's height allows; the rest of the thirty kept scroll in their place). A click plays one, and **Clear the list** empties it, as does **Forget all** under Resume in the settings. With **Remember the recent files** off, no files are kept.
+- **The playlist between runs**: with **Restore the playlist** on (the default), a start without files shows the playlist of the last run, IPTV names and groups included, with the entry that played as the current one; **Play** goes on with it from where it was left. Files opened at the start replace it.
 - **Taskbar**: the program's button shows the position as its progress (yellow while paused), and its thumbnail has the buttons **Previous file**, **Play**/**Pause** and **Next file**.
 - **Sleep**: while a video plays, the display does not turn off and the computer does not sleep; while only sound plays, the computer does not sleep, and when playback pauses or ends, Windows' power settings apply again.
 
@@ -308,6 +309,7 @@ The sound and the look of the subtitles are set on the [Video, sound and subtitl
 |---|---|---|
 | Go on from where it stopped | on | A file of 5 minutes or more opened again starts where it was left, with a message on the screen; `Home` goes to the beginning. A file watched to its last 30 seconds, or stopped in its first 10 seconds, starts from the beginning. The last 500 files are remembered; **Forget all** clears the list |
 | Remember the recent files | on | The start screen lists the last thirty files played, those that do not fit scrolling in the list; when off, none are kept and the list is cleared |
+| Restore the playlist | on | A start without files shows the playlist of the last run, the entry that played current; when off, the playlist is not kept |
 | Left / Right | 10 s | The step of `←` and `→`, on keyframes |
 | Ctrl+Left / Right | 60 s | The step of `Ctrl+←` and `Ctrl+→`, on keyframes |
 | Marks on the seek bar | on | Cuts in the seek bar where the chapters start; also in the context menu |

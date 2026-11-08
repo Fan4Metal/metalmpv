@@ -165,6 +165,8 @@ pub struct App {
     fullscreen: bool,
     /// Where the files were left (`resume_playback`).
     positions: Positions,
+    /// What the kept playlist's file holds (`restore_playlist`).
+    session: crate::session::Stored,
     /// The file being loaded gets the tracks most like the last chosen
     /// (`prefer_last_tracks`), once it is loaded (`pick_ready`).
     pick_tracks: bool,
@@ -420,6 +422,7 @@ impl App {
             fullscreen: false,
             last_sub: None,
             positions,
+            session: crate::session::Stored::Unknown,
             pick_tracks: false,
             pick_ready: false,
             fit_on_open: false,
@@ -452,8 +455,30 @@ impl App {
             mini_border: [0, 0],
         };
         app.sized_for = app.settings.interface;
-        app.open(files);
+        if files.is_empty() {
+            app.restore_playlist();
+        } else {
+            app.open(files);
+        }
         app
+    }
+
+    /// The playlist of the last run, its entry current, nothing played:
+    /// Play goes on with it (from where it was left).
+    fn restore_playlist(&mut self) {
+        if !self.settings.restore_playlist {
+            return;
+        }
+        let Some(kept) = crate::session::load() else {
+            return;
+        };
+        self.playlist.replace(kept.paths);
+        self.playlist.describe(kept.channels);
+        if let Some(current) = kept.current {
+            self.playlist.set_current(current);
+        }
+        self.session =
+            crate::session::Stored::List(self.playlist.revision(), self.playlist.current());
     }
 
     /// Nothing is loaded (or there is no player).
@@ -4803,6 +4828,8 @@ impl eframe::App for App {
         self.settings.save(storage);
         self.remember_position();
         storage.set_string(POSITIONS_KEY, self.positions.to_text());
+        self.session =
+            crate::session::follow(&self.playlist, self.settings.restore_playlist, self.session);
     }
 
     /// The render context goes first, while the OpenGL context lives, then

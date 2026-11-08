@@ -1037,6 +1037,17 @@ fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
             |ui| switch(ui, &mut settings.remember_recent),
         );
         divider(ui);
+        row(
+            ui,
+            tr!("Restore the playlist", "Восстанавливать плейлист"),
+            Some(tr!(
+                "A start without files shows the playlist of the last run; Play goes on with the entry that played.",
+                "Запуск без файлов показывает плейлист прошлого запуска; воспроизведение продолжает запись, которая играла."
+            )),
+            50.0,
+            |ui| switch(ui, &mut settings.restore_playlist),
+        );
+        divider(ui);
         changed.forget_positions |= row(
             ui,
             tr!(
@@ -2441,6 +2452,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.prefer_last_tracks = d.prefer_last_tracks;
     settings.stay_in_incomplete = d.stay_in_incomplete;
     settings.remember_recent = d.remember_recent;
+    settings.restore_playlist = d.restore_playlist;
     settings.fullscreen_transparency = d.fullscreen_transparency;
     settings.fullscreen_title = d.fullscreen_title;
     settings.info_overlay = d.info_overlay;

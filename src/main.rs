@@ -36,6 +36,7 @@ mod player;
 mod playlist;
 mod probe;
 mod resume;
+mod session;
 mod settings;
 mod sizing;
 mod smtc;

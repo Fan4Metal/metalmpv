@@ -341,6 +341,7 @@ const LAST_SUB: &str = "last_sub";
 const RECENT: &str = "recent_files";
 const BOOKMARKS: &str = "bookmarks";
 const REMEMBER_RECENT: &str = "remember_recent";
+const RESTORE_PLAYLIST: &str = "restore_playlist";
 
 /// How many recent files are kept.
 pub const RECENT_COUNT: usize = 30;
@@ -629,6 +630,9 @@ pub struct Settings {
     /// The start screen lists the files played last ([`Self::recent`]);
     /// off, none are kept.
     pub remember_recent: bool,
+    /// The playlist is kept between runs (`session.rs`) and comes back at
+    /// a start without files, its entry current, nothing played.
+    pub restore_playlist: bool,
     /// The files played last, the latest first (the start screen). Not a
     /// setting, so Reset keeps them; Forget all clears them.
     pub recent: Vec<PathBuf>,
@@ -721,6 +725,7 @@ impl Default for Settings {
             last_audio: None,
             last_sub: None,
             remember_recent: true,
+            restore_playlist: true,
             recent: Vec::new(),
             bookmarks: Vec::new(),
         }
@@ -1024,6 +1029,7 @@ impl Settings {
                 v => Likeness::parse(v).map(Some),
             }),
             remember_recent: flag(REMEMBER_RECENT, d.remember_recent),
+            restore_playlist: flag(RESTORE_PLAYLIST, d.restore_playlist),
             recent: get(RECENT)
                 .map(|v| {
                     v.lines()
@@ -1199,6 +1205,7 @@ impl Settings {
             None => storage.remove_string(LAST_SUB),
         }
         storage.set_string(REMEMBER_RECENT, self.remember_recent.to_string());
+        storage.set_string(RESTORE_PLAYLIST, self.restore_playlist.to_string());
         let recent: Vec<String> = self
             .recent
             .iter()
@@ -1368,6 +1375,7 @@ mod tests {
             }),
             last_sub: Some(None),
             remember_recent: false,
+            restore_playlist: false,
             recent: vec![PathBuf::from(r"D:\Films\a.mkv"), PathBuf::from(r"E:\b.mp4")],
             bookmarks: vec![crate::bookmarks::Bookmark {
                 path: PathBuf::from(r"D:\Films\a.mkv"),
