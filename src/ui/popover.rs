@@ -21,7 +21,7 @@ pub const EDGE: f32 = 8.0;
 /// The frame of such a window.
 pub fn frame(ctx: &egui::Context) -> egui::Frame {
     egui::Frame::popup(&ctx.style_of(egui::Theme::Dark))
-        .fill(style::PANEL_BG)
+        .fill(style::panel_bg())
         .inner_margin(12)
 }
 
@@ -60,7 +60,7 @@ pub fn tabs(ui: &mut Ui, labels: &[&str], current: &mut usize, width: f32, id: &
     painter.hline(
         rect.x_range(),
         rect.bottom() - 0.5,
-        Stroke::new(1.0, style::LINE),
+        Stroke::new(1.0, style::line()),
     );
     let part = width / labels.len().max(1) as f32;
     for (i, label) in labels.iter().enumerate() {
@@ -74,14 +74,14 @@ pub fn tabs(ui: &mut Ui, labels: &[&str], current: &mut usize, width: f32, id: &
         }
         let on = *current == i;
         if response.hovered() && !on {
-            painter.rect_filled(r.shrink2(vec2(2.0, 3.0)), 4.0, style::HOVER);
+            painter.rect_filled(r.shrink2(vec2(2.0, 3.0)), 4.0, style::hover());
         }
         let color = if on {
             style::TEXT_BRIGHT
         } else if response.hovered() {
-            style::TEXT
+            style::text()
         } else {
-            style::TEXT_WEAK
+            style::text_weak()
         };
         painter.text(
             r.center() - vec2(0.0, 1.0),

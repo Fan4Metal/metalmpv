@@ -455,7 +455,7 @@ fn files_list(
     out: &mut Vec<Cmd>,
 ) {
     let frame = egui::Frame::new()
-        .fill(style::LIST_BG)
+        .fill(style::list_bg())
         .corner_radius(3.0)
         .inner_margin(egui::Margin::same(2));
     let ListState {
@@ -715,12 +715,12 @@ fn paint_entry(ui: &Ui, rect: Rect, entry: &Entry, logo: Option<Option<&egui::Te
     if entry.selected {
         ui.painter().rect_filled(rect, 2.0, style::selected_bg());
     } else if entry.hovered {
-        ui.painter().rect_filled(rect, 2.0, style::HOVER);
+        ui.painter().rect_filled(rect, 2.0, style::hover());
     }
     let color = if entry.current {
         style::current()
     } else {
-        style::TEXT
+        style::text()
     };
     let painter = ui.painter_at(rect.shrink2(vec2(4.0, 0.0)));
     let font = FontId::proportional(13.0);
@@ -729,7 +729,7 @@ fn paint_entry(ui: &Ui, rect: Rect, entry: &Entry, logo: Option<Option<&egui::Te
         Align2::LEFT_CENTER,
         format!("{}.", entry.number),
         font.clone(),
-        style::TEXT_WEAK,
+        style::text_weak(),
     );
     let mut text_left = n.right() + 6.0;
     if let Some(texture) = logo {
@@ -758,7 +758,7 @@ fn paint_entry(ui: &Ui, rect: Rect, entry: &Entry, logo: Option<Option<&egui::Te
             &painter,
             pos2(rect.right() - 13.0, rect.center().y),
             3.5,
-            style::TEXT_WEAK,
+            style::text_weak(),
         );
         text_right -= 16.0;
     }
@@ -777,7 +777,7 @@ fn paint_entry(ui: &Ui, rect: Rect, entry: &Entry, logo: Option<Option<&egui::Te
             pos2(text_left, rect.bottom() - 2.5),
             pos2(rect.right() - 6.0, rect.bottom() - 1.0),
         );
-        painter.rect_filled(track, 0.0, style::TEXT_WEAK.gamma_multiply(0.3));
+        painter.rect_filled(track, 0.0, style::text_weak().gamma_multiply(0.3));
         let done = track.with_max_x(track.left() + track.width() * progress);
         painter.rect_filled(done, 0.0, style::accent().gamma_multiply(0.85));
     }
@@ -907,7 +907,7 @@ fn fold_arrow(painter: &Painter, o: Pos2, open: bool) {
     };
     painter.add(egui::Shape::convex_polygon(
         arrow,
-        style::TEXT_WEAK,
+        style::text_weak(),
         egui::Stroke::NONE,
     ));
 }
@@ -917,7 +917,7 @@ fn fold_arrow(painter: &Painter, o: Pos2, open: bool) {
 fn group_header(ui: &mut Ui, name: &str, count: usize, folded: bool) -> Response {
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::CLICK);
     if response.hovered() {
-        ui.painter().rect_filled(rect, 2.0, style::HOVER);
+        ui.painter().rect_filled(rect, 2.0, style::hover());
     }
     let painter = ui.painter_at(rect);
     fold_arrow(&painter, pos2(rect.left() + 10.0, rect.center().y), !folded);
@@ -926,7 +926,7 @@ fn group_header(ui: &mut Ui, name: &str, count: usize, folded: bool) -> Response
         Align2::RIGHT_CENTER,
         count.to_string(),
         FontId::proportional(12.0),
-        style::TEXT_WEAK,
+        style::text_weak(),
     );
     let name = if name.is_empty() {
         tr!("No group", "Без группы")
@@ -957,7 +957,7 @@ fn chapters_header(ui: &mut Ui, count: usize, open: bool) -> Response {
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), HEADER), Sense::CLICK);
     if response.hovered() {
         ui.painter()
-            .rect_filled(rect.shrink2(vec2(0.0, 2.0)), 3.0, style::HOVER);
+            .rect_filled(rect.shrink2(vec2(0.0, 2.0)), 3.0, style::hover());
     }
     let painter = ui.painter();
     fold_arrow(painter, pos2(rect.left() + 12.0, rect.center().y), open);
@@ -966,14 +966,14 @@ fn chapters_header(ui: &mut Ui, count: usize, open: bool) -> Response {
         Align2::LEFT_CENTER,
         tr!("Chapters", "Главы"),
         FontId::proportional(13.0),
-        style::TEXT,
+        style::text(),
     );
     painter.text(
         pos2(rect.right() - 6.0, rect.center().y),
         Align2::RIGHT_CENTER,
         count.to_string(),
         FontId::proportional(12.0),
-        style::TEXT_WEAK,
+        style::text_weak(),
     );
     response.on_hover_text(if open {
         tr!("Hide the chapters", "Свернуть главы")
@@ -988,7 +988,7 @@ fn chapters_list(ui: &mut Ui, chapters: &[Chapter], time: Option<f64>, out: &mut
     let current = time.and_then(|t| chapters::current(chapters, t));
     let long = chapters.last().is_some_and(|c| c.time >= 3600.0);
     let frame = egui::Frame::new()
-        .fill(style::LIST_BG)
+        .fill(style::list_bg())
         .corner_radius(3.0)
         .inner_margin(egui::Margin::same(CHAPTERS_MARGIN as i8));
     frame.show(ui, |ui| {
@@ -1002,12 +1002,12 @@ fn chapters_list(ui: &mut Ui, chapters: &[Chapter], time: Option<f64>, out: &mut
                     let (rect, response) =
                         ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
                     if response.hovered() {
-                        ui.painter().rect_filled(rect, 2.0, style::HOVER);
+                        ui.painter().rect_filled(rect, 2.0, style::hover());
                     }
                     let color = if current == Some(i) {
                         style::current()
                     } else {
-                        style::TEXT
+                        style::text()
                     };
                     let painter = ui.painter_at(rect.shrink2(vec2(4.0, 0.0)));
                     let font = FontId::proportional(13.0);
@@ -1016,14 +1016,14 @@ fn chapters_list(ui: &mut Ui, chapters: &[Chapter], time: Option<f64>, out: &mut
                         Align2::LEFT_CENTER,
                         format!("{}.", i + 1),
                         font.clone(),
-                        style::TEXT_WEAK,
+                        style::text_weak(),
                     );
                     let start = painter.text(
                         rect.right_center() - vec2(6.0, 0.0),
                         Align2::RIGHT_CENTER,
                         crate::format::time(Some(chapter.time), long),
                         FontId::monospace(11.5),
-                        style::TEXT_WEAK,
+                        style::text_weak(),
                     );
                     let name = chapter.name(i + 1);
                     let text_left = n.right() + 6.0;

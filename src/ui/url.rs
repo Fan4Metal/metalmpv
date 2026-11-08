@@ -55,7 +55,7 @@ impl UrlDialog {
                     "Прямая ссылка на видео или поток (http, https, rtsp, rtmp, udp…). Страницы YouTube и других сайтов не поддерживаются."
                 ))
                 .size(12.0)
-                .color(style::TEXT_WEAK),
+                .color(style::text_weak()),
             );
             ui.add_space(10.0);
             let address = text.trim().to_owned();

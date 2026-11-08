@@ -277,6 +277,7 @@ impl App {
             settings.osd_font_file = None;
         }
         style::set_fonts(ctx, osd);
+        style::set_theme(settings.theme);
         style::set_accent(settings.accent);
         style::apply(ctx);
         ctx.options_mut(|o| {
@@ -1292,10 +1293,10 @@ impl App {
             .unwrap_or_default();
         let mut lines = vec![(title, 18.0, style::TEXT_BRIGHT)];
         if let Some(artist) = crate::info::artist(&state.metadata) {
-            lines.push((artist.to_owned(), 15.0, style::TEXT));
+            lines.push((artist.to_owned(), 15.0, style::text()));
         }
         if let Some(album) = crate::info::album(&state.metadata) {
-            lines.push((album, 14.0, style::TEXT_WEAK));
+            lines.push((album, 14.0, style::text_weak()));
         }
         let galleys: Vec<_> = lines
             .into_iter()
@@ -1335,7 +1336,7 @@ impl App {
         for galley in galleys {
             let h = galley.size().y;
             let x = rect.center().x - galley.size().x / 2.0;
-            painter.galley(egui::pos2(x, y), galley, style::TEXT);
+            painter.galley(egui::pos2(x, y), galley, style::text());
             y += h + 4.0;
         }
         true
@@ -2456,13 +2457,13 @@ impl App {
             frameless::resize_edges(ui);
             egui::Panel::top("playlist_title")
                 .exact_size(style::TITLE_HEIGHT)
-                .frame(egui::Frame::NONE.fill(style::TITLE_BG))
+                .frame(egui::Frame::NONE.fill(style::title_bg()))
                 .show_separator_line(false)
                 .show(ui, |ui| {
                     close |= ui::title::tool_row(ui, tr!("Playlist", "Плейлист"));
                 });
             egui::CentralPanel::default()
-                .frame(egui::Frame::NONE.fill(style::PANEL_BG).inner_margin(6))
+                .frame(egui::Frame::NONE.fill(style::panel_bg()).inner_margin(6))
                 .show(ui, |ui| {
                     let logos = self.settings.channel_logos.then_some(&mut self.logos);
                     cmds.extend(ui::playlist::panel(
@@ -3252,7 +3253,7 @@ impl App {
             )
         } else {
             // An audio file: its title.
-            (state.title.clone().unwrap_or_default(), style::TEXT)
+            (state.title.clone().unwrap_or_default(), style::text())
         };
         // Wrapped to the area, each line centred: an error may be long.
         let mut job = egui::text::LayoutJob::simple(
@@ -3289,7 +3290,7 @@ impl App {
                 format!("Версия {}", crate::VERSION)
             ),
             13.0,
-            style::TEXT_WEAK,
+            style::text_weak(),
         );
         let open = keymap::shortcut(Cmd::Open);
         let hint = if open.is_empty() {
@@ -3300,7 +3301,7 @@ impl App {
                 format!("Перетащите файл сюда или откройте его через {open}")
             )
         };
-        let hint = layout(hint, 14.0, style::TEXT);
+        let hint = layout(hint, 14.0, style::text());
         const GAPS: [f32; 3] = [14.0, 2.0, 18.0];
         let base =
             size + GAPS.iter().sum::<f32>() + name.size().y + version.size().y + hint.size().y;
@@ -3325,7 +3326,7 @@ impl App {
         for (galley, gap) in [(name, GAPS[1]), (version, GAPS[2]), (hint, 0.0)] {
             let h = galley.size().y;
             let x = rect.center().x - galley.size().x / 2.0;
-            painter.galley(egui::pos2(x, y), galley, style::TEXT);
+            painter.galley(egui::pos2(x, y), galley, style::text());
             y += h + gap;
         }
         if shown == 0 {
@@ -3339,8 +3340,12 @@ impl App {
         let centred = |y: f32, size: egui::Vec2| {
             Rect::from_min_size(egui::pos2(centre - size.x / 2.0, y), size)
         };
-        let header = layout(tr!("RECENT", "НЕДАВНИЕ").to_owned(), 11.0, style::TEXT_WEAK);
-        painter.galley(centred(y, header.size()).min, header, style::TEXT_WEAK);
+        let header = layout(
+            tr!("RECENT", "НЕДАВНИЕ").to_owned(),
+            11.0,
+            style::text_weak(),
+        );
+        painter.galley(centred(y, header.size()).min, header, style::text_weak());
         y += 20.0 + 8.0;
         let truncated = |text: String, points: f32, color: Color32| {
             let mut job =
@@ -3380,8 +3385,8 @@ impl App {
                         .map(|p| p.display().to_string())
                         .unwrap_or_default();
                     // Laid out in the text colour: the hover only tints it.
-                    let name = truncated(name, 14.0, style::TEXT);
-                    let folder = truncated(folder, 11.0, style::TEXT_WEAK);
+                    let name = truncated(name, 14.0, style::text());
+                    let folder = truncated(folder, 11.0, style::text_weak());
                     let name_rect = centred(row.top(), name.size());
                     let folder_rect = centred(name_rect.bottom() + 1.0, folder.size());
                     // The name and the folder under it take the click.
@@ -3399,11 +3404,11 @@ impl App {
                     let color = if hovered {
                         style::accent()
                     } else {
-                        style::TEXT
+                        style::text()
                     };
                     let painter = ui.painter();
                     painter.galley_with_override_text_color(name_rect.min, name, color);
-                    painter.galley(folder_rect.min, folder, style::TEXT_WEAK);
+                    painter.galley(folder_rect.min, folder, style::text_weak());
                     if response.clicked() {
                         out = Some(Cmd::OpenRecent(i));
                     }
@@ -3413,14 +3418,14 @@ impl App {
         let clear = layout(
             tr!("Clear the list", "Очистить список").to_owned(),
             12.0,
-            style::TEXT_WEAK,
+            style::text_weak(),
         );
         let clear_rect = centred(y + 4.0, clear.size());
         let response = ui.interact(clear_rect, ui.id().with("recent_clear"), Sense::CLICK);
         let color = if response.hovered() {
             style::accent()
         } else {
-            style::TEXT_WEAK
+            style::text_weak()
         };
         painter.galley_with_override_text_color(clear_rect.min, clear, color);
         if response.clicked() {
@@ -3496,12 +3501,12 @@ impl App {
             ctx.set_cursor_icon(CursorIcon::None);
         }
         let alpha = (255.0 * (1.0 - self.settings.fullscreen_transparency / 100.0)).round() as u8;
-        let fill = style::BAR_BG.gamma_multiply_u8(alpha);
+        let fill = style::bar_bg().gamma_multiply_u8(alpha);
         self.fullscreen_list_width = if self.fullscreen_playlist {
             self.fullscreen_playlist_panel(
                 ctx,
                 state,
-                style::PANEL_BG.gamma_multiply_u8(alpha),
+                style::panel_bg().gamma_multiply_u8(alpha),
                 cmds,
             )
         } else {
@@ -3741,7 +3746,7 @@ fn fullscreen_title(ctx: &egui::Context, screen: Rect, title: &str, fill: Color3
                 let mut job = egui::text::LayoutJob::simple_singleline(
                     title.to_owned(),
                     FontId::proportional(14.0),
-                    style::TEXT,
+                    style::text(),
                 );
                 job.wrap = egui::text::TextWrapping::truncate_at_width(rect.width() - 48.0);
                 f.layout_job(job)
@@ -3749,7 +3754,7 @@ fn fullscreen_title(ctx: &egui::Context, screen: Rect, title: &str, fill: Color3
             let pos = Align2::CENTER_CENTER
                 .anchor_size(rect.center(), galley.size())
                 .min;
-            ui.painter().galley(pos, galley, style::TEXT);
+            ui.painter().galley(pos, galley, style::text());
         });
 }
 
@@ -3943,7 +3948,7 @@ fn bookmarks_menu(
                         egui::pos2(rect.right(), rect.bottom() - 0.5),
                     );
                     let painter = ui.painter();
-                    painter.rect_filled(track, 0.0, style::TEXT_WEAK.gamma_multiply(0.3));
+                    painter.rect_filled(track, 0.0, style::text_weak().gamma_multiply(0.3));
                     let done = track.with_max_x(track.left() + track.width() * share);
                     painter.rect_filled(done, 0.0, style::accent().gamma_multiply(0.85));
                 }
@@ -4383,7 +4388,7 @@ impl eframe::App for App {
             if let Some(icon) = icon.as_ref().filter(|_| interface.title_row()) {
                 egui::Panel::top("title")
                     .exact_size(style::TITLE_HEIGHT)
-                    .frame(egui::Frame::NONE.fill(style::TITLE_BG))
+                    .frame(egui::Frame::NONE.fill(style::title_bg()))
                     .show_separator_line(false)
                     .show(root_ui, |ui| {
                         if let Some(cmd) =
@@ -4405,7 +4410,7 @@ impl eframe::App for App {
                     .resizable(true)
                     .default_size(ui::playlist::MIN_WIDTH)
                     .size_range(ui::playlist::MIN_WIDTH..=600.0)
-                    .frame(egui::Frame::NONE.fill(style::PANEL_BG).inner_margin(6))
+                    .frame(egui::Frame::NONE.fill(style::panel_bg()).inner_margin(6))
                     .show(root_ui, |ui| {
                         let logos = self.settings.channel_logos.then_some(&mut self.logos);
                         cmds.extend(ui::playlist::panel(
@@ -4460,7 +4465,7 @@ impl eframe::App for App {
                         ui.new_child(egui::UiBuilder::new().max_rect(rect).id_salt("bar_over"));
                     let bar = self.controls_bar(&state, false, compact);
                     ui::controls::frame(compact)
-                        .fill(style::BAR_BG.gamma_multiply_u8(235))
+                        .fill(style::bar_bg().gamma_multiply_u8(235))
                         .show(&mut child, |ui| {
                             ui.set_min_size(ui.max_rect().size());
                             cmds.extend(ui::controls::bar(ui, bar));
@@ -4496,7 +4501,8 @@ impl eframe::App for App {
         if changed.keys {
             crate::keymap::publish(&self.settings.keys);
         }
-        if changed.accent {
+        if changed.look {
+            style::set_theme(self.settings.theme);
             style::set_accent(self.settings.accent);
             style::apply(&ctx);
         }

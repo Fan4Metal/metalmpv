@@ -390,7 +390,7 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, kept: &mut Kept<'_>, now: Now<'_>
             ui.id().with("panel_navigator"),
             now.geometry,
             adjust,
-            style::CARD_BG,
+            style::card_bg(),
         );
         ui.add_space(4.0);
         let tip = tr!(
@@ -952,7 +952,7 @@ fn now_playing(ui: &mut Ui, now: &Now<'_>) {
             if let Some(b) = bitrate {
                 parts.push(crate::info::bitrate_in(lang, b));
             }
-            ui.label(RichText::new(parts.join(" · ")).color(style::TEXT));
+            ui.label(RichText::new(parts.join(" · ")).color(style::text()));
             if let Some(out) = now
                 .audio_out
                 .and_then(|o| crate::info::audio_out_in(lang, o))
@@ -962,7 +962,7 @@ fn now_playing(ui: &mut Ui, now: &Now<'_>) {
                         format!("To the device: {out}"),
                         format!("На устройство: {out}")
                     ))
-                    .color(style::TEXT_WEAK),
+                    .color(style::text_weak()),
                 );
             }
         });
@@ -1022,7 +1022,7 @@ fn speakers(ui: &mut Ui, channels: i64, layout: Option<&str>, scale: f32) -> egu
         if lit.contains(&place) {
             style::accent()
         } else {
-            style::TRACK
+            style::track()
         }
     };
     for (place, p) in places {
@@ -1047,7 +1047,7 @@ fn speakers(ui: &mut Ui, channels: i64, layout: Option<&str>, scale: f32) -> egu
     painter.circle_stroke(
         at(0.0, 0.15),
         4.0 * scale,
-        Stroke::new(1.3, style::TEXT_WEAK),
+        Stroke::new(1.3, style::text_weak()),
     );
     response
 }
@@ -1056,7 +1056,7 @@ fn speakers(ui: &mut Ui, channels: i64, layout: Option<&str>, scale: f32) -> egu
 /// the device's.
 fn arrow(ui: &mut Ui, height: f32) {
     let (rect, _) = ui.allocate_exact_size(vec2(16.0, height), Sense::hover());
-    let stroke = Stroke::new(1.5, style::TEXT_WEAK);
+    let stroke = Stroke::new(1.5, style::text_weak());
     let (y, left, right) = (rect.center().y, rect.left() + 2.0, rect.right() - 2.0);
     let painter = ui.painter();
     painter.line_segment([pos2(left, y), pos2(right, y)], stroke);
@@ -1098,7 +1098,7 @@ fn eq_head(ui: &mut Ui, eq: &mut Equalizer, own: &mut Vec<OwnEq>, naming: &mut O
                     ui.label(
                         RichText::new(tr!("Mine", "Мои"))
                             .small()
-                            .color(style::TEXT_WEAK),
+                            .color(style::text_weak()),
                     );
                     for (i, o) in own.iter().enumerate() {
                         if ui.selectable_label(mine == Some(i), &o.name).clicked() {
@@ -1172,7 +1172,7 @@ fn bands(ui: &mut Ui, eq: &mut Equalizer) {
                         let color = if gain != 0 && on {
                             style::accent_hover()
                         } else {
-                            style::TEXT_WEAK
+                            style::text_weak()
                         };
                         ui.label(RichText::new(text).size(11.0).color(color));
                         let response = ui
@@ -1211,7 +1211,7 @@ fn bands(ui: &mut Ui, eq: &mut Equalizer) {
                         Align2::RIGHT_CENTER,
                         text,
                         font.clone(),
-                        style::TEXT_WEAK,
+                        style::text_weak(),
                     );
                 }
             }
@@ -1222,12 +1222,12 @@ fn bands(ui: &mut Ui, eq: &mut Equalizer) {
         {
             let zero = (top + bottom) / 2.0;
             let span = (first.x - column / 2.0)..=(last.x + column / 2.0);
-            shapes.push(Shape::hline(span, zero, Stroke::new(1.0, style::LINE)));
+            shapes.push(Shape::hline(span, zero, Stroke::new(1.0, style::line())));
         }
         let curve = if on {
             style::accent().gamma_multiply(0.8)
         } else {
-            style::TEXT_WEAK.gamma_multiply(0.4)
+            style::text_weak().gamma_multiply(0.4)
         };
         shapes.push(Shape::line(smooth(&knobs), Stroke::new(2.0, curve)));
         ui.painter().set(under, Shape::Vec(shapes));
@@ -1469,7 +1469,7 @@ fn looks(
                     ui.label(
                         RichText::new(tr!("Mine", "Мои"))
                             .small()
-                            .color(style::TEXT_WEAK),
+                            .color(style::text_weak()),
                     );
                     for (i, o) in own.iter().enumerate() {
                         if ui.selectable_label(mine == Some(i), &o.name).clicked() {
@@ -1726,14 +1726,14 @@ fn rail(ui: &mut Ui, value: &mut f64, spec: &Spec, width: f32) -> egui::Response
         let painter = ui.painter();
         let y = rect.center().y;
         let track = Rect::from_x_y_ranges(left..=right, (y - 2.0)..=(y + 2.0));
-        painter.rect_filled(track, 2.0, style::TRACK);
+        painter.rect_filled(track, 2.0, style::track());
         let (from, to) = (x_of(spec.origin), x_of(*value));
         if (from - to).abs() > 0.5 {
             let lit = Rect::from_x_y_ranges(from.min(to)..=from.max(to), (y - 2.0)..=(y + 2.0));
             let color = if ui.is_enabled() {
                 style::accent()
             } else {
-                style::TEXT_WEAK
+                style::text_weak()
             };
             painter.rect_filled(lit, 2.0, color);
         }
@@ -1741,14 +1741,14 @@ fn rail(ui: &mut Ui, value: &mut f64, spec: &Spec, width: f32) -> egui::Response
             painter.vline(
                 from,
                 (y - 5.0)..=(y + 5.0),
-                Stroke::new(1.0, style::TEXT_WEAK),
+                Stroke::new(1.0, style::text_weak()),
             );
         }
         let active = response.hovered() || response.dragged();
         let knob = if active {
             style::TEXT_BRIGHT
         } else {
-            style::TEXT
+            style::text()
         };
         painter.circle_filled(pos2(to, y), if active { KNOB + 1.0 } else { KNOB }, knob);
     }
@@ -1793,14 +1793,14 @@ fn stepper(ui: &mut Ui, rect: Rect, id: egui::Id, forward: bool) -> bool {
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         if response.hovered() {
-            painter.rect_filled(rect.shrink2(vec2(0.0, 2.0)), 3.0, style::HOVER);
+            painter.rect_filled(rect.shrink2(vec2(0.0, 2.0)), 3.0, style::hover());
         }
         let color = if !ui.is_enabled() {
-            style::TEXT_WEAK.gamma_multiply(0.5)
+            style::text_weak().gamma_multiply(0.5)
         } else if response.hovered() {
             style::TEXT_BRIGHT
         } else {
-            style::TEXT_WEAK
+            style::text_weak()
         };
         let c = rect.center();
         let (dx, dy) = (if forward { 2.0 } else { -2.0 }, 4.0);
@@ -1896,20 +1896,20 @@ fn segments(ui: &mut Ui, parts: &[Segment]) -> Option<usize> {
         if s.on {
             painter.rect_filled(inner, 4.0, style::selected_bg());
         } else if response.hovered() {
-            painter.rect_filled(inner, 4.0, style::HOVER);
+            painter.rect_filled(inner, 4.0, style::hover());
         }
         // A line between two parts neither of which is lit.
         if i > 0 && !s.on && !parts[i - 1].on {
             painter.vline(
                 r.left(),
                 (r.top() + 6.0)..=(r.bottom() - 6.0),
-                Stroke::new(1.0, style::LINE),
+                Stroke::new(1.0, style::line()),
             );
         }
         let color = if s.on || response.hovered() {
             style::TEXT_BRIGHT
         } else {
-            style::TEXT
+            style::text()
         };
         let galley = painter.layout_no_wrap(s.text.clone(), font.clone(), color);
         let icon = if s.icon.is_some() { ICON + 4.0 } else { 0.0 };
@@ -1933,7 +1933,7 @@ fn segments(ui: &mut Ui, parts: &[Segment]) -> Option<usize> {
 
 /// A small note under a row.
 fn note(ui: &mut Ui, text: &str) {
-    ui.label(RichText::new(text).size(12.0).color(style::TEXT_WEAK));
+    ui.label(RichText::new(text).size(12.0).color(style::text_weak()));
 }
 
 /// A group's title, which folds the group (open at first; the state in
@@ -1955,9 +1955,9 @@ fn section(ui: &mut Ui, key: &str, text: &str, note: &str) -> bool {
         open
     };
     let color = if response.hovered() {
-        style::TEXT
+        style::text()
     } else {
-        style::TEXT_WEAK
+        style::text_weak()
     };
     let painter = ui.painter();
     // The arrow: right when folded, down when open.
@@ -1983,7 +1983,7 @@ fn section(ui: &mut Ui, key: &str, text: &str, note: &str) -> bool {
         Align2::RIGHT_CENTER,
         note,
         font,
-        style::TEXT_WEAK,
+        style::text_weak(),
     );
     ui.add_space(2.0);
     open

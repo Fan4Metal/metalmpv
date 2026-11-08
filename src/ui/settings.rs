@@ -11,7 +11,7 @@ use egui::{
 };
 
 use super::osd::OsdStyle;
-use super::style::{self, Accent, ColourText};
+use super::style::{self, Accent, ColourText, Theme};
 use crate::audio::Device;
 use crate::fonts::Family;
 use crate::i18n::LangChoice;
@@ -132,8 +132,9 @@ pub struct Changed {
     pub forget_positions: bool,
     /// The keys (`keymap::publish`).
     pub keys: bool,
-    /// The accent colour (`style::set_accent`, the window icon).
-    pub accent: bool,
+    /// The theme or the accent colour (`style::set_theme`,
+    /// `style::set_accent`, `style::apply`; the window icon).
+    pub look: bool,
     /// Choose… of the frames' folder: the app shows the dialog
     /// (`dialog.rs`).
     pub frames_folder: bool,
@@ -168,7 +169,7 @@ impl SettingsDialog {
         let modal = egui::Modal::new(egui::Id::new("settings"))
             .frame(
                 egui::Frame::popup(&ctx.style_of(egui::Theme::Dark))
-                    .fill(style::PANEL_BG)
+                    .fill(style::panel_bg())
                     .corner_radius(RADIUS)
                     .inner_margin(Margin::ZERO),
             )
@@ -193,7 +194,7 @@ impl SettingsDialog {
                         ne: 0,
                         se: 0,
                     },
-                    style::SIDEBAR_BG,
+                    style::sidebar_bg(),
                 );
                 ui.painter().text(
                     sidebar.left_top() + vec2(20.0, 20.0),
@@ -256,7 +257,7 @@ impl SettingsDialog {
                         .color(style::TEXT_BRIGHT),
                 );
                 ui.add_space(2.0);
-                ui.label(RichText::new(self.page.summary()).color(style::TEXT_WEAK));
+                ui.label(RichText::new(self.page.summary()).color(style::text_weak()));
                 ui.add_space(4.0);
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
@@ -329,7 +330,7 @@ impl SettingsDialog {
         let color = if selected {
             style::TEXT_BRIGHT
         } else {
-            style::TEXT
+            style::text()
         };
         ui.painter().text(
             pos2(row.left() + 16.0, row.center().y),
@@ -371,7 +372,7 @@ fn child(ui: &mut Ui, rect: Rect) -> Ui {
 /// A card: a lighter rounded ground without a frame.
 fn card(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
     egui::Frame::new()
-        .fill(style::CARD_BG)
+        .fill(style::card_bg())
         .corner_radius(8.0)
         .inner_margin(Margin::symmetric(16, 4))
         .show(ui, |ui| {
@@ -391,7 +392,7 @@ pub(super) fn section(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui)) {
 /// A remark under a card.
 pub(super) fn note(ui: &mut Ui, text: &str) {
     ui.add_space(4.0);
-    ui.label(RichText::new(text).size(12.5).color(style::TEXT_WEAK));
+    ui.label(RichText::new(text).size(12.5).color(style::text_weak()));
 }
 
 /// A line between the rows of a card.
@@ -400,7 +401,7 @@ pub(super) fn divider(ui: &mut Ui) {
     ui.painter().hline(
         rect.x_range(),
         rect.center().y,
-        Stroke::new(1.0, style::LINE),
+        Stroke::new(1.0, style::line()),
     );
 }
 
@@ -420,14 +421,14 @@ pub(super) fn row<R>(
     let title = ui.painter().layout(
         title.to_owned(),
         FontId::proportional(14.0),
-        style::TEXT,
+        style::text(),
         text_width,
     );
     let hint = hint.map(|h| {
         ui.painter().layout(
             h.to_owned(),
             FontId::proportional(12.5),
-            style::TEXT_WEAK,
+            style::text_weak(),
             text_width,
         )
     });
@@ -437,11 +438,11 @@ pub(super) fn row<R>(
     let mut y = rect.center().y - text_height / 2.0;
     let title_height = title.size().y;
     ui.painter()
-        .galley(pos2(rect.left(), y), title, style::TEXT);
+        .galley(pos2(rect.left(), y), title, style::text());
     y += title_height + 2.0;
     if let Some(hint) = hint {
         ui.painter()
-            .galley(pos2(rect.left(), y), hint, style::TEXT_WEAK);
+            .galley(pos2(rect.left(), y), hint, style::text_weak());
     }
     let control_rect = Rect::from_min_max(pos2(rect.right() - control_width, rect.top()), rect.max);
     let mut ui = ui.new_child(
@@ -450,6 +451,69 @@ pub(super) fn row<R>(
             .layout(Layout::right_to_left(Align::Center)),
     );
     control(&mut ui)
+}
+
+/// The themes in a list, each with a sample of its grounds.
+fn themes(ui: &mut Ui, theme: &mut Theme) -> bool {
+    let before = *theme;
+    egui::ComboBox::from_id_salt("settings_theme")
+        .selected_text(theme.label())
+        .width(220.0)
+        .show_ui(ui, |ui| {
+            for t in Theme::ALL {
+                let id = ui.id().with(("theme_sample", t));
+                let sample = egui::Atom::custom(id, vec2(26.0, 14.0));
+                let shown = egui::Button::selectable(*theme == t, (sample, t.label())).atom_ui(ui);
+                if let Some(rect) = shown.rect(id) {
+                    theme_sample(ui, rect, t);
+                }
+                if shown.response.clicked() {
+                    *theme = t;
+                }
+            }
+        });
+    *theme != before
+}
+
+/// Three stripes of a theme's grounds (title row, panel, control bar)
+/// and its text.
+fn theme_sample(ui: &Ui, rect: Rect, theme: Theme) {
+    let g = theme.grounds();
+    let painter = ui.painter();
+    painter.rect_filled(rect, 3.0, g.panel_bg);
+    let third = rect.height() / 3.0;
+    painter.rect_filled(
+        Rect::from_min_size(rect.min, vec2(rect.width(), third)),
+        egui::CornerRadius {
+            nw: 3,
+            ne: 3,
+            ..Default::default()
+        },
+        g.title_bg,
+    );
+    painter.rect_filled(
+        Rect::from_min_size(
+            pos2(rect.left(), rect.bottom() - third),
+            vec2(rect.width(), third),
+        ),
+        egui::CornerRadius {
+            sw: 3,
+            se: 3,
+            ..Default::default()
+        },
+        g.bar_bg,
+    );
+    painter.hline(
+        rect.left() + 5.0..=rect.right() - 5.0,
+        rect.center().y,
+        Stroke::new(1.5, g.text),
+    );
+    painter.rect_stroke(
+        rect,
+        3.0,
+        Stroke::new(1.0, g.line),
+        egui::StrokeKind::Inside,
+    );
 }
 
 /// The width of the accent colours' row.
@@ -776,12 +840,12 @@ pub fn switch(ui: &mut Ui, on: &mut bool) -> Response {
             };
             painter.rect_filled(rect, radius, fill);
         } else {
-            painter.rect_filled(rect, radius, style::TRACK);
+            painter.rect_filled(rect, radius, style::track());
         }
         let knob = if *on || hovered {
             style::TEXT_BRIGHT
         } else {
-            style::TEXT_WEAK
+            style::text_weak()
         };
         let x = egui::lerp(rect.left() + radius..=rect.right() - radius, t);
         painter.circle_filled(pos2(x, rect.center().y), radius - 4.0 + t, knob);
@@ -835,13 +899,24 @@ fn general(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
         divider(ui);
         row(
             ui,
+            tr!("Theme", "Тема"),
+            Some(tr!(
+                "The colours of the title row, the control bar, the playlist and the windows. The picture's ground stays black.",
+                "Цвета строки заголовка, панели управления, плейлиста и окон. Фон под изображением остаётся чёрным."
+            )),
+            230.0,
+            |ui| changed.look |= themes(ui, &mut settings.theme),
+        );
+        divider(ui);
+        row(
+            ui,
             tr!("Accent colour", "Акцентный цвет"),
             Some(tr!(
                 "The Play button, the seek bar, the switches, the playing file and the icon of the window.",
                 "Кнопка воспроизведения, полоса перемотки, переключатели, текущий файл и значок окна."
             )),
             ACCENTS_WIDTH,
-            |ui| changed.accent |= accents(ui, &mut settings.accent),
+            |ui| changed.look |= accents(ui, &mut settings.accent),
         );
         divider(ui);
         row(
@@ -1621,7 +1696,7 @@ fn folding(ui: &mut Ui, id: &str, title: &str, summary: &str, rows: impl FnOnce(
     let color = if response.hovered() {
         style::TEXT_BRIGHT
     } else {
-        style::TEXT
+        style::text()
     };
     let painter = ui.painter();
     // The arrow: right when folded, down when open.
@@ -1643,7 +1718,7 @@ fn folding(ui: &mut Ui, id: &str, title: &str, summary: &str, rows: impl FnOnce(
         Align2::RIGHT_CENTER,
         summary,
         FontId::proportional(12.5),
-        style::TEXT_WEAK,
+        style::text_weak(),
     );
     fold.show_body_unindented(ui, rows);
 }
@@ -1924,7 +1999,7 @@ fn updates_page(ui: &mut Ui, updates: &mut Updates) {
             ui.label(RichText::new(tr!(
                 "Only api.github.com is asked, with the program's version in the request; nothing is downloaded or installed. A newer version shows a button in the title row that opens its release page.",
                 "Запрос уходит только к api.github.com и содержит лишь версию программы; ничего не скачивается и не устанавливается. О новой версии сообщает кнопка в строке заголовка, открывающая страницу выпуска."
-            )).color(style::TEXT_WEAK));
+            )).color(style::text_weak()));
             ui.add_space(8.0);
         },
     );
@@ -2238,8 +2313,6 @@ impl SettingsDialog {
 const KEYS_WIDTH: f32 = 300.0;
 /// The height of a key.
 const KEY_HEIGHT: f32 = 24.0;
-/// A key's ground under the pointer.
-const KEY_HOVER: Color32 = Color32::from_rgb(0x48, 0x4d, 0x58);
 
 /// What a key on the keys page was clicked for.
 enum Chip {
@@ -2296,9 +2369,9 @@ fn key_chip(ui: &mut Ui, id: (Action, usize), label: &str, waiting: bool) -> Opt
     let fill = if waiting {
         style::accent()
     } else if hovered {
-        KEY_HOVER
+        style::key_hover()
     } else {
-        style::KEY_BG
+        style::key_bg()
     };
     let painter = ui.painter();
     painter.rect_filled(rect, 5.0, fill);
@@ -2311,7 +2384,7 @@ fn key_chip(ui: &mut Ui, id: (Action, usize), label: &str, waiting: bool) -> Opt
         let c = if cross.hovered() {
             style::TEXT_BRIGHT
         } else {
-            style::TEXT_WEAK
+            style::text_weak()
         };
         let o = pos2(cross.rect.center().x - 2.0, cross.rect.center().y);
         let d = 3.5;
@@ -2377,7 +2450,8 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.video_map_copy = d.video_map_copy;
     settings.media_keys = d.media_keys;
     settings.interface = d.interface;
-    changed.accent |= settings.accent != d.accent;
+    changed.look |= settings.theme != d.theme || settings.accent != d.accent;
+    settings.theme = d.theme;
     settings.accent = d.accent;
     changed.keys |= settings.keys != d.keys;
     settings.keys = d.keys;

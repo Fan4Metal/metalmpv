@@ -18,7 +18,7 @@ use crate::playlist::Repeat;
 use crate::sub_style::{self, SubStyle};
 use crate::tracks::Likeness;
 use crate::ui::osd::{self, OsdStyle};
-use crate::ui::style::Accent;
+use crate::ui::style::{Accent, Theme};
 
 const LANGUAGE: &str = "language";
 const CHECK_UPDATES: &str = "check_updates";
@@ -62,6 +62,7 @@ const SUB_LANGUAGES: &str = "sub_languages";
 const SUB_AUTO: &str = "sub_auto";
 const KEYS: &str = "keys";
 const ACCENT: &str = "accent";
+const THEME: &str = "theme";
 const PLAYLIST_DETACHED: &str = "playlist_detached";
 const PLAYLIST_RECT: &str = "playlist_rect";
 const MINI_RECT: &str = "mini_rect";
@@ -541,6 +542,8 @@ pub struct Settings {
     pub media_keys: MediaKeys,
     /// The keys, as changed on the Keys page (`keymap.rs`).
     pub keys: Keymap,
+    /// The interface's grounds and text.
+    pub theme: Theme,
     /// The interface's accent colour and the icon's screen.
     pub accent: Accent,
     /// The output device as mpv names it; empty for Windows' default.
@@ -678,6 +681,7 @@ impl Default for Settings {
             interface: Interface::Full,
             media_keys: MediaKeys::Always,
             keys: Keymap::default(),
+            theme: Theme::Graphite,
             accent: Accent::Blue,
             audio_device: String::new(),
             audio_channels: Channels::Auto,
@@ -848,6 +852,10 @@ impl Settings {
                 .and_then(MediaKeys::from_name)
                 .unwrap_or(d.media_keys),
             keys: get(KEYS).as_deref().map_or(d.keys, Keymap::from_setting),
+            theme: get(THEME)
+                .as_deref()
+                .and_then(Theme::from_name)
+                .unwrap_or(d.theme),
             accent: get(ACCENT)
                 .as_deref()
                 .and_then(Accent::from_name)
@@ -1104,6 +1112,7 @@ impl Settings {
         storage.set_string(SUB_LANGUAGES, prefs.subs.join(","));
         storage.set_string(SUB_AUTO, prefs.sub_auto.name().into());
         storage.set_string(KEYS, self.keys.to_setting());
+        storage.set_string(THEME, self.theme.name().to_owned());
         storage.set_string(ACCENT, self.accent.name());
         storage.set_string(AUDIO_DEVICE, self.audio_device.clone());
         storage.set_string(AUDIO_CHANNELS, self.audio_channels.name().into());
@@ -1268,6 +1277,7 @@ mod tests {
             interface: Interface::Compact,
             media_keys: MediaKeys::Window,
             keys: Keymap::from_setting("pause\tF\nstop\tSpace Ctrl+MouseBack\nmute\t"),
+            theme: Theme::Espresso,
             accent: Accent::Custom(0x12ab9f),
             audio_device: "wasapi/{0.0.0.00000000}.{abc}".into(),
             audio_channels: Channels::Surround51,

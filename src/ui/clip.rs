@@ -153,7 +153,7 @@ impl ClipDialog {
                     crate::format::clock_tenths_in(lang, stretch.to),
                     crate::format::time(Some(span), span >= 3600.0)
                 ))
-                .color(style::TEXT_WEAK),
+                .color(style::text_weak()),
             );
             ui.add_space(8.0);
             if let Some(job) = &self.job {

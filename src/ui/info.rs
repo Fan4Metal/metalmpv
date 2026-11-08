@@ -108,7 +108,7 @@ impl InfoWindow {
             .constrain_to(screen)
             .frame(
                 egui::Frame::window(&ctx.style_of(egui::Theme::Dark))
-                    .fill(style::PANEL_BG)
+                    .fill(style::panel_bg())
                     .corner_radius(8)
                     .inner_margin(12),
             )
@@ -221,7 +221,7 @@ impl InfoWindow {
                     ui.add(egui::Label::new(RichText::new(artist).size(14.0)).wrap());
                 }
                 if let Some(album) = album {
-                    ui.add(egui::Label::new(RichText::new(album).color(style::TEXT_WEAK)).wrap());
+                    ui.add(egui::Label::new(RichText::new(album).color(style::text_weak())).wrap());
                 }
                 let unfolded = match (&self.unfolded, subject.path) {
                     (Some((of, unfolded)), Some(path)) if of == path => *unfolded,
@@ -494,7 +494,7 @@ fn body(
                     RichText::new(info::kind_in(lang, kind, covers_only))
                         .small()
                         .strong()
-                        .color(style::TEXT_WEAK),
+                        .color(style::text_weak()),
                 );
                 for (track, rows) in of_kind {
                     track_entry(ui, track, rows, subject, labels);
@@ -576,7 +576,7 @@ fn track_entry(
             let color = if track.selected {
                 style::TEXT_BRIGHT
             } else {
-                style::TEXT
+                style::text()
             };
             let mut response = ui
                 .add(
@@ -593,7 +593,7 @@ fn track_entry(
             if !details.is_empty() {
                 clicked |= ui
                     .add(
-                        egui::Label::new(RichText::new(details).color(style::TEXT_WEAK))
+                        egui::Label::new(RichText::new(details).color(style::text_weak()))
                             .sense(Sense::click())
                             .wrap(),
                     )
@@ -698,7 +698,7 @@ fn sparkline(ui: &mut Ui, history: &[f32]) {
     ui.label(
         RichText::new(tr!(format!("up to {most}"), format!("до {most}")))
             .small()
-            .color(style::TEXT_WEAK),
+            .color(style::text_weak()),
     );
 }
 
@@ -877,7 +877,7 @@ fn colours(chip: &info::Chip) -> (Color32, Color32, Color32) {
                 if chip.selected {
                     style::TEXT_BRIGHT
                 } else {
-                    style::TEXT
+                    style::text()
                 },
             ),
         },
@@ -952,7 +952,7 @@ fn row_with(ui: &mut Ui, label: &str, labels: f32, value: impl FnOnce(&mut Ui)) 
     ui.horizontal_top(|ui| {
         ui.allocate_ui_with_layout(vec2(labels, 0.0), Layout::top_down(Align::Min), |ui| {
             ui.set_width(labels);
-            ui.add(egui::Label::new(RichText::new(label).color(style::TEXT_WEAK)).wrap());
+            ui.add(egui::Label::new(RichText::new(label).color(style::text_weak())).wrap());
         });
         let width = ui.available_width();
         ui.allocate_ui_with_layout(vec2(width, 0.0), Layout::top_down(Align::Min), |ui| {

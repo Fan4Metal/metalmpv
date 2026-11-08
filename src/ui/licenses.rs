@@ -95,7 +95,7 @@ impl LicensesView {
                     "MetalMPV распространяется вместе с libmpv на условиях GNU GPL v3, без каких-либо гарантий. Его собственный код — под лицензией MIT."
                 ))
                 .size(12.0)
-                .color(style::TEXT_WEAK),
+                .color(style::text_weak()),
             );
 
             let text = Rect::from_min_max(pos2(list.right() + 12.0, rect.top() + 28.0), rect.max);
@@ -122,7 +122,7 @@ impl LicensesView {
                             egui::Label::new(
                                 RichText::new(line.as_ref())
                                     .font(font.clone())
-                                    .color(style::TEXT),
+                                    .color(style::text()),
                             )
                             .extend(),
                         );

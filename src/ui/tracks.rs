@@ -163,7 +163,7 @@ fn columns(ui: &mut Ui, all: &[Track], wide: &mut bool, room: impl Fn(&Ui) -> f3
         ui.painter().vline(
             line.center().x,
             line.y_range(),
-            Stroke::new(1.0, style::LINE),
+            Stroke::new(1.0, style::line()),
         );
         ui.vertical(|ui| {
             ui.set_width(COLUMN);
@@ -237,7 +237,7 @@ fn title_as_tab(ui: &mut Ui, title: &str, width: f32) {
     painter.hline(
         rect.x_range(),
         rect.bottom() - 0.5,
-        Stroke::new(1.0, style::LINE),
+        Stroke::new(1.0, style::line()),
     );
     painter.text(
         rect.center() - vec2(0.0, 1.0),
@@ -262,12 +262,12 @@ fn row(ui: &mut Ui, selected: bool, name: &str, badges: &[String], tip: Option<&
     if selected {
         painter.rect_filled(rect, 4.0, style::selected_bg());
     } else if response.hovered() {
-        painter.rect_filled(rect, 4.0, style::HOVER);
+        painter.rect_filled(rect, 4.0, style::hover());
     }
     let text_color = if selected {
         style::TEXT_BRIGHT
     } else {
-        style::TEXT
+        style::text()
     };
     let left = rect.left() + 24.0;
     let right = rect.right() - 6.0;
@@ -281,7 +281,7 @@ fn row(ui: &mut Ui, selected: bool, name: &str, badges: &[String], tip: Option<&
     let ring = if selected {
         style::accent_hover()
     } else {
-        style::TEXT_WEAK
+        style::text_weak()
     };
     painter.circle_stroke(mark, 5.5, Stroke::new(1.3, ring));
     if selected {

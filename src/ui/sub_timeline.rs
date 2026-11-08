@@ -94,14 +94,14 @@ fn strip_contents(
     out: &mut Vec<Cmd>,
 ) {
     let painter = ui.painter_at(strip);
-    painter.rect_filled(strip, 3.0, style::LIST_BG);
+    painter.rect_filled(strip, 3.0, style::list_bg());
     let note = |text: &str| {
         painter.text(
             strip.center(),
             egui::Align2::CENTER_CENTER,
             text,
             egui::FontId::proportional(11.5),
-            style::TEXT_WEAK,
+            style::text_weak(),
         );
     };
     let (Some(lines), Some(time)) = (now.lines, now.time) else {
@@ -175,7 +175,7 @@ fn strip_contents(
         } else if end <= time {
             style::accent().gamma_multiply(0.35)
         } else {
-            style::TEXT_WEAK.gamma_multiply(0.35)
+            style::text_weak().gamma_multiply(0.35)
         };
         painter.rect_filled(rect, 1.0, color);
     }

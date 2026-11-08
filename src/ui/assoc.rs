@@ -145,7 +145,7 @@ impl FileTypesPage {
             if let Some(message) = &self.message {
                 divider(ui);
                 ui.add_space(8.0);
-                ui.label(RichText::new(message).color(style::TEXT_WEAK));
+                ui.label(RichText::new(message).color(style::text_weak()));
                 ui.add_space(8.0);
             }
         });
@@ -295,7 +295,7 @@ fn extensions(ui: &mut Ui, extensions: &[&str], openers: &[Opener]) {
             let opener = openers.get(i).copied().unwrap_or(Opener::Other);
             let (color, tip) = match opener {
                 Opener::Other => (
-                    style::TEXT_WEAK,
+                    style::text_weak(),
                     tr!("Opened by another program", "Открывается другой программой"),
                 ),
                 _ => (

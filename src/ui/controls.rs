@@ -56,8 +56,8 @@ const ICON: f32 = 7.0;
 pub fn frame(compact: bool) -> egui::Frame {
     let (top, bottom) = if compact { (0, 0) } else { (4, 2) };
     egui::Frame::NONE
-        .fill(style::BAR_BG)
-        .stroke(egui::Stroke::new(1.0, style::LINE))
+        .fill(style::bar_bg())
+        .stroke(egui::Stroke::new(1.0, style::line()))
         .inner_margin(egui::Margin {
             left: 0,
             right: 0,
@@ -341,7 +341,7 @@ pub fn mini(ui: &mut Ui, rect: Rect, state: &State, drag: &mut Option<f64>) -> V
     let mut out = Vec::new();
     let row = Rect::from_min_max(pos2(rect.left(), rect.bottom() - MINI_ROW), rect.max);
     ui.painter()
-        .rect_filled(row, 0.0, style::BAR_BG.gamma_multiply_u8(220));
+        .rect_filled(row, 0.0, style::bar_bg().gamma_multiply_u8(220));
     crate::frameless::drag_area(ui, row, ui.id().with("mini_drag"), Sense::hover());
     let cy = row.center().y;
     let square = |x: f32| Rect::from_min_size(pos2(x, cy - BUTTON / 2.0), vec2(BUTTON, BUTTON));
@@ -376,8 +376,11 @@ pub fn mini(ui: &mut Ui, rect: Rect, state: &State, drag: &mut Option<f64>) -> V
         pos2(rect.right() - PAD - BUTTON, rect.top() + PAD),
         vec2(BUTTON, BUTTON),
     );
-    ui.painter()
-        .rect_filled(back.shrink(1.0), 5.0, style::BAR_BG.gamma_multiply_u8(220));
+    ui.painter().rect_filled(
+        back.shrink(1.0),
+        5.0,
+        style::bar_bg().gamma_multiply_u8(220),
+    );
     let tip = with_key(tr!("The player's window", "Окно плеера"), Cmd::ToggleMini);
     if flat(ui, back, &tip, true, |p, o, c, _| {
         icons::mini(p, o, ICON, c)
@@ -414,7 +417,7 @@ fn time(ui: &mut Ui, area: Rect, galley: std::sync::Arc<egui::Galley>) -> bool {
     let color = if response.hovered() {
         style::TEXT_BRIGHT
     } else {
-        style::TEXT_WEAK
+        style::text_weak()
     };
     ui.painter_at(area).galley(text_rect.min, galley, color);
     response.clicked()
@@ -566,15 +569,15 @@ fn flat(
     };
     let response = ui.allocate_rect(rect, sense);
     let (fill, color) = if !enabled {
-        (style::BAR_BG, style::TEXT_WEAK.gamma_multiply(0.5))
+        (style::bar_bg(), style::text_weak().gamma_multiply(0.5))
     } else if response.is_pointer_button_down_on() {
-        (style::PRESSED, style::TEXT_BRIGHT)
+        (style::pressed(), style::TEXT_BRIGHT)
     } else if response.hovered() {
-        (style::HOVER, style::TEXT_BRIGHT)
+        (style::hover(), style::TEXT_BRIGHT)
     } else {
-        (style::BAR_BG, style::TEXT)
+        (style::bar_bg(), style::text())
     };
-    if fill != style::BAR_BG {
+    if fill != style::bar_bg() {
         ui.painter().rect_filled(rect.shrink(1.0), 5.0, fill);
     }
     paint(ui.painter(), rect.center(), color, fill);
@@ -635,7 +638,7 @@ fn seek_bar(
         vec2(rect.width(), if response.hovered() { 6.0 } else { 4.0 }),
     );
     let painter = ui.painter();
-    painter.rect_filled(track, 3.0, style::TRACK);
+    painter.rect_filled(track, 3.0, style::track());
     let pointer_fraction = response
         .hover_pos()
         .or(response.interact_pointer_pos())
@@ -704,7 +707,7 @@ fn seek_bar(
         {
             let x = track.left() + track.width() * (c.time / d) as f32;
             let gap = Rect::from_center_size(pos2(x, track.center().y), vec2(2.0, track.height()));
-            painter.rect_filled(gap, 0.0, style::BAR_BG);
+            painter.rect_filled(gap, 0.0, style::bar_bg());
         }
     }
     if duration.is_some() && (response.hovered() || drag.is_some()) {
@@ -731,7 +734,7 @@ fn volume_slider(ui: &mut Ui, rect: Rect, state: &State) -> Option<Cmd> {
     let response = ui.interact(rect, ui.id().with("volume"), Sense::click_and_drag());
     let track = Rect::from_center_size(rect.center(), vec2(rect.width(), 4.0));
     let painter = ui.painter();
-    painter.rect_filled(track, 2.0, style::TRACK);
+    painter.rect_filled(track, 2.0, style::track());
     let max = state.volume_max.max(100.0);
     let level = if state.mute {
         0.0
@@ -746,7 +749,7 @@ fn volume_slider(ui: &mut Ui, rect: Rect, state: &State) -> Option<Cmd> {
         done,
         2.0,
         if state.mute {
-            style::TEXT_WEAK
+            style::text_weak()
         } else {
             style::accent()
         },
@@ -755,7 +758,7 @@ fn volume_slider(ui: &mut Ui, rect: Rect, state: &State) -> Option<Cmd> {
         let x = track.left() + track.width() * (100.0 / max) as f32;
         painter.line_segment(
             [pos2(x, track.top() - 2.0), pos2(x, track.bottom() + 2.0)],
-            egui::Stroke::new(1.0, style::TEXT_WEAK),
+            egui::Stroke::new(1.0, style::text_weak()),
         );
     }
     if response.hovered() || response.dragged() {

@@ -184,17 +184,17 @@ pub fn tool(
     };
     let (rect, response) = ui.allocate_exact_size(egui::vec2(26.0, 24.0), sense);
     let color = if !enabled {
-        style::TEXT_WEAK.gamma_multiply(0.5)
+        style::text_weak().gamma_multiply(0.5)
     } else if response.hovered() {
         style::TEXT_BRIGHT
     } else {
-        style::TEXT
+        style::text()
     };
     if enabled && response.hovered() {
         let fill = if response.is_pointer_button_down_on() {
-            style::PRESSED
+            style::pressed()
         } else {
-            style::HOVER
+            style::hover()
         };
         ui.painter().rect_filled(rect, 4.0, fill);
     }

@@ -72,9 +72,9 @@ impl GoToDialog {
                         .filter(|d| *d > 0.0)
                         .map(|d| format!(" ({})", percent_in(lang, t / d)))
                         .unwrap_or_default();
-                    (format!("→ {}{share}", clock_tenths_in(lang, t)), style::TEXT)
+                    (format!("→ {}{share}", clock_tenths_in(lang, t)), style::text())
                 }
-                None if text.trim().is_empty() => (String::new(), style::TEXT_WEAK),
+                None if text.trim().is_empty() => (String::new(), style::text_weak()),
                 None => (
                     tr!("Not a time in this file", "Это не время в этом файле").to_owned(),
                     style::OSD,
@@ -88,7 +88,7 @@ impl GoToDialog {
                     "1:23:45, 83:20 или 5000 (секунды); 50% файла; +30 или -1:00 от текущей позиции."
                 ))
                 .size(12.0)
-                .color(style::TEXT_WEAK),
+                .color(style::text_weak()),
             );
             ui.add_space(10.0);
             let entered =

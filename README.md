@@ -284,6 +284,7 @@ The sound and the look of the subtitles are set on the [Video, sound and subtitl
 | Setting | Default | Meaning |
 |---|---|---|
 | Language | as in Windows | "As in Windows" follows the language of Windows |
+| Theme | graphite | The colours of the title row, the control bar, the playlist and the windows, all of them dark: black, midnight blue, plum, espresso, graphite or dimmed (the list shows a sample of each); the ground under the picture stays black |
 | Accent colour | blue | Blue, teal, green, orange, red, pink, purple, graphite, or a colour of one's own (the last swatch, a colour wheel: a picker with a field for the code, shown as `#RRGGBB`, `RGB(r, g, b)` or `HSL(h, s%, l%)` by a click on its name and taking any of them, and fields for red, green and blue, 0–255): the Play button, the seek bar and the volume, the switches, the playing file of the playlist and the selection, and the screen of the icon in the window, on the taskbar button of the running player and on the start screen (the icon of the program's file and of its shortcuts stays blue) |
 | Layout | full | Full, without the title row, compact or only the picture; `8` switches the layouts, `7` leaves only the picture and brings the layout back |
 | Over the other windows | never | Never, always, or while a file plays (not paused); `Ctrl+T` switches it |

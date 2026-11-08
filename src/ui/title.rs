@@ -70,14 +70,14 @@ pub fn row(
             let fill = if kind == Cmd::Close {
                 style::CLOSE_HOVER
             } else {
-                style::HOVER
+                style::hover()
             };
             ui.painter().rect_filled(r, 0.0, fill);
         }
         let color = if hovered {
             style::TEXT_BRIGHT
         } else {
-            style::TEXT
+            style::text()
         };
         let o = r.center();
         match kind {
@@ -116,7 +116,7 @@ pub fn row(
             let mut job = egui::text::LayoutJob::simple_singleline(
                 title.to_owned(),
                 FontId::proportional(12.5),
-                style::TEXT,
+                style::text(),
             );
             job.wrap = egui::text::TextWrapping::truncate_at_width(room);
             f.layout_job(job)
@@ -124,7 +124,7 @@ pub fn row(
         let pos = Align2::CENTER_CENTER
             .anchor_size(rect.center(), galley.size())
             .min;
-        ui.painter().galley(pos, galley, style::TEXT);
+        ui.painter().galley(pos, galley, style::text());
     }
     cmd
 }
@@ -141,7 +141,7 @@ pub fn over(
     update: Option<&str>,
 ) -> Option<Cmd> {
     ui.painter()
-        .rect_filled(rect, 0.0, style::TITLE_BG.gamma_multiply_u8(235));
+        .rect_filled(rect, 0.0, style::title_bg().gamma_multiply_u8(235));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).id_salt("title_over"));
     row(&mut child, title, maximized, icon, update)
 }
@@ -158,7 +158,7 @@ pub fn tool_row(ui: &mut Ui, title: &str) -> bool {
         ui.painter().rect_filled(r, 0.0, style::CLOSE_HOVER);
         style::TEXT_BRIGHT
     } else {
-        style::TEXT
+        style::text()
     };
     icons::close(ui.painter(), r.center(), 5.0, color);
     ui.painter().text(
@@ -166,7 +166,7 @@ pub fn tool_row(ui: &mut Ui, title: &str) -> bool {
         Align2::CENTER_CENTER,
         title,
         FontId::proportional(12.5),
-        style::TEXT,
+        style::text(),
     );
     response.on_hover_text(tr!("Close", "Закрыть")).clicked()
 }
