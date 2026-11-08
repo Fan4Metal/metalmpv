@@ -418,17 +418,32 @@ fn tile(shown: (u32, u32), size: u32) -> (u32, u32) {
 mod tests {
     use super::*;
 
-    /// METALMPV_SAMPLE (a video) and METALMPV_SAMPLE_DURATION (its seconds,
-    /// 60 if not given): the frames at a tenth, the middle and nine tenths
-    /// come, and how long each took.
+    /// The duration of `path`, as mpv gives it.
+    fn duration_of(path: &str) -> f64 {
+        let api = sys::api().unwrap();
+        let mut mpv = Mpv::new(api, &[("vo", "null"), ("ao", "null"), ("idle", "yes")]).unwrap();
+        mpv.command(0, &["loadfile", path]);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            match mpv.next_event() {
+                Some(Event::FileLoaded) => mpv.get(1, "duration", sys::MPV_FORMAT_DOUBLE),
+                Some(Event::Property { id: 1, value }) => return value.double().unwrap(),
+                Some(_) => {}
+                None => std::thread::sleep(Duration::from_millis(5)),
+            }
+        }
+        panic!("no duration");
+    }
+
+    /// METALMPV_SAMPLE (a video): the frames at a tenth, the middle, the
+    /// next steps (most on the same keyframe: a seek that does not move),
+    /// the very end and the start come, and how long each took.
     #[test]
     #[ignore]
     fn frames_of_sample() {
         let sample = std::env::var("METALMPV_SAMPLE").expect("METALMPV_SAMPLE is not set");
-        let duration = std::env::var("METALMPV_SAMPLE_DURATION")
-            .ok()
-            .and_then(|d| d.parse().ok())
-            .unwrap_or(60.0);
+        let duration = duration_of(&sample);
+        println!("duration {duration:.2} s");
         let ctx = egui::Context::default();
         let mut thumbs = Thumbs::new(
             Request {
@@ -438,8 +453,16 @@ mod tests {
             },
             duration,
         );
-        for share in [0.1, 0.5, 0.9] {
-            let seconds = duration * share;
+        let step = thumbs.step();
+        let middle = duration * 0.5;
+        for seconds in [
+            duration * 0.1,
+            middle,
+            middle + step,
+            middle + 2.0 * step,
+            duration,
+            0.0,
+        ] {
             let step = thumbs.step_of(seconds);
             let started = Instant::now();
             loop {
