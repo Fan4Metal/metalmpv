@@ -43,6 +43,7 @@ mod smtc;
 mod sub_lines;
 mod sub_style;
 mod taskbar;
+mod thumbs;
 mod tracks;
 mod type_icon;
 mod ui;

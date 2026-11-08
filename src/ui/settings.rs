@@ -1092,6 +1092,17 @@ fn playback(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
             120.0,
             |ui| step(ui, &mut settings.seek_long),
         );
+        divider(ui);
+        row(
+            ui,
+            tr!("Frames over the seek bar", "Кадры над полосой перемотки"),
+            Some(tr!(
+                "The frame near the time under the pointer, from the keyframes; for files on the computer, not addresses.",
+                "Кадр рядом с моментом под указателем, по ключевым кадрам; для файлов на компьютере, не для адресов."
+            )),
+            50.0,
+            |ui| switch(ui, &mut settings.seek_preview),
+        );
     });
     section(ui, tr!("Chapters", "Главы"), |ui| {
         row(
@@ -2446,6 +2457,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.fill_audio_only = d.fill_audio_only;
     settings.channel_logos = d.channel_logos;
     settings.chapter_marks = d.chapter_marks;
+    settings.seek_preview = d.seek_preview;
     settings.resume_playback = d.resume_playback;
     settings.remember_tracks = d.remember_tracks;
     settings.track_prefs = d.track_prefs;

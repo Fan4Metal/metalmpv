@@ -36,6 +36,8 @@ pub struct Bar<'a> {
     /// Where the Video, sound and subtitles panel's button is drawn: the
     /// panel stands over it.
     pub panel_button: &'a mut Option<Rect>,
+    /// The frames over the seek bar, when it shows them.
+    pub thumbs: Option<&'a mut crate::thumbs::Thumbs>,
 }
 
 /// The size of the small buttons.
@@ -106,6 +108,7 @@ fn full(ui: &mut Ui, mut bar: Bar<'_>) -> Vec<Cmd> {
         bar.state,
         bar.chapter_marks,
         bar.drag,
+        bar.thumbs.as_deref_mut(),
     ) {
         out.push(cmd);
     }
@@ -319,7 +322,14 @@ fn compact(ui: &mut Ui, mut bar: Bar<'_>) -> Vec<Cmd> {
     // The seek bar between them, as tall as the row (easier to hit).
     let seek = Rect::from_min_max(pos2(x + 8.0, row.top()), pos2(right - 8.0, row.bottom()));
     if seek.width() > 0.0
-        && let Some(cmd) = seek_bar(ui, seek, state, bar.chapter_marks, bar.drag)
+        && let Some(cmd) = seek_bar(
+            ui,
+            seek,
+            state,
+            bar.chapter_marks,
+            bar.drag,
+            bar.thumbs.as_deref_mut(),
+        )
     {
         out.push(cmd);
     }
@@ -366,7 +376,7 @@ pub fn mini(ui: &mut Ui, rect: Rect, state: &State, drag: &mut Option<f64>) -> V
         pos2(row.right() - 12.0, row.bottom()),
     );
     if seek.width() >= MIN_SEEK
-        && let Some(cmd) = seek_bar(ui, seek, state, false, drag)
+        && let Some(cmd) = seek_bar(ui, seek, state, false, drag, None)
     {
         out.push(cmd);
     }
@@ -625,6 +635,7 @@ fn seek_bar(
     state: &State,
     marks: bool,
     drag: &mut Option<f64>,
+    thumbs: Option<&mut crate::thumbs::Thumbs>,
 ) -> Option<Cmd> {
     let duration = state.duration.filter(|_| !state.idle);
     let sense = if duration.is_some() {
@@ -718,14 +729,67 @@ fn seek_bar(
             if let Some(i) = crate::chapters::current(&state.chapters, f * d) {
                 text = format!("{text} · {}", state.chapters[i].name(i + 1));
             }
-            // At once, without the tooltip delay: it follows the pointer
-            // along the bar, as a time readout.
-            egui::Tooltip::for_widget(&response)
-                .at_pointer()
-                .show(|ui| ui.add(egui::Label::new(text).extend()));
+            let preview = thumbs
+                .and_then(|t| t.at(ui.ctx(), f * d))
+                .and_then(|p| Some((p.texture, p.size?)));
+            match preview {
+                Some((texture, size)) => {
+                    let x = rect.left() + rect.width() * f as f32;
+                    frame_preview(ui, rect.top(), x, texture.as_ref(), size, text);
+                }
+                // At once, without the tooltip delay: it follows the
+                // pointer along the bar, as a time readout.
+                None => {
+                    egui::Tooltip::for_widget(&response)
+                        .at_pointer()
+                        .show(|ui| ui.add(egui::Label::new(text).extend()));
+                }
+            }
         }
     }
     cmd
+}
+
+/// The frame near the time under the pointer over the seek bar (whose top
+/// is `top`), centred on `x` and kept on the screen, with the time under
+/// it; a dark field of its size until it comes.
+fn frame_preview(
+    ui: &Ui,
+    top: f32,
+    x: f32,
+    texture: Option<&egui::TextureHandle>,
+    pixels: [usize; 2],
+    text: String,
+) {
+    let ppp = ui.ctx().pixels_per_point();
+    let size = vec2(pixels[0] as f32, pixels[1] as f32) / ppp;
+    egui::Area::new(ui.id().with("seek_preview"))
+        .order(egui::Order::Tooltip)
+        .fixed_pos(pos2(x, top - 6.0))
+        .pivot(Align2::CENTER_BOTTOM)
+        .constrain(true)
+        .interactable(false)
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style())
+                .inner_margin(4.0)
+                .show(ui, |ui| {
+                    ui.set_width(size.x);
+                    ui.vertical_centered(|ui| {
+                        let (r, _) = ui.allocate_exact_size(size, Sense::hover());
+                        match texture {
+                            Some(t) => {
+                                let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+                                ui.painter().image(t.id(), r, uv, Color32::WHITE);
+                            }
+                            None => {
+                                ui.painter().rect_filled(r, 2.0, Color32::BLACK);
+                            }
+                        }
+                        ui.add_space(2.0);
+                        ui.add(egui::Label::new(text).truncate());
+                    });
+                });
+        });
 }
 
 /// The volume: a short bar set by a click or a drag, or by the wheel; it

@@ -434,7 +434,7 @@ struct Grabbed {
 
 /// The picture's parameters that place a frame in its tile.
 #[derive(Clone, Copy, Debug)]
-struct Params {
+pub(crate) struct Params {
     /// The display size, before the turn.
     dw: u32,
     dh: u32,
@@ -443,7 +443,7 @@ struct Params {
 }
 
 impl Params {
-    fn of(value: &Value) -> Option<Params> {
+    pub(crate) fn of(value: &Value) -> Option<Params> {
         let int = |k: &str| value.get(k)?.int().filter(|&v| v > 0);
         Some(Params {
             dw: int("dw").or_else(|| int("w"))? as u32,
@@ -461,7 +461,7 @@ impl Params {
     }
 
     /// The display size as shown.
-    fn shown(self) -> (u32, u32) {
+    pub(crate) fn shown(self) -> (u32, u32) {
         if self.turned() {
             (self.dh, self.dw)
         } else {
@@ -688,7 +688,7 @@ fn grab(
 
 /// `screenshot-raw`'s answer (`w`, `h`, `stride`, `format`, `data`) scaled
 /// to `tile` and turned as shown.
-fn fitted(shot: &Value, p: Params, tile: (u32, u32)) -> Option<RgbaImage> {
+pub(crate) fn fitted(shot: &Value, p: Params, tile: (u32, u32)) -> Option<RgbaImage> {
     let int = |k: &str| shot.get(k)?.int().filter(|&v| v > 0);
     let (w, h, stride) = (int("w")? as u32, int("h")? as u32, int("stride")? as usize);
     let Some(Value::Bytes(data)) = shot.get("data") else {

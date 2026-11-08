@@ -36,6 +36,7 @@ const TRACKS_WIDE: &str = "tracks_wide";
 const PLAYLIST_GROUPS: &str = "playlist_groups";
 const PLAYLIST_PROGRESS: &str = "playlist_progress";
 const CHAPTER_MARKS: &str = "chapter_marks";
+const SEEK_PREVIEW: &str = "seek_preview";
 const TIME_DISPLAY: &str = "time_display";
 const FULLSCREEN_TRANSPARENCY: &str = "fullscreen_transparency";
 const FULLSCREEN_TITLE: &str = "fullscreen_title";
@@ -512,6 +513,8 @@ pub struct Settings {
     pub mini_rect: Option<[i32; 4]>,
     /// Marks at the chapters' starts on the seek bar.
     pub chapter_marks: bool,
+    /// Frames over the seek bar under the pointer (`thumbs.rs`).
+    pub seek_preview: bool,
     /// What the time in the control bar shows (a click changes it).
     pub time_mode: TimeMode,
     /// How transparent the panels over the picture in fullscreen are, in
@@ -670,6 +673,7 @@ impl Default for Settings {
             playlist_rect: None,
             mini_rect: None,
             chapter_marks: true,
+            seek_preview: true,
             time_mode: TimeMode::Both,
             fullscreen_transparency: 12.0,
             fullscreen_title: true,
@@ -811,6 +815,7 @@ impl Settings {
             playlist_rect: get(PLAYLIST_RECT).and_then(|v| rect(&v)),
             mini_rect: get(MINI_RECT).and_then(|v| rect(&v)),
             chapter_marks: flag(CHAPTER_MARKS, d.chapter_marks),
+            seek_preview: flag(SEEK_PREVIEW, d.seek_preview),
             time_mode: get(TIME_DISPLAY)
                 .as_deref()
                 .and_then(TimeMode::from_name)
@@ -1086,6 +1091,7 @@ impl Settings {
             None => storage.remove_string(MINI_RECT),
         }
         storage.set_string(CHAPTER_MARKS, self.chapter_marks.to_string());
+        storage.set_string(SEEK_PREVIEW, self.seek_preview.to_string());
         storage.set_string(TIME_DISPLAY, self.time_mode.name().into());
         storage.set_string(
             FULLSCREEN_TRANSPARENCY,
@@ -1260,6 +1266,7 @@ mod tests {
             playlist_rect: Some([-1200, 40, -900, 700]),
             mini_rect: Some([1500, 800, 1884, 1016]),
             chapter_marks: false,
+            seek_preview: false,
             time_mode: TimeMode::Remaining,
             fullscreen_transparency: 40.0,
             fullscreen_title: false,

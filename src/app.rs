@@ -167,6 +167,8 @@ pub struct App {
     positions: Positions,
     /// What the kept playlist's file holds (`restore_playlist`).
     session: crate::session::Stored,
+    /// The frames over the seek bar (`seek_preview`).
+    thumbs: Option<crate::thumbs::Thumbs>,
     /// The file being loaded gets the tracks most like the last chosen
     /// (`prefer_last_tracks`), once it is loaded (`pick_ready`).
     pick_tracks: bool,
@@ -423,6 +425,7 @@ impl App {
             last_sub: None,
             positions,
             session: crate::session::Stored::Unknown,
+            thumbs: None,
             pick_tracks: false,
             pick_ready: false,
             fit_on_open: false,
@@ -976,18 +979,9 @@ impl App {
             })
             .unwrap_or_else(|| input.to_string_lossy().into_owned());
         let layout = self.settings.video_map;
-        // The picture as shown: the turn, the shape, the deinterlacing and
-        // a mirror (upside down is one turned half round); not the colour,
-        // the zoom or the other filters.
-        let a = &self.adjust;
-        let mut picture = vec![
-            ("video-rotate", a.rotation().to_string()),
-            ("video-aspect-override", a.aspect.option().to_owned()),
-            ("deinterlace", a.deinterlace.option().to_owned()),
-        ];
-        if a.mirror != a.flip {
-            picture.push(("vf", "lavfi=[hflip]".to_owned()));
-        }
+        // The picture as shown, and deinterlaced as it is.
+        let mut picture = self.picture_options();
+        picture.push(("deinterlace", self.adjust.deinterlace.option().to_owned()));
         let request = crate::video_map::Request {
             output: crate::video_map::file_name(&dir, &self.frame_stem(), layout.format),
             input,
@@ -2815,7 +2809,59 @@ impl App {
             drag: &mut self.seek_drag,
             panel_button: &mut self.panel_button,
             tracks_button: &mut self.tracks_button,
+            thumbs: self.thumbs.as_mut(),
         }
+    }
+
+    /// The frames over the seek bar follow the file playing and the
+    /// picture as shown: for a file on the computer with a picture and a
+    /// duration while the setting is on (the core starts only once the bar
+    /// asks, `thumbs.rs`).
+    fn follow_thumbs(&mut self, state: &State) {
+        let wanted = state
+            .path
+            .as_deref()
+            .map(PathBuf::from)
+            .filter(|p| !playlist::is_url(p))
+            .zip(state.duration.filter(|d| d.is_finite() && *d > 1.0))
+            .filter(|_| {
+                self.settings.seek_preview
+                    && !state.idle
+                    && state.width.is_some()
+                    && self.player.as_ref().is_some_and(|p| !p.loading())
+            });
+        let Some((input, duration)) = wanted else {
+            self.thumbs = None;
+            return;
+        };
+        let request = crate::thumbs::Request {
+            input,
+            picture: self.picture_options(),
+            size: (crate::thumbs::SIZE * self.ppp).round() as u32,
+        };
+        if !self
+            .thumbs
+            .as_ref()
+            .is_some_and(|t| t.is_for(&request, duration))
+        {
+            self.thumbs = Some(crate::thumbs::Thumbs::new(request, duration));
+        }
+    }
+
+    /// mpv's options of the picture as shown, for the second cores (the
+    /// video map, the seek bar's frames): the turn, the shape and a mirror
+    /// (upside down is one turned half round); not the colour, the zoom or
+    /// the other filters.
+    fn picture_options(&self) -> Vec<(&'static str, String)> {
+        let a = &self.adjust;
+        let mut picture = vec![
+            ("video-rotate", a.rotation().to_string()),
+            ("video-aspect-override", a.aspect.option().to_owned()),
+        ];
+        if a.mirror != a.flip {
+            picture.push(("vf", "lavfi=[hflip]".to_owned()));
+        }
+        picture
     }
 
     fn size_window(&mut self, ctx: &egui::Context, frame: &eframe::Frame, picture: [f64; 2]) {
@@ -4414,6 +4460,7 @@ impl eframe::App for App {
         self.fit_interface(&ctx);
         let state = self.state();
         self.follow_mini(&ctx, &state);
+        self.follow_thumbs(&state);
         let mini = self.mini.is_some();
         let mut cmds = std::mem::take(&mut self.pending);
 
@@ -4842,6 +4889,7 @@ impl eframe::App for App {
         if let Some((job, _)) = &self.video_map {
             job.cancel_and_wait(std::time::Duration::from_secs(3));
         }
+        self.thumbs = None;
         if let Some(video) = &mut self.video {
             video.free(gl);
         }
