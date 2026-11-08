@@ -463,7 +463,12 @@ fn themes(ui: &mut Ui, theme: &mut Theme) -> bool {
             for t in Theme::ALL {
                 let id = ui.id().with(("theme_sample", t));
                 let sample = egui::Atom::custom(id, vec2(26.0, 14.0));
-                let shown = egui::Button::selectable(*theme == t, (sample, t.label())).atom_ui(ui);
+                let label = if t == Theme::default() {
+                    format!("{} {}", t.label(), tr!("(default)", "(по умолчанию)"))
+                } else {
+                    t.label().to_owned()
+                };
+                let shown = egui::Button::selectable(*theme == t, (sample, label)).atom_ui(ui);
                 if let Some(rect) = shown.rect(id) {
                     theme_sample(ui, rect, t);
                 }
