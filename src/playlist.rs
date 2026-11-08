@@ -296,6 +296,32 @@ pub fn is_url(path: &Path) -> bool {
     })
 }
 
+/// The files and addresses of pasted text (`Ctrl+V`), a line each, in
+/// order: addresses as they are (`file:` ones as their paths), absolute
+/// paths with or without quotes (Explorer's Copy as path) for which
+/// `exists` holds; other lines are skipped, so a sentence pastes nothing.
+pub fn pasted(text: &str, exists: impl Fn(&Path) -> bool) -> Vec<PathBuf> {
+    text.lines()
+        .map(|line| {
+            let line = line.trim();
+            line.strip_prefix('"')
+                .and_then(|l| l.strip_suffix('"'))
+                .unwrap_or(line)
+                .trim()
+        })
+        .filter_map(|line| {
+            if let Some(path) = file_uri_path(line) {
+                return exists(&path).then_some(path);
+            }
+            let path = PathBuf::from(line);
+            if is_url(&path) {
+                return Some(path);
+            }
+            (path.is_absolute() && exists(&path)).then(|| lexical(&path))
+        })
+        .collect()
+}
+
 /// The schemes a list's entry may have: streams, not FFmpeg's devices
 /// (`av://dshow:…` turns a camera on) or sockets (`tcp://`): the app loads
 /// each entry itself, so mpv's `load-unsafe-playlists` does not apply.
@@ -902,6 +928,25 @@ pub fn natural_cmp(a: &str, b: &str) -> Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pasted_text() {
+        let on_disk = |p: &Path| !p.to_string_lossy().contains("gone");
+        let text = "  \"C:\\Films\\a.mkv\"  \r\nhttps://example.com/live.m3u8\r\n\
+                    just some words\r\nrelative\\b.mkv\r\nC:\\gone\\c.mkv\r\n\
+                    file:///D:/My%20Music/d.mp3\r\nC:\\Films\\sub\\..\\e.mp4\r\n";
+        assert_eq!(
+            pasted(text, on_disk),
+            vec![
+                PathBuf::from(r"C:\Films\a.mkv"),
+                PathBuf::from("https://example.com/live.m3u8"),
+                PathBuf::from(r"D:\My Music\d.mp3"),
+                PathBuf::from(r"C:\Films\e.mp4"),
+            ]
+        );
+        assert!(pasted("", on_disk).is_empty());
+        assert!(pasted("Hello, world", on_disk).is_empty());
+    }
 
     fn list(names: &[&str]) -> Playlist {
         let mut p = Playlist::default();

@@ -720,6 +720,56 @@ unsafe fn fullscreen_client(lparam: windows_sys::Win32::Foundation::LPARAM) {
     }
 }
 
+/// The windows a paste key can be pressed in ([`take_paste`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PasteIn {
+    Player = 0,
+    Playlist = 1,
+}
+
+/// A paste key was pressed in the player's window, the playlist's.
+static PASTED: [std::sync::atomic::AtomicBool; 2] = [
+    std::sync::atomic::AtomicBool::new(false),
+    std::sync::atomic::AtomicBool::new(false),
+];
+
+/// A paste key (`Ctrl+V`, `Shift+Insert`) noted for [`take_paste`]: egui
+/// passes a paste only with text on the clipboard (Explorer's copied files
+/// are not), and as an `Event::Paste` without its key. Let through, so text
+/// fields still take it.
+fn note_paste(msg: u32, wparam: usize, lparam: isize, window: PasteIn) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::WM_KEYDOWN;
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn GetKeyState(key: i32) -> i16;
+    }
+    const VK_SHIFT: i32 = 0x10;
+    const VK_CONTROL: i32 = 0x11;
+    const VK_MENU: i32 = 0x12;
+    const VK_INSERT: usize = 0x2D;
+    const VK_V: usize = 0x56;
+    // Held keys repeat; one press is one paste.
+    if msg != WM_KEYDOWN || lparam & (1 << 30) != 0 {
+        return;
+    }
+    let down = |vk: i32| unsafe { GetKeyState(vk) } < 0;
+    // Ctrl with Alt is AltGr: a letter typed, not a command.
+    let paste = !down(VK_MENU)
+        && match wparam {
+            VK_V => down(VK_CONTROL),
+            VK_INSERT => down(VK_SHIFT) && !down(VK_CONTROL),
+            _ => false,
+        };
+    if paste {
+        PASTED[window as usize].store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Whether a paste key was pressed in `window` since the last call.
+pub fn take_paste(window: PasteIn) -> bool {
+    PASTED[window as usize].swap(false, std::sync::atomic::Ordering::Relaxed)
+}
+
 /// What the window's messages asked for since the last call.
 pub fn take_hooked() -> Vec<Hooked> {
     HOOKED
@@ -787,6 +837,7 @@ unsafe extern "system" fn window_proc(
     if msg != 0 && msg == TASKBAR_CREATED.load(Ordering::Relaxed) {
         hook(Hooked::TaskbarButton);
     }
+    note_paste(msg, wparam, lparam, PasteIn::Player);
     match msg {
         WM_COMMAND if (wparam >> 16) & 0xFFFF == THBN_CLICKED => {
             hook(Hooked::Thumb((wparam & 0xFFFF) as u16));
@@ -1180,6 +1231,7 @@ unsafe extern "system" fn playlist_proc(
         fn GetDpiForWindow(hwnd: isize) -> u32;
     }
     let me = hwnd as isize;
+    note_paste(msg, wparam, lparam, PasteIn::Playlist);
     if let Some(result) = media_message(hwnd, msg, wparam, lparam) {
         return result;
     }

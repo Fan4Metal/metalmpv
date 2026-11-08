@@ -53,6 +53,9 @@ pub enum Cmd {
     Open,
     /// Ask for an address to play (`Ctrl+U`).
     OpenUrl,
+    /// Open the files or the address on the clipboard (`Ctrl+V`,
+    /// `Shift+Insert`: not a chord of the keymap, see `win::take_paste`).
+    Paste,
     /// Ask for a time in the file to go to (`Ctrl+G`).
     GoToTime,
     TogglePlaylist,

@@ -1440,6 +1440,50 @@ impl App {
         self.ask(ctx, Ask::FramesFolder, make, dialog::pick_folder);
     }
 
+    /// `Ctrl+V`: the files copied in Explorer, else the addresses and paths
+    /// of the clipboard's text, opened as `Ctrl+O` and `Ctrl+U` open them;
+    /// subtitle files go to the video playing, as dropped ones do.
+    fn paste(&mut self) {
+        let items = match arboard::Clipboard::new() {
+            Ok(mut clipboard) => match clipboard.get().file_list() {
+                Ok(files) if !files.is_empty() => files,
+                _ => clipboard
+                    .get_text()
+                    .map(|text| playlist::pasted(&text, |p| p.exists()))
+                    .unwrap_or_default(),
+            },
+            Err(e) => {
+                log::warn!("clipboard: {e}");
+                Vec::new()
+            }
+        };
+        log::debug!("pasted {} item(s)", items.len());
+        let (subs, media): (Vec<PathBuf>, Vec<PathBuf>) =
+            items.into_iter().partition(|p| tracks::is_subtitles(p));
+        if media.is_empty() && (subs.is_empty() || self.state_idle()) {
+            self.osd.show(Osd::Text(
+                tr!(
+                    "[ No file or address to paste ]",
+                    "[ В буфере обмена нет файла или адреса ]"
+                )
+                .into(),
+            ));
+            return;
+        }
+        if media.is_empty() {
+            for sub in &subs {
+                self.add_subtitles(sub);
+            }
+            return;
+        }
+        self.open(media);
+        if let Some(sub) = subs.into_iter().next()
+            && let Some(player) = self.player.as_mut().filter(|p| p.loading())
+        {
+            player.subtitles_once_loaded(sub);
+        }
+    }
+
     fn add_subtitles(&mut self, path: &Path) {
         if let Some(player) = &mut self.player {
             player.add_subtitles(path);
@@ -1730,6 +1774,7 @@ impl App {
             }
             Cmd::Open => self.pick_files(ctx, false),
             Cmd::OpenUrl => self.url_dialog.open(),
+            Cmd::Paste => self.paste(),
             Cmd::GoToTime => {
                 if !state.idle {
                     self.goto_dialog.open(state.time, state.duration);
@@ -2440,7 +2485,11 @@ impl App {
             let ctx = ui.ctx().clone();
             close = ctx.input(|i| i.viewport().close_requested());
             dropped = dropped_files(&ctx);
+            let pasted = win::take_paste(win::PasteIn::Playlist);
             if keys && !ui::playlist::typing(&ctx) && !egui::Popup::is_any_open(&ctx) {
+                if pasted {
+                    cmds.push(Cmd::Paste);
+                }
                 if let Some(id) = ctx.memory(|m| m.focused()) {
                     ctx.memory_mut(|m| m.surrender_focus(id));
                 }
@@ -4354,6 +4403,7 @@ impl eframe::App for App {
             && !self.url_dialog.is_open()
             && !self.goto_dialog.is_open()
             && !self.clip_dialog.is_open();
+        let pasted = win::take_paste(win::PasteIn::Player);
         if keys && !egui::Popup::is_any_open(&ctx) {
             if let Some(id) = ctx.memory(|m| m.focused()) {
                 ctx.memory_mut(|m| m.surrender_focus(id));
@@ -4362,6 +4412,9 @@ impl eframe::App for App {
             // frame: they are the player's keys (Tab the position).
             ctx.memory_mut(|m| m.move_focus(egui::FocusDirection::None));
             cmds.extend(input::keys(&ctx, &self.settings.keys));
+            if pasted {
+                cmds.push(Cmd::Paste);
+            }
         }
 
         if !fullscreen && !maximized {

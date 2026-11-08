@@ -61,7 +61,7 @@ Beside the settings file lies a copy of it made at each start (`app.ron.bak` or 
 
 ### Opening files
 
-A file is opened with the **Open** button (the eject symbol, `Ctrl+O`), by dropping it onto the window, from Explorer (**Open with**), or from the command line: `metalmpv.exe file.mkv [more files]`. Several files make a playlist; at the end of a file the next one starts. `Ctrl+U` or **Open an address…** in the context menu plays a direct link to a video or a stream. While nothing plays, the start screen lists the files played last.
+A file is opened with the **Open** button (the eject symbol, `Ctrl+O`), by dropping it onto the window, from Explorer (**Open with**), or from the command line: `metalmpv.exe file.mkv [more files]`. Several files make a playlist; at the end of a file the next one starts. `Ctrl+U` or **Open an address…** in the context menu plays a direct link to a video or a stream. `Ctrl+V` opens the files copied in Explorer, or the addresses and paths on the clipboard. While nothing plays, the start screen lists the files played last.
 
 <details>
 <summary>Dropped files, M3U and IPTV lists, addresses, recent files, the taskbar</summary>
@@ -437,6 +437,7 @@ The keys below are the defaults; they can be changed in the settings (**Keyboard
 |---|---|
 | `Ctrl+O` | Open files |
 | `Ctrl+U` | Open an address: a direct link to a video or a stream |
+| `Ctrl+V`, `Shift+Insert` | Open the files copied in Explorer or the address on the clipboard |
 | `L`, middle click on the picture | Show or hide the playlist; in fullscreen, over the right side of the picture |
 | `Delete` | Remove the selected playlist entries |
 | `Ctrl+F` | Search the playlist |
