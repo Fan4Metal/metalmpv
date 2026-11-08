@@ -13,7 +13,9 @@ use crate::playlist::{self, Channel, Playlist};
 /// a portable copy beside the exe, hence the program's name in it).
 pub const FILE: &str = "metalmpv_playlist.m3u8";
 
-/// The comment line naming the current entry by its place.
+/// The comment line naming the current entry by its path (not its place:
+/// reading leaves out entries a list may not hold, `playlist::safe_entry`,
+/// and the places after them move).
 const CURRENT: &str = "#METALMPV-CURRENT:";
 
 /// A list larger than this is not read back (an IPTV list of a million
@@ -26,13 +28,13 @@ pub fn file() -> Option<PathBuf> {
     Some(settings.parent()?.join(FILE))
 }
 
-/// What is written: the list's M3U8 with the current entry's place.
+/// What is written: the list's M3U8 with the current entry's path.
 pub fn text(list: &Playlist) -> String {
     let mut text = playlist::m3u_text(list);
-    if let Some(current) = list.current() {
+    if let Some(current) = list.current().and_then(|i| list.items().get(i)) {
         // After `#EXTM3U`: a player reading the file skips the comment.
         let at = text.find('\n').map_or(text.len(), |i| i + 1);
-        text.insert_str(at, &format!("{CURRENT}{current}\r\n"));
+        text.insert_str(at, &format!("{CURRENT}{}\r\n", current.display()));
     }
     text
 }
@@ -46,13 +48,8 @@ pub struct Kept {
 
 /// The list in `text` (as [`text`] writes it).
 pub fn parse(text: &str) -> Kept {
-    let current = text.lines().find_map(|line| {
-        line.trim()
-            .strip_prefix(CURRENT)
-            .and_then(|i| i.trim().parse().ok())
-    });
     let mut channels = HashMap::new();
-    let paths = playlist::m3u_entries(text, Path::new(""))
+    let paths: Vec<PathBuf> = playlist::m3u_entries(text, Path::new(""))
         .into_iter()
         .map(|(path, channel)| {
             if let Some(c) = channel {
@@ -61,6 +58,12 @@ pub fn parse(text: &str) -> Kept {
             path
         })
         .collect();
+    // Read as an entry is, so that it is named as the entries are.
+    let current = text
+        .lines()
+        .find_map(|line| line.trim().strip_prefix(CURRENT))
+        .and_then(|line| playlist::m3u_entries(line, Path::new("")).pop())
+        .and_then(|(path, _)| paths.iter().position(|p| *p == path));
     Kept {
         paths,
         channels,
@@ -167,7 +170,7 @@ mod tests {
         list.describe(channels);
         list.set_current(2);
         let text = text(&list);
-        assert!(text.starts_with("#EXTM3U\r\n#METALMPV-CURRENT:2\r\n"));
+        assert!(text.starts_with("#EXTM3U\r\n#METALMPV-CURRENT:C:\\Films\\b.mkv\r\n"));
         let kept = parse(&text);
         assert_eq!(kept.paths, list.items());
         assert_eq!(kept.current, Some(2));
@@ -180,6 +183,23 @@ mod tests {
     fn without_a_current_entry() {
         let kept = parse("#EXTM3U\r\nC:\\a.mkv\r\n");
         assert_eq!(kept.paths, vec![PathBuf::from(r"C:\a.mkv")]);
+        assert_eq!(kept.current, None);
+    }
+
+    #[test]
+    fn current_by_path_when_an_entry_is_left_out() {
+        // A device opened by its address is no entry of a list read back:
+        // the current entry is still the one that played.
+        let text = "#EXTM3U\r\n#METALMPV-CURRENT:C:\\b.mkv\r\nav://dshow:video=cam\r\n\
+                    C:\\a.mkv\r\nC:\\b.mkv\r\n";
+        let kept = parse(text);
+        assert_eq!(
+            kept.paths,
+            vec![PathBuf::from(r"C:\a.mkv"), PathBuf::from(r"C:\b.mkv")]
+        );
+        assert_eq!(kept.current, Some(1));
+        // One no longer listed: none.
+        let kept = parse("#EXTM3U\r\n#METALMPV-CURRENT:C:\\gone.mkv\r\nC:\\a.mkv\r\n");
         assert_eq!(kept.current, None);
     }
 }
