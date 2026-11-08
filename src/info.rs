@@ -524,13 +524,11 @@ fn dolby_vision_in(lang: Lang, (profile, level): (i64, i64)) -> String {
     }
 }
 
-/// A codec's level: "4.1", "5.1, High tier"; "5.1, ярус High".
-fn level_in(lang: Lang, level: &str) -> String {
+/// A codec's level: "4.1", "5.1, High tier" (the tier untranslated, as the
+/// profiles' names: Russian has no settled word for it).
+fn level_in(_lang: Lang, level: &str) -> String {
     match level.strip_suffix(" High") {
-        Some(l) => match lang {
-            Lang::En => format!("{l}, High tier"),
-            Lang::Ru => format!("{l}, ярус High"),
-        },
+        Some(l) => format!("{l}, High tier"),
         None => level.to_owned(),
     }
 }
