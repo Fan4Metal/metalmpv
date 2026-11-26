@@ -136,7 +136,10 @@ impl ToneMap {
 
     pub fn label(self) -> &'static str {
         match self {
-            ToneMap::Auto => tr!("Auto", "Авто"),
+            // libmpv's renderer (vo_gpu's `gl_video`, not gpu-next) takes
+            // BT.2390 for `auto`, whatever the file: video_shaders.c's
+            // `pass_tone_map`.
+            ToneMap::Auto => tr!("Auto (BT.2390)", "Авто (BT.2390)"),
             ToneMap::Bt2390 => tr!("BT.2390, the standard's", "BT.2390, по стандарту"),
             ToneMap::Hable => tr!("Hable, filmic", "Hable, кинематографичный"),
             ToneMap::Mobius => tr!("Möbius, bright", "Möbius, яркий"),
