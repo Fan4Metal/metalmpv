@@ -528,21 +528,30 @@ const ACCENTS_WIDTH: f32 = 250.0;
 /// The size of an accent's swatch.
 const SWATCH: f32 = 22.0;
 
-/// The accent colours as round swatches, the chosen one ringed, and last
-/// one's own colour, picked in a popup; whether one was chosen.
-fn accents(ui: &mut Ui, accent: &mut Accent) -> bool {
+/// The accent colours as round swatches, the chosen one ringed: first
+/// `theme`'s own (`Accent::Theme`), then the ready ones but the one it is
+/// (which then counts as the theme's), last one's own colour, picked in a
+/// popup; whether one was chosen.
+fn accents(ui: &mut Ui, accent: &mut Accent, theme: Theme) -> bool {
     let mut chosen = false;
     ui.spacing_mut().item_spacing.x = 5.0;
-    // Right to left: the own colour first, then the ready ones from the last.
-    chosen |= own_accent(ui, accent);
-    for a in Accent::ALL.into_iter().rev() {
+    let own = theme.accent();
+    let ready = Accent::ALL.into_iter().filter(|a| *a != own);
+    // Right to left: the own colour first, then the ready ones from the
+    // last, then the theme's.
+    chosen |= own_accent(ui, accent, theme);
+    for a in ready.rev().chain(std::iter::once(Accent::Theme)) {
         let (rect, response) = ui.allocate_exact_size(vec2(SWATCH, SWATCH), Sense::click());
-        let response = response.on_hover_text(a.label());
-        let selected = *accent == a;
+        let response = if a == Accent::Theme {
+            response.on_hover_text(format!("{}: {}", a.label(), own.label().to_lowercase()))
+        } else {
+            response.on_hover_text(a.label())
+        };
+        let selected = *accent == a || (a == Accent::Theme && *accent == own);
         swatch(ui, rect, selected, response.hovered(), |p, centre, r| {
-            p.circle_filled(centre, r, a.palette().accent);
+            p.circle_filled(centre, r, a.palette_in(theme).accent);
         });
-        if response.clicked() && !selected {
+        if response.clicked() && *accent != a {
             *accent = a;
             chosen = true;
         }
@@ -574,11 +583,13 @@ fn swatch(
 /// The own colour's swatch: a colour wheel, or the colour once chosen; a
 /// click opens the picker with a field for `#RRGGBB`, which starts from
 /// the accent in use.
-fn own_accent(ui: &mut Ui, accent: &mut Accent) -> bool {
+fn own_accent(ui: &mut Ui, accent: &mut Accent, theme: Theme) -> bool {
     let (rect, response) = ui.allocate_exact_size(vec2(SWATCH, SWATCH), Sense::click());
     let response = response.on_hover_text(tr!("Your own colour…", "Свой цвет…"));
     let own = matches!(accent, Accent::Custom(_));
-    let current = accent.palette().accent;
+    // The theme's own as the colour it is now.
+    let accent_in = |a: Accent| a.in_theme(theme);
+    let current = accent_in(*accent).palette_in(theme).accent;
     swatch(ui, rect, own, response.hovered(), |p, centre, r| {
         if own {
             p.circle_filled(centre, r, current);
@@ -590,7 +601,7 @@ fn own_accent(ui: &mut Ui, accent: &mut Accent) -> bool {
     egui::Popup::menu(&response)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
-            let mut colour = accent.palette().accent;
+            let mut colour = current;
             if colour_picker(ui, &mut colour) {
                 *accent = custom(colour.to_array()[..3].try_into().expect("three"));
                 chosen = true;
@@ -614,7 +625,7 @@ fn own_accent(ui: &mut Ui, accent: &mut Accent) -> bool {
                 }
                 // Kept as typed while the field has the focus.
                 let id = ui.id().with("accent_hex");
-                let [_, r, g, b] = accent.base().to_be_bytes();
+                let [_, r, g, b] = accent_in(*accent).base().to_be_bytes();
                 let mut text = ui
                     .data_mut(|d| d.get_temp::<String>(id))
                     .unwrap_or_else(|| mode.show([r, g, b]));
@@ -640,7 +651,7 @@ fn own_accent(ui: &mut Ui, accent: &mut Accent) -> bool {
             ui.horizontal(|ui| {
                 let spacing = ui.spacing().item_spacing.x;
                 let size = vec2((PICKER - 2.0 * spacing) / 3.0, ui.spacing().interact_size.y);
-                let [_, r, g, b] = accent.base().to_be_bytes();
+                let [_, r, g, b] = accent_in(*accent).base().to_be_bytes();
                 let mut rgb = [r, g, b];
                 let mut edited = false;
                 for (value, name) in rgb.iter_mut().zip(["R ", "G ", "B "]) {
@@ -919,11 +930,11 @@ fn general(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
             ui,
             tr!("Accent colour", "Акцентный цвет"),
             Some(tr!(
-                "The Play button, the seek bar, the switches, the playing file and the icon of the window.",
-                "Кнопка воспроизведения, полоса перемотки, переключатели, текущий файл и значок окна."
+                "The Play button, the seek bar, the switches, the playing file and the icon of the window. The first swatch is the theme's own colour.",
+                "Кнопка воспроизведения, полоса перемотки, переключатели, текущий файл и значок окна. Первый кружок — цвет темы."
             )),
             ACCENTS_WIDTH,
-            |ui| changed.look |= accents(ui, &mut settings.accent),
+            |ui| changed.look |= accents(ui, &mut settings.accent, settings.theme),
         );
         divider(ui);
         row(

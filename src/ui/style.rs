@@ -281,6 +281,19 @@ impl Theme {
             Theme::Dimmed => &DIMMED,
         }
     }
+
+    /// The theme's own accent ([`Accent::Theme`], the default): the ready
+    /// one that suits its grounds, as metalamp's themes have theirs.
+    pub fn accent(self) -> Accent {
+        match self {
+            // A cinema's cyan on black.
+            Theme::Black => Accent::Teal,
+            Theme::Midnight | Theme::Graphite | Theme::Dimmed => Accent::Blue,
+            Theme::Plum => Accent::Purple,
+            Theme::Forest => Accent::Green,
+            Theme::Espresso => Accent::Orange,
+        }
+    }
 }
 
 /// The theme in use, its index in [`Theme::ALL`].
@@ -326,7 +339,10 @@ grounds!(
 /// screen.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Accent {
+    /// The theme's own ([`Theme::accent`]), following the theme: the first
+    /// swatch.
     #[default]
+    Theme,
     Blue,
     Teal,
     Green,
@@ -354,7 +370,7 @@ pub struct Palette {
 }
 
 impl Accent {
-    /// The ready ones.
+    /// The ready ones (not the theme's nor the user's own).
     pub const ALL: [Accent; 8] = [
         Accent::Blue,
         Accent::Teal,
@@ -369,6 +385,7 @@ impl Accent {
     /// The name in the settings: a ready one's, or `#RRGGBB`.
     pub fn name(self) -> String {
         let name = match self {
+            Accent::Theme => "theme",
             Accent::Blue => "blue",
             Accent::Teal => "teal",
             Accent::Green => "green",
@@ -386,7 +403,18 @@ impl Accent {
         if let Some([r, g, b]) = crate::sub_style::parse_hex(name) {
             return Some(Accent::Custom(u32::from_be_bytes([0, r, g, b])));
         }
-        Self::ALL.into_iter().find(|a| a.name() == name)
+        std::iter::once(Accent::Theme)
+            .chain(Self::ALL)
+            .find(|a| a.name() == name)
+    }
+
+    /// The colour shown in `theme`: the theme's own for [`Accent::Theme`],
+    /// else this one.
+    pub fn in_theme(self, theme: Theme) -> Accent {
+        match self {
+            Accent::Theme => theme.accent(),
+            a => a,
+        }
     }
 
     /// A colour typed or pasted, in any of the forms of [`ColourText`]: six
@@ -403,6 +431,7 @@ impl Accent {
 
     pub fn label(self) -> &'static str {
         match self {
+            Accent::Theme => tr!("The theme's colour", "Цвет темы"),
             Accent::Blue => tr!("Blue", "Синий"),
             Accent::Teal => tr!("Teal", "Бирюзовый"),
             Accent::Green => tr!("Green", "Зелёный"),
@@ -416,9 +445,11 @@ impl Accent {
     }
 
     /// The colour itself, `0xRRGGBB`: the ready ones dark enough for white
-    /// on them, light enough to stand out on the dark panels.
+    /// on them, light enough to stand out on the dark panels; the theme's
+    /// in the theme in use.
     pub fn base(self) -> u32 {
         match self {
+            Accent::Theme => theme_choice().accent().base(),
             Accent::Blue => 0x2f7cf0,
             Accent::Teal => 0x0d9488,
             Accent::Green => 0x16a34a,
@@ -440,6 +471,10 @@ impl Accent {
     /// colour as blue's nearly are; the selection mixed with the theme's
     /// panel.
     pub fn palette_in(self, theme: Theme) -> Palette {
+        let this = self.in_theme(theme);
+        if this != self {
+            return this.palette_in(theme);
+        }
         let [r, g, b, _] = theme.grounds().panel_bg.to_array().map(u32::from);
         let panel = r << 16 | g << 8 | b;
         let base = self.base();
@@ -488,9 +523,10 @@ static ACCENT: AtomicU32 = AtomicU32::new(0);
 const CUSTOM: u32 = 1 << 31;
 
 /// Make `accent` the one the interface is drawn in ([`apply`] for egui's
-/// own widgets).
+/// own widgets): the theme's own as the colour it gives in the theme in
+/// use, so [`set_theme`] comes first.
 pub fn set_accent(accent: Accent) {
-    let value = match accent {
+    let value = match accent.in_theme(theme_choice()) {
         Accent::Custom(c) => CUSTOM | (c & 0xffffff),
         _ => Accent::ALL.iter().position(|a| *a == accent).unwrap_or(0) as u32,
     };
@@ -816,6 +852,27 @@ mod tests {
         set_accent(Accent::Purple);
         assert_eq!(accent_choice(), Accent::Purple);
         set_accent(Accent::Blue);
+        assert_eq!(Accent::from_name("theme"), Some(Accent::Theme));
+        assert_eq!(Accent::Theme.name(), "theme");
+        assert_eq!(Accent::default(), Accent::Theme);
+    }
+
+    #[test]
+    fn each_theme_has_its_own_accent() {
+        assert_eq!(Theme::Graphite.accent(), Accent::Blue);
+        assert_eq!(Theme::Plum.accent(), Accent::Purple);
+        for theme in Theme::ALL {
+            let own = theme.accent();
+            assert!(Accent::ALL.contains(&own), "{theme:?}");
+            assert_eq!(Accent::Theme.in_theme(theme), own);
+            assert_eq!(Accent::Theme.palette_in(theme), own.palette_in(theme));
+            assert_eq!(Accent::Red.in_theme(theme), Accent::Red);
+        }
+        // The default look is the first one: blue in graphite.
+        assert_eq!(
+            Accent::default().palette_in(Theme::default()),
+            Accent::Blue.palette_in(Theme::Graphite)
+        );
     }
 
     fn luminance(c: Color32) -> f32 {

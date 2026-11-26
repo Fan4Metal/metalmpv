@@ -707,7 +707,7 @@ impl Default for Settings {
             media_keys: MediaKeys::Always,
             keys: Keymap::default(),
             theme: Theme::Graphite,
-            accent: Accent::Blue,
+            accent: Accent::Theme,
             audio_device: String::new(),
             audio_channels: Channels::Auto,
             volume_max: 100.0,
@@ -896,10 +896,15 @@ impl Settings {
                 .as_deref()
                 .and_then(Theme::from_name)
                 .unwrap_or(d.theme),
-            accent: get(ACCENT)
-                .as_deref()
-                .and_then(Accent::from_name)
-                .unwrap_or(d.accent),
+            accent: match get(ACCENT).as_deref().and_then(Accent::from_name) {
+                // Written before the themes had accents of their own, when
+                // blue in graphite were both the defaults: the theme's own,
+                // which is the same blue there.
+                Some(Accent::Blue) if get(THEME).as_deref().is_none_or(|t| t == "graphite") => {
+                    Accent::Theme
+                }
+                accent => accent.unwrap_or(d.accent),
+            },
             audio_device: get(AUDIO_DEVICE).unwrap_or_default(),
             audio_channels: get(AUDIO_CHANNELS)
                 .as_deref()
@@ -1463,6 +1468,20 @@ mod tests {
         storage.set_string(INTERFACE, "none".into());
         storage.set_string(MEDIA_KEYS, "sometimes".into());
         assert_eq!(Settings::load(&storage), Settings::default());
+    }
+
+    #[test]
+    fn the_old_default_blue_becomes_the_themes_own() {
+        let mut storage = MemStorage::default();
+        storage.set_string(ACCENT, "blue".into());
+        assert_eq!(Settings::load(&storage).accent, Accent::Theme);
+        storage.set_string(THEME, "graphite".into());
+        assert_eq!(Settings::load(&storage).accent, Accent::Theme);
+        // Chosen in another theme: kept.
+        storage.set_string(THEME, "plum".into());
+        assert_eq!(Settings::load(&storage).accent, Accent::Blue);
+        storage.set_string(ACCENT, "theme".into());
+        assert_eq!(Settings::load(&storage).accent, Accent::Theme);
     }
 
     #[test]

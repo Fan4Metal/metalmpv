@@ -281,8 +281,9 @@ fn normalize(arg: &str) -> PathBuf {
 }
 
 /// The icon of the window: the embedded 64-pixel rendering, or drawn in
-/// another accent (~3 ms).
+/// another accent (~3 ms); the theme's own in the theme in use.
 pub fn window_icon(accent: ui::style::Accent) -> Arc<egui::IconData> {
+    let accent = accent.in_theme(ui::style::theme_choice());
     let rgba = if accent == ui::style::Accent::Blue {
         embedded_icon(64).expect("embedded").to_vec()
     } else {

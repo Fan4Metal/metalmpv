@@ -970,8 +970,9 @@ impl eframe::App for App {
             style::apply(&ctx);
         }
         // Not while a colour is dragged in the picker: once let go.
-        if self.window_icon != self.settings.accent && !ctx.input(|i| i.pointer.any_down()) {
-            self.window_icon = self.settings.accent;
+        let accent = self.settings.accent.in_theme(self.settings.theme);
+        if self.window_icon != accent && !ctx.input(|i| i.pointer.any_down()) {
+            self.window_icon = accent;
             ctx.send_viewport_cmd(egui::ViewportCommand::Icon(Some(crate::window_icon(
                 self.window_icon,
             ))));
