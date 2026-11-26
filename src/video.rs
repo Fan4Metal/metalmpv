@@ -24,6 +24,18 @@ use eframe::glow::{self, HasContext};
 
 use crate::mpv::{Mpv, RenderContext};
 
+/// mpv's renderer: `gpu`, vo_gpu's, named so that a libmpv of client API
+/// 2.7, which takes `gpu-next` when none is named, keeps the options this
+/// app gives (`tone-mapping`'s `auto` is BT.2390 only there);
+/// `METALMPV_RENDERER=gpu-next` for trying the other.
+fn renderer() -> &'static std::ffi::CStr {
+    use crate::mpv::sys;
+    match std::env::var("METALMPV_RENDERER").as_deref() {
+        Ok("gpu-next") => sys::MPV_RENDER_RENDERER_GPU_NEXT,
+        _ => sys::MPV_RENDER_RENDERER_GPU,
+    }
+}
+
 pub struct Video {
     shared: Arc<Mutex<Shared>>,
     /// The texture as egui knows it, registered at the first frame
@@ -49,9 +61,11 @@ impl Video {
     /// `ctx` is woken when mpv has a new frame.
     pub fn new(gl: &glow::Context, mpv: &Mpv, ctx: &egui::Context) -> Result<Self, String> {
         let started = std::time::Instant::now();
-        let mut render = RenderContext::new(mpv, get_proc_address)?;
+        let renderer = renderer();
+        let mut render = RenderContext::new(mpv, get_proc_address, renderer)?;
         log::debug!(
-            "render context made in {:.0} ms",
+            "render context ({}) made in {:.0} ms",
+            renderer.to_string_lossy(),
             started.elapsed().as_secs_f64() * 1e3
         );
         let wake = ctx.clone();

@@ -64,7 +64,12 @@ pub const MPV_RENDER_PARAM_OPENGL_INIT_PARAMS: mpv_render_param_type = 2;
 pub const MPV_RENDER_PARAM_OPENGL_FBO: mpv_render_param_type = 3;
 pub const MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME: mpv_render_param_type = 12;
 pub const MPV_RENDER_PARAM_SKIP_RENDERING: mpv_render_param_type = 13;
+/// The renderer, `gpu` or `gpu-next` (client API 2.7; an older libmpv does
+/// not look for it). Without it a libmpv of 2.7 takes `gpu-next`.
+pub const MPV_RENDER_PARAM_RENDERER: mpv_render_param_type = 23;
 pub const MPV_RENDER_API_TYPE_OPENGL: &std::ffi::CStr = c"opengl";
+pub const MPV_RENDER_RENDERER_GPU: &std::ffi::CStr = c"gpu";
+pub const MPV_RENDER_RENDERER_GPU_NEXT: &std::ffi::CStr = c"gpu-next";
 pub const MPV_RENDER_UPDATE_FRAME: u64 = 1;
 
 #[repr(C)]

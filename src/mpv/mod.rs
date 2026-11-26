@@ -428,9 +428,14 @@ unsafe impl Send for RenderContext {}
 unsafe impl Sync for RenderContext {}
 
 impl RenderContext {
-    /// Make the render context of `mpv` for the current OpenGL context;
-    /// `get_proc_address` finds OpenGL functions by name.
-    pub fn new(mpv: &Mpv, get_proc_address: sys::GetProcAddress) -> Result<Self, String> {
+    /// Make the render context of `mpv` for the current OpenGL context
+    /// with `renderer` (`sys::MPV_RENDER_RENDERER_*`); `get_proc_address`
+    /// finds OpenGL functions by name.
+    pub fn new(
+        mpv: &Mpv,
+        get_proc_address: sys::GetProcAddress,
+        renderer: &'static std::ffi::CStr,
+    ) -> Result<Self, String> {
         let api = mpv.api();
         let mut init = sys::mpv_opengl_init_params {
             get_proc_address: Some(get_proc_address),
@@ -444,6 +449,10 @@ impl RenderContext {
             sys::mpv_render_param {
                 type_: sys::MPV_RENDER_PARAM_OPENGL_INIT_PARAMS,
                 data: (&raw mut init).cast(),
+            },
+            sys::mpv_render_param {
+                type_: sys::MPV_RENDER_PARAM_RENDERER,
+                data: renderer.as_ptr() as *mut c_void,
             },
             sys::mpv_render_param {
                 type_: sys::MPV_RENDER_PARAM_INVALID,
