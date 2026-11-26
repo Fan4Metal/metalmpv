@@ -19,6 +19,9 @@ pub(super) struct Comparison {
     pub(super) swapped: bool,
     /// B's file is loaded.
     pub(super) loaded: bool,
+    /// What B's container says, read while the information window is
+    /// open.
+    pub(super) facts: Option<FactsSlot>,
     /// Where the bar over the picture was last drawn.
     bar: Option<Rect>,
     sync: compare::Sync,
@@ -235,6 +238,7 @@ impl App {
             split: 0.5,
             swapped: false,
             loaded: false,
+            facts: None,
             bar: None,
             sync: compare::Sync::default(),
             adjust: Adjust::default(),

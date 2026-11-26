@@ -1357,6 +1357,181 @@ pub fn report_in(lang: Lang, s: &Subject) -> String {
     parts.join("\n")
 }
 
+/// A row of two files compared: the label and each file's value, `None`
+/// where that file has no such row.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Paired {
+    pub label: String,
+    pub a: Option<String>,
+    pub b: Option<String>,
+}
+
+impl Paired {
+    pub fn differs(&self) -> bool {
+        self.a != self.b
+    }
+}
+
+/// Two files' rows side by side, matched by their labels (the second of
+/// two rows of one label with the other's second): A's order, a row only
+/// B has after the row it follows in B.
+pub fn paired(a: &[(String, String)], b: &[(String, String)]) -> Vec<Paired> {
+    fn keyed(rows: &[(String, String)]) -> Vec<(&str, usize)> {
+        let mut seen: Vec<&str> = Vec::new();
+        rows.iter()
+            .map(|(label, _)| {
+                let n = seen.iter().filter(|l| **l == label).count();
+                seen.push(label);
+                (label.as_str(), n)
+            })
+            .collect()
+    }
+    let mut keys: Vec<(&str, usize)> = keyed(a);
+    let mut out: Vec<Paired> = a
+        .iter()
+        .map(|(label, value)| Paired {
+            label: label.clone(),
+            a: Some(value.clone()),
+            b: None,
+        })
+        .collect();
+    let mut after = 0;
+    for (key, (label, value)) in keyed(b).into_iter().zip(b) {
+        match keys.iter().position(|k| *k == key) {
+            Some(i) => {
+                out[i].b = Some(value.clone());
+                after = i + 1;
+            }
+            None => {
+                out.insert(
+                    after,
+                    Paired {
+                        label: label.clone(),
+                        a: None,
+                        b: Some(value.clone()),
+                    },
+                );
+                keys.insert(after, key);
+                after += 1;
+            }
+        }
+    }
+    out
+}
+
+/// The track of `kind` a comparison puts side by side: the one playing
+/// (B plays no sound: then the one numbered as `like`, A's), else the
+/// default one, else the first. Not a cover.
+pub fn main_track(tracks: &[Track], kind: Kind, like: Option<usize>) -> Option<&Track> {
+    let of_kind = || tracks.iter().filter(move |t| t.kind == kind && !t.albumart);
+    of_kind()
+        .find(|t| t.selected)
+        .or_else(|| like.and_then(|n| of_kind().find(|t| t.number(tracks) == n)))
+        .or_else(|| of_kind().find(|t| t.default))
+        .or_else(|| of_kind().next())
+}
+
+/// A section of two files compared.
+pub struct Compared {
+    /// Its name for egui's memory.
+    pub id: &'static str,
+    pub title: String,
+    pub rows: Vec<Paired>,
+}
+
+/// What the information window sets side by side for two files compared
+/// on the same frame: the file, the playback, the picture's track and the
+/// sound's (each with its name first), the tags; sections neither has
+/// left out.
+pub fn compared_in(lang: Lang, a: &Subject, b: &Subject) -> Vec<Compared> {
+    let ru = lang == Lang::Ru;
+    let title = |en: &str, ru_text: &str| if ru { ru_text } else { en }.to_owned();
+    let track_rows = |s: &Subject, track: Option<&Track>| -> Vec<(String, String)> {
+        let Some(track) = track else {
+            return Vec::new();
+        };
+        let n = track.number(&s.state.tracks);
+        let mut rows = vec![(
+            title("Track", "Дорожка"),
+            format!("{n}. {}", track.name_in(lang, n)),
+        )];
+        rows.extend(track_rows_in(lang, track, s));
+        rows
+    };
+    let mut sections = vec![
+        Compared {
+            id: "file",
+            title: title("File", "Файл"),
+            rows: paired(&file_rows_in(lang, a), &file_rows_in(lang, b)),
+        },
+        Compared {
+            id: "playback",
+            title: title("Playback", "Воспроизведение"),
+            rows: paired(&live_rows_in(lang, a), &live_rows_in(lang, b)),
+        },
+    ];
+    for (id, kind, en, ru_text) in [
+        ("video", Kind::Video, "Video", "Видео"),
+        ("audio", Kind::Audio, "Sound", "Звук"),
+    ] {
+        let of_a = main_track(&a.state.tracks, kind, None);
+        let like = of_a.map(|t| t.number(&a.state.tracks));
+        let of_b = main_track(&b.state.tracks, kind, like);
+        sections.push(Compared {
+            id,
+            title: title(en, ru_text),
+            rows: paired(&track_rows(a, of_a), &track_rows(b, of_b)),
+        });
+    }
+    sections.push(Compared {
+        id: "tags",
+        title: title("Tags", "Теги"),
+        rows: paired(
+            &tags_in(lang, &a.state.metadata),
+            &tags_in(lang, &b.state.metadata),
+        ),
+    });
+    sections.retain(|s| !s.rows.is_empty());
+    sections
+}
+
+/// A section of two files as text: the labels, A's values and B's in
+/// columns, `—` for a value missing; a long value's lines joined by ` / `.
+pub fn paired_text(title: &str, rows: &[Paired]) -> String {
+    let flat = |v: &Option<String>| match v {
+        Some(v) => v.lines().collect::<Vec<_>>().join(" / "),
+        None => "—".to_owned(),
+    };
+    let rows: Vec<(&str, String, String)> = rows
+        .iter()
+        .map(|r| (r.label.as_str(), flat(&r.a), flat(&r.b)))
+        .collect();
+    let labels = rows.iter().map(|r| r.0.chars().count()).max().unwrap_or(0);
+    let values = rows.iter().map(|r| r.1.chars().count()).max().unwrap_or(0);
+    let mut text = format!("{title}\n");
+    for (label, a, b) in rows {
+        let pad = " ".repeat(labels - label.chars().count());
+        let gap = " ".repeat(values - a.chars().count());
+        text.push_str(&format!("{label}{pad} : {a}{gap} | {b}\n"));
+    }
+    text
+}
+
+/// Everything the comparison's view shows, as text for the clipboard:
+/// the two files' paths, then the sections.
+pub fn compared_report_in(lang: Lang, a: &Subject, b: &Subject) -> String {
+    let path = |s: &Subject| s.path.map(|p| p.display().to_string()).unwrap_or_default();
+    let mut text = format!("A: {}\nB: {}\n\n", path(a), path(b));
+    text.push_str(
+        &compared_in(lang, a, b)
+            .iter()
+            .map(|s| paired_text(&s.title, &s.rows))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1923,5 +2098,97 @@ mod tests {
         );
         assert_eq!(rows[0][0].text, "MPEG-TS");
         assert_eq!(rows[0][0].tone, Tone::Plain);
+    }
+
+    #[test]
+    fn rows_paired_by_label() {
+        let a = tags(&[
+            ("Size", "1 GB"),
+            ("Format", "MKV"),
+            ("Tag", "1"),
+            ("Tag", "2"),
+        ]);
+        let b = tags(&[
+            ("Size", "2 GB"),
+            ("Level", "4.1"),
+            ("Tag", "1"),
+            ("Format", "MKV"),
+        ]);
+        let rows = paired(&a, &b);
+        let shown: Vec<(&str, Option<&str>, Option<&str>)> = rows
+            .iter()
+            .map(|r| (r.label.as_str(), r.a.as_deref(), r.b.as_deref()))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("Size", Some("1 GB"), Some("2 GB")),
+                ("Level", None, Some("4.1")),
+                ("Format", Some("MKV"), Some("MKV")),
+                ("Tag", Some("1"), Some("1")),
+                ("Tag", Some("2"), None),
+            ]
+        );
+        assert!(rows[0].differs() && !rows[2].differs() && rows[4].differs());
+        assert_eq!(
+            paired_text("File", &rows),
+            "File\n\
+             Size   : 1 GB | 2 GB\n\
+             Level  : —    | 4.1\n\
+             Format : MKV  | MKV\n\
+             Tag    : 1    | 1\n\
+             Tag    : 2    | —\n"
+        );
+    }
+
+    #[test]
+    fn compared_tracks() {
+        let audio = |id, selected, default| Track {
+            id,
+            kind: Kind::Audio,
+            selected,
+            default,
+            ..Track::default()
+        };
+        // B plays no sound: A's second track is set beside B's second.
+        let a = [audio(1, false, true), audio(2, true, false)];
+        let b = [audio(1, false, true), audio(2, false, false)];
+        let n = main_track(&a, Kind::Audio, None).map(|t| t.number(&a));
+        assert_eq!(n, Some(2));
+        assert_eq!(main_track(&b, Kind::Audio, n).map(|t| t.id), Some(2));
+        // No such number: the default one.
+        assert_eq!(main_track(&b, Kind::Audio, Some(5)).map(|t| t.id), Some(1));
+        assert!(main_track(&b, Kind::Video, None).is_none());
+
+        let video = Track {
+            id: 1,
+            kind: Kind::Video,
+            codec: Some("hevc".into()),
+            selected: true,
+            ..Track::default()
+        };
+        let state_a = State {
+            idle: false,
+            tracks: vec![video.clone()],
+            ..State::default()
+        };
+        let state_b = State {
+            idle: false,
+            tracks: vec![Track {
+                codec: Some("h264".into()),
+                ..video
+            }],
+            ..State::default()
+        };
+        let sections = compared_in(Lang::En, &subject(&state_a), &subject(&state_b));
+        let ids: Vec<&str> = sections.iter().map(|s| s.id).collect();
+        assert_eq!(ids, ["video"]);
+        let format = sections[0]
+            .rows
+            .iter()
+            .find(|r| r.label == "Format")
+            .unwrap();
+        assert_eq!(format.a.as_deref(), Some("HEVC"));
+        assert_eq!(format.b.as_deref(), Some("H.264"));
     }
 }

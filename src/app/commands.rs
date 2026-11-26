@@ -257,6 +257,11 @@ impl App {
                     win::show_in_folder(path);
                 }
             }
+            Cmd::ShowComparedInFolder => {
+                if let Some(c) = self.compare.as_ref().filter(|c| !playlist::is_url(&c.path)) {
+                    win::show_in_folder(&c.path);
+                }
+            }
             Cmd::Next => {
                 if let Some(i) = self.playlist.next_in(self.settings.repeat) {
                     self.play(i);

@@ -148,6 +148,8 @@ pub enum Cmd {
     ClearRecent,
     /// Show the file in Explorer.
     ShowInFolder,
+    /// Show the file compared with the one playing (B) in Explorer.
+    ShowComparedInFolder,
     /// Show playlist entry `n` in Explorer.
     ShowEntryInFolder(usize),
     /// The time in the control bar: both, elapsed, remaining (a click on it).

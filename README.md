@@ -246,6 +246,7 @@ Two versions of a video (two encodes, a source and its copy, a picture before an
 - **A shift**: `Alt+.` and `Alt+,` move B a frame forward or back against A (`Ctrl+Alt` ten frames), `Alt+0` takes the shift away; the shift is shown in B's corner in frames and seconds.
 - `W` swaps the sides. The names of A and B are shown in the bottom corners, with B's state (loading, ended, its shift).
 - **The bar over the picture** comes while the mouse moves over it: the two ways of showing, the sides swapped, B's shift (the arrows a frame each, a click on the figure takes the shift away), the zoom (a click on its figure goes back to 100 % in the middle) and the end of the comparison.
+- **The file information** (`I`) while comparing has three tabs: **A and B**, the two files side by side row by row (the file, the playback with each one's bitrate over the last minute, the picture's track, the sound's, the tags), the values that differ bright and those alike dimmed; **A** and **B**, each file's whole information. **Copy all** on the first tab copies both in columns.
 - The comparison ends with **End the comparison** in the menu, `Esc` (after fullscreen), another file played, Stop or the mini player; the zoom and the position are then put back as they were before it.
 
 ### File information

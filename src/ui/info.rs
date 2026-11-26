@@ -25,6 +25,8 @@ const TOOL: f32 = 26.0;
 const LOGO: f32 = 64.0;
 /// The window's width (egui's, with the frame).
 const WIDTH: f32 = 520.0;
+/// Its width with two files side by side.
+const WIDE: f32 = 820.0;
 /// The window's top right corner from the player's: under the title row,
 /// a little in from the edge.
 const CORNER: egui::Vec2 = vec2(-23.0, 46.0);
@@ -39,9 +41,31 @@ pub struct InfoWindow {
     zoom: bool,
     /// When Copy all was last clicked.
     copied: Option<Instant>,
-    /// The file whose chips were unfolded ("+3" or the subtitles' chip
-    /// clicked), and which; another file folds them again.
-    unfolded: Option<(std::path::PathBuf, info::Unfolded)>,
+    /// The files whose chips were unfolded ("+3" or the subtitles' chip
+    /// clicked), and which; another file folds them again. Two: A and B of
+    /// a comparison.
+    unfolded: Vec<(std::path::PathBuf, info::Unfolded)>,
+    /// What is shown while two files are compared.
+    view: View,
+}
+
+/// The window's view while two files are compared on the same frame.
+#[derive(Clone, Copy, Default, PartialEq)]
+enum View {
+    /// The two side by side, row by row.
+    #[default]
+    Both,
+    A,
+    B,
+}
+
+/// Which file of a comparison a view tells of: A's chips choose its
+/// tracks and its folder link is the player's; B plays no sound nor
+/// subtitles.
+#[derive(Clone, Copy, PartialEq)]
+enum Of {
+    A,
+    B,
 }
 
 /// What an IPTV list says about the entry playing, and its logo once
@@ -79,13 +103,16 @@ impl InfoWindow {
     /// Draw the window while it is open; the commands of its buttons. It
     /// stays at the player's top right corner (anchored, so it follows the
     /// corner as the player's window changes). The width is fixed; only the bottom edge is dragged, and
-    /// egui's memory keeps the height.
+    /// egui's memory keeps the height. `compared`: the file compared with
+    /// the one playing (B), whose facts the window shows beside A's or in
+    /// place of them, as its tabs say.
     pub fn show(
         &mut self,
         ctx: &egui::Context,
         subject: &Subject,
         cover: Option<CoverView<'_>>,
         channel: Option<ChannelView<'_>>,
+        compared: Option<&Subject>,
     ) -> Vec<Cmd> {
         let mut out = Vec::new();
         if !self.open {
@@ -93,6 +120,16 @@ impl InfoWindow {
         }
         let state = subject.state;
         let screen = ctx.content_rect();
+        let view = match compared {
+            Some(_) if !state.idle => self.view,
+            _ => View::A,
+        };
+        // Not wider than the player's window, less a margin either side.
+        let width = if view == View::Both {
+            WIDE.min(screen.width() - 2.0 * CORNER.x.abs()).max(WIDTH)
+        } else {
+            WIDTH
+        };
         let mut open = true;
         let window = egui::Window::new(tr!("File information", "Сведения о файле"))
             .id(egui::Id::new("file_info"))
@@ -103,8 +140,8 @@ impl InfoWindow {
             .resizable([false, true])
             .default_height(620.0)
             .min_height(200.0)
-            .min_width(WIDTH)
-            .max_width(WIDTH)
+            .min_width(width)
+            .max_width(width)
             .constrain_to(screen)
             .frame(
                 egui::Frame::window(&ctx.style_of(egui::Theme::Dark))
@@ -117,12 +154,52 @@ impl InfoWindow {
                     ui.weak(tr!("No file is open.", "Файл не открыт."));
                     return;
                 }
+                if let Some(b) = compared {
+                    let mut i = match self.view {
+                        View::Both => 0,
+                        View::A => 1,
+                        View::B => 2,
+                    };
+                    let labels = [tr!("A and B", "A и B"), "A", "B"];
+                    super::popover::tabs(ui, &labels, &mut i, ui.available_width(), "info_view");
+                    self.view = [View::Both, View::A, View::B][i];
+                    ui.add_space(10.0);
+                    match view {
+                        View::Both => {
+                            ui.push_id("info_both", |ui| {
+                                self.both(ui, subject, b, channel.as_ref(), &mut out)
+                            });
+                            return;
+                        }
+                        View::B => {
+                            ui.push_id("info_b", |ui| {
+                                let title = title_of(b, None);
+                                out.extend(self.header(ui, b, &title, None, None, Of::B));
+                                ui.add_space(8.0);
+                                egui::ScrollArea::vertical()
+                                    .auto_shrink([false, false])
+                                    .show(ui, |ui| body(ui, b, &title, None, Of::B, &mut out));
+                            });
+                            return;
+                        }
+                        View::A => {}
+                    }
+                }
                 let title = title_of(subject, channel.as_ref().map(|v| v.channel));
-                out.extend(self.header(ui, subject, &title, cover.as_ref(), channel.as_ref()));
+                out.extend(self.header(
+                    ui,
+                    subject,
+                    &title,
+                    cover.as_ref(),
+                    channel.as_ref(),
+                    Of::A,
+                ));
                 ui.add_space(8.0);
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
-                    .show(ui, |ui| body(ui, subject, &title, cover.as_ref(), &mut out));
+                    .show(ui, |ui| {
+                        body(ui, subject, &title, cover.as_ref(), Of::A, &mut out)
+                    });
             });
         if !open {
             self.open = false;
@@ -146,6 +223,7 @@ impl InfoWindow {
         title: &str,
         cover: Option<&CoverView<'_>>,
         view: Option<&ChannelView<'_>>,
+        of: Of,
     ) -> Vec<Cmd> {
         let mut out = Vec::new();
         let state = subject.state;
@@ -223,43 +301,74 @@ impl InfoWindow {
                 if let Some(album) = album {
                     ui.add(egui::Label::new(RichText::new(album).color(style::text_weak())).wrap());
                 }
-                let unfolded = match (&self.unfolded, subject.path) {
-                    (Some((of, unfolded)), Some(path)) if of == path => *unfolded,
-                    _ => info::Unfolded::default(),
-                };
-                let rows = info::chips_in(lang(), subject, unfolded);
-                if !rows.is_empty() {
-                    ui.add_space(6.0);
-                }
-                for row in rows {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
-                        for c in row {
-                            if chip(ui, &c).clicked() {
-                                match c.action {
-                                    ChipAction::Audio(id) => out.push(Cmd::SelectAudio(id)),
-                                    ChipAction::Sub(id) => out.push(Cmd::SelectSub(Some(id))),
-                                    ChipAction::Unfold(kind) | ChipAction::Fold(kind) => {
-                                        let on = matches!(c.action, ChipAction::Unfold(_));
-                                        let mut now = unfolded;
-                                        now.set(kind, on);
-                                        self.unfolded =
-                                            subject.path.map(|p| (p.to_path_buf(), now));
-                                    }
-                                    ChipAction::None => {}
-                                }
-                            }
-                        }
-                    });
-                }
+                self.chip_rows(ui, subject, of, &mut out);
             });
         });
         out
     }
 
+    /// The chips of a file: the main facts at a glance
+    /// ([`info::chips_in`]); A's tracks are chosen by a click on theirs.
+    fn chip_rows(&mut self, ui: &mut Ui, subject: &Subject, of: Of, out: &mut Vec<Cmd>) {
+        let unfolded = subject
+            .path
+            .and_then(|path| self.unfolded.iter().find(|(p, _)| p == path))
+            .map(|(_, u)| *u)
+            .unwrap_or_default();
+        let rows = info::chips_in(lang(), subject, unfolded);
+        if !rows.is_empty() {
+            ui.add_space(6.0);
+        }
+        for row in rows {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
+                for c in row {
+                    if !chip(ui, &c).clicked() {
+                        continue;
+                    }
+                    match c.action {
+                        ChipAction::Audio(id) if of == Of::A => out.push(Cmd::SelectAudio(id)),
+                        ChipAction::Sub(id) if of == Of::A => out.push(Cmd::SelectSub(Some(id))),
+                        ChipAction::Unfold(kind) | ChipAction::Fold(kind) => {
+                            let on = matches!(c.action, ChipAction::Unfold(_));
+                            let mut now = unfolded;
+                            now.set(kind, on);
+                            if let Some(path) = subject.path {
+                                // The other file of a comparison stays.
+                                self.unfolded.retain(|(p, _)| p != path);
+                                if self.unfolded.len() > 1 {
+                                    self.unfolded.remove(0);
+                                }
+                                self.unfolded.push((path.to_path_buf(), now));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            });
+        }
+    }
+
     /// The window's buttons, from the right: Copy all (a tick for a moment
     /// after a click), then Save the cover… when there is one.
     fn tools(&mut self, ui: &mut Ui, subject: &Subject, cover: bool, out: &mut Vec<Cmd>) {
+        let s = 6.0;
+        self.copy_all(ui, || info::report_in(lang(), subject));
+        if cover
+            && tool(
+                ui,
+                tr!("Save the cover…", "Сохранить обложку…"),
+                true,
+                |p, o, c| icons::save(p, o, s, c),
+            )
+            .clicked()
+        {
+            out.push(Cmd::SaveCover);
+        }
+    }
+
+    /// Copy all: `text` on the clipboard, a tick for a moment after.
+    fn copy_all(&mut self, ui: &mut Ui, text: impl FnOnce() -> String) {
         let s = 6.0;
         let copied = self
             .copied
@@ -281,20 +390,86 @@ impl InfoWindow {
             },
         );
         if copy.clicked() {
-            ui.ctx().copy_text(info::report_in(lang(), subject));
+            ui.ctx().copy_text(text());
             self.copied = Some(Instant::now());
         }
-        if cover
-            && tool(
-                ui,
-                tr!("Save the cover…", "Сохранить обложку…"),
-                true,
-                |p, o, c| icons::save(p, o, s, c),
-            )
-            .clicked()
-        {
-            out.push(Cmd::SaveCover);
-        }
+    }
+
+    /// The two files of a comparison side by side: each one's letter,
+    /// title and chips in a column, Copy all at the right, then the
+    /// sections row by row ([`info::compared_in`]), the values that differ
+    /// bright and those alike dimmed.
+    fn both(
+        &mut self,
+        ui: &mut Ui,
+        a: &Subject,
+        b: &Subject,
+        channel: Option<&ChannelView<'_>>,
+        out: &mut Vec<Cmd>,
+    ) {
+        let lang = lang();
+        let gap = 16.0;
+        ui.horizontal_top(|ui| {
+            let spacing = ui.spacing().item_spacing.x;
+            let col = ((ui.available_width() - TOOL - 2.0 * (gap + spacing)) / 2.0).max(80.0);
+            for (of, s) in [(Of::A, a), (Of::B, b)] {
+                ui.allocate_ui_with_layout(vec2(col, 0.0), Layout::top_down(Align::Min), |ui| {
+                    ui.set_width(col);
+                    ui.horizontal_top(|ui| {
+                        letter(ui, of);
+                        let title = match of {
+                            Of::A => title_of(s, channel.map(|v| v.channel)),
+                            Of::B => title_of(s, None),
+                        };
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(title).size(15.0).color(style::TEXT_BRIGHT),
+                            )
+                            .wrap(),
+                        );
+                    });
+                    self.chip_rows(ui, s, of, out);
+                });
+                ui.add_space(gap);
+            }
+            self.copy_all(ui, || info::compared_report_in(lang, a, b));
+        });
+        ui.add_space(8.0);
+        let sections = info::compared_in(lang, a, b);
+        let graph_label = tr!("Last minute", "За минуту");
+        let font = egui::TextStyle::Body.resolve(ui.style());
+        let widest = sections
+            .iter()
+            .flat_map(|s| &s.rows)
+            .map(|r| r.label.as_str())
+            .chain([graph_label])
+            .map(|l| {
+                ui.fonts_mut(|f| f.layout_no_wrap(l.to_owned(), font.clone(), Color32::WHITE))
+                    .size()
+                    .x
+            })
+            .fold(0.0, f32::max);
+        let labels = (widest + 4.0).clamp(LABELS_MIN, LABELS_MAX);
+        let histories = [&a.state.live.history, &b.state.live.history];
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for s in &sections {
+                    let text = info::paired_text(&s.title, &s.rows);
+                    section(ui, s.id, &s.title, text, |ui| {
+                        for row in &s.rows {
+                            pair_row(ui, row, labels);
+                        }
+                        if s.id == "playback" && histories.iter().any(|h| h.len() >= 2) {
+                            pair_with(ui, graph_label, style::text_weak(), labels, |ui, i| {
+                                if histories[i].len() >= 2 {
+                                    sparkline(ui, histories[i]);
+                                }
+                            });
+                        }
+                    });
+                }
+            });
     }
 
     /// The cover over the whole window, as big as it fits; a click or `Esc`
@@ -361,6 +536,7 @@ fn body(
     subject: &Subject,
     title: &str,
     cover: Option<&CoverView<'_>>,
+    of: Of,
     out: &mut Vec<Cmd>,
 ) {
     let state = subject.state;
@@ -429,7 +605,10 @@ fn body(
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .on_hover_text(tr!("Show in Explorer", "Показать в Проводнике"));
                     if link.clicked() {
-                        out.push(Cmd::ShowInFolder);
+                        out.push(match of {
+                            Of::A => Cmd::ShowInFolder,
+                            Of::B => Cmd::ShowComparedInFolder,
+                        });
                     }
                     copy_menu(&link, label, value);
                 });
@@ -960,6 +1139,89 @@ fn row_with(ui: &mut Ui, label: &str, labels: f32, value: impl FnOnce(&mut Ui)) 
             value(ui);
         });
     });
+}
+
+/// A row of two files: the label, then A's cell and B's, `cell` drawing
+/// each (0 for A).
+fn pair_with(
+    ui: &mut Ui,
+    label: &str,
+    colour: Color32,
+    labels: f32,
+    mut cell: impl FnMut(&mut Ui, usize),
+) {
+    ui.horizontal_top(|ui| {
+        ui.allocate_ui_with_layout(vec2(labels, 0.0), Layout::top_down(Align::Min), |ui| {
+            ui.set_width(labels);
+            ui.add(egui::Label::new(RichText::new(label).color(colour)).wrap());
+        });
+        let spacing = ui.spacing().item_spacing.x;
+        let width = ((ui.available_width() - spacing) / 2.0).max(40.0);
+        for i in 0..2 {
+            ui.allocate_ui_with_layout(vec2(width, 0.0), Layout::top_down(Align::Min), |ui| {
+                ui.set_width(width);
+                cell(ui, i);
+            });
+        }
+    });
+}
+
+/// A row of two files' values: bright where they differ, dimmed where
+/// alike, `—` for one missing; a long value cut short with "more" as
+/// [`long_row`]'s.
+fn pair_row(ui: &mut Ui, row: &info::Paired, labels: f32) {
+    let differs = row.differs();
+    let (label, value) = if differs {
+        (style::text(), style::TEXT_BRIGHT)
+    } else {
+        (style::text_weak(), style::text_weak())
+    };
+    let id = ui.make_persistent_id(("pair_row", &row.label));
+    pair_with(ui, &row.label, label, labels, |ui, i| {
+        let Some(text) = [&row.a, &row.b][i] else {
+            ui.label(RichText::new("—").color(style::text_weak()));
+            return;
+        };
+        let short = cut_short(text);
+        let id = id.with(i);
+        let open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+        let shown = match &short {
+            Some(short) if !open => short.as_str(),
+            _ => text.as_str(),
+        };
+        let response = ui.add(
+            egui::Label::new(RichText::new(shown).color(value))
+                .wrap()
+                .selectable(true),
+        );
+        copy_menu(&response, &row.label, text);
+        if short.is_some() {
+            let more = if open {
+                tr!("less", "свернуть")
+            } else {
+                tr!("more", "ещё")
+            };
+            if ui.link(more).clicked() {
+                ui.data_mut(|d| d.insert_temp(id, !open));
+            }
+        }
+    });
+}
+
+/// A file's letter in a comparison, on the selection's ground.
+fn letter(ui: &mut Ui, of: Of) {
+    let (rect, _) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
+    ui.painter().rect_filled(rect, 4.0, style::selected_bg());
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        match of {
+            Of::A => "A",
+            Of::B => "B",
+        },
+        egui::FontId::proportional(13.0),
+        style::TEXT_BRIGHT,
+    );
 }
 
 #[cfg(test)]

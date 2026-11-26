@@ -1100,6 +1100,11 @@ impl eframe::App for App {
                 ctx.request_repaint_after(std::time::Duration::from_secs(1));
             }
         }
+        // B's, for the window's comparison.
+        if let Some(c) = self.compare.as_mut().filter(|c| c.loaded && self.info.open) {
+            c.player.ask_scan();
+            c.player.ask_live();
+        }
         let channel = self
             .playlist
             .current_path()
@@ -1113,7 +1118,22 @@ impl eframe::App for App {
                 .and_then(|url| self.logos.get(&ctx, url).cloned()),
         });
         let subject = info_subject(&self.playlist, self.facts.as_ref(), &state);
-        let info_cmds = self.info.show(&ctx, &subject, cover, channel);
+        let compared = self
+            .compare
+            .as_ref()
+            .filter(|c| c.loaded)
+            .map(|c| crate::info::Subject {
+                path: Some(&c.path),
+                state: &c.player.state,
+                facts: c
+                    .facts
+                    .as_ref()
+                    .filter(|f| f.path == c.path)
+                    .and_then(|f| f.loaded.as_ref()),
+            });
+        let info_cmds = self
+            .info
+            .show(&ctx, &subject, cover, channel, compared.as_ref());
         cmds.extend(info_cmds);
         self.update_sub_lines(&ctx, &state);
         let before = self.adjust.clone();

@@ -215,32 +215,17 @@ impl App {
 
     /// Read what the container of the file playing says while its
     /// information is shown (once per file), and take it when read.
+    /// The same of B, the file compared, while the window is open.
     pub(super) fn update_facts(&mut self, ctx: &egui::Context, state: &State) {
         let wanted = self
             .playlist
             .current_path()
             .filter(|p| self.info_wanted() && !state.idle && !playlist::is_url(p));
-        if let Some(path) = wanted
-            && self.facts.as_ref().is_none_or(|f| f.path != path)
-        {
-            self.facts = Some(FactsSlot {
-                path: path.to_path_buf(),
-                loading: Some(crate::probe::load(path.to_path_buf(), ctx)),
-                loaded: None,
-            });
-        }
-        let Some(slot) = &mut self.facts else {
-            return;
-        };
-        if let Some(rx) = &slot.loading {
-            match rx.try_recv() {
-                Ok(facts) => {
-                    slot.loading = None;
-                    slot.loaded = Some(facts);
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => {}
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => slot.loading = None,
-            }
+        follow_facts(&mut self.facts, wanted, ctx);
+        let open = self.info.open;
+        if let Some(c) = &mut self.compare {
+            let wanted = Some(c.path.as_path()).filter(|p| open && !playlist::is_url(p));
+            follow_facts(&mut c.facts, wanted, ctx);
         }
     }
 
@@ -428,6 +413,33 @@ pub(super) struct FactsSlot {
     pub(super) path: PathBuf,
     pub(super) loading: Option<std::sync::mpsc::Receiver<crate::probe::Facts>>,
     pub(super) loaded: Option<crate::probe::Facts>,
+}
+
+/// Start reading the container of `wanted` when it is not the file of
+/// `slot` (once per file), and take the facts when read.
+fn follow_facts(slot: &mut Option<FactsSlot>, wanted: Option<&Path>, ctx: &egui::Context) {
+    if let Some(path) = wanted
+        && slot.as_ref().is_none_or(|f| f.path != path)
+    {
+        *slot = Some(FactsSlot {
+            path: path.to_path_buf(),
+            loading: Some(crate::probe::load(path.to_path_buf(), ctx)),
+            loaded: None,
+        });
+    }
+    let Some(slot) = slot else {
+        return;
+    };
+    if let Some(rx) = &slot.loading {
+        match rx.try_recv() {
+            Ok(facts) => {
+                slot.loading = None;
+                slot.loaded = Some(facts);
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => slot.loading = None,
+        }
+    }
 }
 
 /// What the information window and the chips over the picture tell of: the
