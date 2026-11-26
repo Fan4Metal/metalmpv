@@ -41,7 +41,7 @@ impl App {
     /// Compare `request.b` with `request.a` (played first if it is not
     /// the file playing), or with the file playing.
     pub(super) fn request_compare(&mut self, request: Request) {
-        self.end_compare();
+        self.replace_compare();
         if let Some(a) = &request.a {
             let playing = !self.state_idle()
                 && self
@@ -70,7 +70,7 @@ impl App {
         let playing = !self.state_idle()
             && self.playlist.current() == Some(a)
             && self.playlist.current_path() == Some(pa.as_path());
-        self.end_compare();
+        self.replace_compare();
         if !playing {
             self.play(a);
         }
@@ -127,8 +127,17 @@ impl App {
     }
 
     /// The comparison ends: B's picture is freed in `logic` and its core
-    /// destroyed on a thread of its own (that waits for mpv's threads).
+    /// destroyed on a thread of its own (that waits for mpv's threads); the
+    /// zoom and the pan are put back as they were before it.
     pub(super) fn end_compare(&mut self) {
+        self.replace_compare();
+        if let Some((zoom, pan_x, pan_y)) = self.zoom_before_compare.take() {
+            self.change_picture(|a| (a.zoom, a.pan_x, a.pan_y) = (zoom, pan_x, pan_y));
+        }
+    }
+
+    /// The comparison ends for another to come: the zoom stays.
+    fn replace_compare(&mut self) {
         self.compare_wanted = None;
         if let Some(mut c) = self.compare.take() {
             c.player.set_pause(true);
@@ -209,6 +218,10 @@ impl App {
             request.b.display(),
             started.elapsed().as_secs_f64() * 1e3
         );
+        // Kept through a B replaced by another.
+        let a = &self.adjust;
+        self.zoom_before_compare
+            .get_or_insert((a.zoom, a.pan_x, a.pan_y));
         let name = file_name(&request.b);
         self.osd.show(Osd::Text(tr!(
             format!("[ Compared with {name} ]"),

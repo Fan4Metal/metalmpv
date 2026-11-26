@@ -561,7 +561,7 @@ mod tests {
         assert!(back[0].abs() < 1e-9, "{back:?}");
         assert_eq!(wheel_zoom(100, 1), 125);
         assert_eq!(wheel_zoom(100, -1), 80);
-        assert_eq!(wheel_zoom(390, 2), 400);
+        assert_eq!(wheel_zoom(1500, 2), 1600);
         assert_eq!(wheel_zoom(50, -1), 50);
     }
 

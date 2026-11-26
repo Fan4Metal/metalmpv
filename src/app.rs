@@ -299,6 +299,8 @@ pub struct App {
     compare: Option<comparison::Comparison>,
     compare_wanted: Option<crate::compare::Request>,
     compare_closing: Vec<comparison::Comparison>,
+    /// The zoom and the pan before the comparison, put back after it.
+    zoom_before_compare: Option<(i64, f64, f64)>,
 }
 
 impl App {
@@ -508,6 +510,7 @@ impl App {
             compare: None,
             compare_wanted: None,
             compare_closing: Vec::new(),
+            zoom_before_compare: None,
         };
         app.sized_for = app.settings.interface;
         // Before the first file: the scalers, shaders and sync it starts with.
@@ -1220,7 +1223,12 @@ impl eframe::App for App {
         self.settings.last_update_check = self.updates.last_check;
         // Kept only while the panel's switch says so.
         self.settings.adjust = if self.settings.keep_adjust {
-            self.adjust.clone()
+            // The zoom of a comparison is not the picture's own.
+            let mut adjust = self.adjust.clone();
+            if let Some((zoom, pan_x, pan_y)) = self.zoom_before_compare {
+                (adjust.zoom, adjust.pan_x, adjust.pan_y) = (zoom, pan_x, pan_y);
+            }
+            adjust
         } else {
             Adjust::default()
         };

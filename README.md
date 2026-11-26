@@ -146,7 +146,7 @@ Moved near an edge of the player, it is drawn to it and lined up with the player
 <summary>Video tab</summary>
 
 - **Colour**: the brightness, the contrast, the saturation, the hue and the gamma, from −100 to 100.
-- **Zoom**, from 50 to 400 %, and under it the navigator: the picture in small with the part on screen framed. The frame is dragged, or put where a click lands, to pan the picture (up to ±50 % of it either way); the figures beside **Pan** take it typed, and a double click on the navigator centres it. **Navigator on the picture** shows the same in the picture's bottom right corner while it is zoomed in past the window (above where the control bar comes over the picture).
+- **Zoom**, from 50 to 1600 % (the slider goes to 400 %, the field and the arrows further), and under it the navigator: the picture in small with the part on screen framed. The frame is dragged, or put where a click lands, to pan the picture (up to ±50 % of it either way); the figures beside **Pan** take it typed, and a double click on the navigator centres it. **Navigator on the picture** shows the same in the picture's bottom right corner while it is zoomed in past the window (above where the control bar comes over the picture).
 - **Sharpness** (AMD's contrast adaptive sharpening) and **noise reduction** (from 0, off, to 100 %; 40 % is FFmpeg's usual strength, more blurs). **Gradient smoothing** removes the steps in skies and dark scenes.
 - **Aspect ratio**: the file's or one forced on it: 4:3, 16:9, 16:10, 1.85:1, 2.35:1 or 2.39:1 (also in the **Aspect ratio** submenu of the picture's context menu).
 - **Deinterlacing** weaves interlaced pictures, as in TV recordings, into whole frames: automatically for frames marked interlaced (the default), always or never.
@@ -242,11 +242,11 @@ Two versions of a video (two encodes, a source and its copy, a picture before an
 
 - **Split line** (at first): one picture, A left of a line that follows the mouse pointer, B right of it. **Side by side**: each whole, side by side or one over the other, whichever shows them larger. `K` switches between the two.
 - **The same frame**: B is played by a second engine without sound and follows A. Paused, after a seek or a frame step (`,` and `.`), B is put on A's frame exactly; while playing, B's speed is adjusted a little to keep it in step, within a frame of B's. B with another frame rate shows its frame of that moment.
-- **The same place**: B is drawn in A's shape and size, with A's zoom, position, turn, colour and filters, so the two pictures meet at the line pixel for pixel. The mouse wheel over the picture zooms in and out about the point under the pointer (up to 400 %), and the middle mouse button held down drags the zoomed picture; the volume stays on the arrow keys and the control bar, the playlist on `L`.
+- **The same place**: B is drawn in A's shape and size, with A's zoom, position, turn, colour and filters, so the two pictures meet at the line pixel for pixel. The mouse wheel over the picture zooms in and out about the point under the pointer (up to 1600 %), and the middle mouse button held down drags the zoomed picture; the volume stays on the arrow keys and the control bar, the playlist on `L`.
 - **A shift**: `Alt+.` and `Alt+,` move B a frame forward or back against A (`Ctrl+Alt` ten frames), `Alt+0` takes the shift away; the shift is shown in B's corner in frames and seconds.
 - `W` swaps the sides. The names of A and B are shown in the bottom corners, with B's state (loading, ended, its shift).
 - **The bar over the picture** comes while the mouse moves over it: the two ways of showing, the sides swapped, B's shift (the arrows a frame each, a click on the figure takes the shift away), the zoom (a click on its figure goes back to 100 % in the middle) and the end of the comparison.
-- The comparison ends with **End the comparison** in the menu, `Esc` (after fullscreen), another file played, Stop or the mini player.
+- The comparison ends with **End the comparison** in the menu, `Esc` (after fullscreen), another file played, Stop or the mini player; the zoom and the position are then put back as they were before it.
 
 ### File information
 

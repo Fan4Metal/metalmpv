@@ -372,12 +372,17 @@ fn video_tab(ui: &mut Ui, adjust: &mut Adjust, kept: &mut Kept<'_>, now: Now<'_>
     }
 
     if section(ui, "video_zoom", tr!("Zoom and pan", "Масштаб и сдвиг"), "") {
+        // The slider to 400 %, where a step is fine enough; the field and
+        // the arrows to the whole range.
         let zoom = Spec {
             step: 5.0,
             suffix: "%",
-            ..Spec::centred(range_of(adjust::ZOOM_RANGE), 100.0)
+            clamp: false,
+            ..Spec::centred(range_of(adjust::ZOOM_SLIDER), 100.0)
         };
         int_row(ui, tr!("Zoom", "Масштаб"), &mut adjust.zoom, &zoom);
+        let range = adjust::ZOOM_RANGE;
+        adjust.zoom = adjust.zoom.clamp(*range.start(), *range.end());
         ui.add_space(4.0);
         // Of one height whatever the zoom: the panel is as tall as its
         // tallest tab, and the navigator's shape follows the zoom.

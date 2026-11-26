@@ -150,8 +150,12 @@ impl ToneMap {
     }
 }
 
-/// The zoom, in percent of the picture as it fits.
-pub const ZOOM_RANGE: std::ops::RangeInclusive<i64> = 50..=400;
+/// The zoom, in percent of the picture as it fits: up to 16 times, a
+/// pixel of a video in a picture of its size as a square of 16 to look at
+/// (comparing two encodes).
+pub const ZOOM_RANGE: std::ops::RangeInclusive<i64> = 50..=1600;
+/// The panel slider's part of [`ZOOM_RANGE`]; its field and arrows go on.
+pub const ZOOM_SLIDER: std::ops::RangeInclusive<i64> = 50..=400;
 /// The pan, in percent of the picture's width or height either way.
 pub const PAN_MAX: f64 = 50.0;
 
@@ -431,7 +435,7 @@ mod tests {
         );
         assert_eq!(Adjust::from_text(&text), a);
         let odd = Adjust::from_text("zoom=9000 rotate=45 gamma=x tone_map=nope pan_x=-80 junk");
-        assert_eq!(odd.zoom, 400);
+        assert_eq!(odd.zoom, 1600);
         assert_eq!(odd.rotate, 0);
         assert_eq!(odd.pan_x, -50.0);
         assert_eq!(odd.tone_map, ToneMap::Auto);
