@@ -422,6 +422,42 @@ impl App {
         }
     }
 
+    /// Where A's and B's chips go over the picture (`Ctrl+I`) in `area`
+    /// (the OSD's, off the fullscreen playlist), `rect` being the video
+    /// area: each file's in the top corner of its own side, outward (the
+    /// left one's at its left); one over the other, both at the right.
+    pub(super) fn compare_chip_places(
+        &self,
+        rect: Rect,
+        area: Rect,
+        state: &State,
+    ) -> [(Rect, egui::Align); 2] {
+        let swapped = self.compare.as_ref().is_some_and(|c| c.swapped);
+        let (a, b) = self.compare_places(rect, state);
+        let (a, b) = if a == b {
+            // The split line: A on the left of it unless swapped.
+            let mid = area.center().x;
+            let left = Rect::from_min_max(area.min, egui::pos2(mid, area.max.y));
+            let right = Rect::from_min_max(egui::pos2(mid, area.min.y), area.max);
+            if swapped {
+                (right, left)
+            } else {
+                (left, right)
+            }
+        } else {
+            (a.intersect(area), b.intersect(area))
+        };
+        let beside = (a.center().y - b.center().y).abs() < 1.0;
+        let side = |r: Rect| {
+            if beside && r.center().x < area.center().x {
+                egui::Align::Min
+            } else {
+                egui::Align::Max
+            }
+        };
+        [(a, side(a)), (b, side(b))]
+    }
+
     /// The area the picture under `pos` is shown in (for the wheel's zoom
     /// and the navigator), A's while there is no comparison.
     pub(super) fn picture_place(&self, rect: Rect, pos: Option<egui::Pos2>, state: &State) -> Rect {

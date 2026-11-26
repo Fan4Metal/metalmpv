@@ -274,13 +274,45 @@ impl App {
             }
             let subject = info_subject(&self.playlist, self.facts.as_ref(), state);
             let lang = crate::i18n::lang();
-            let rows = if self.settings.info_overlay_brief {
-                vec![crate::info::brief_chips_in(lang, &subject)]
-            } else {
-                crate::info::chips_in(lang, &subject, crate::info::Unfolded::default())
+            let brief = self.settings.info_overlay_brief;
+            let rows = |subject: &crate::info::Subject| {
+                if brief {
+                    vec![crate::info::brief_chips_in(lang, subject)]
+                } else {
+                    crate::info::chips_in(lang, subject, crate::info::Unfolded::default())
+                }
             };
             let transparency = self.settings.info_overlay_transparency as f32;
-            ui::info::overlay(ui.ctx(), area, &rows, transparency);
+            // Two videos compared: each one's chips on its own side.
+            let compared = self
+                .compare
+                .as_ref()
+                .filter(|c| comparing && c.loaded && c.player.state.video().is_some());
+            match compared {
+                Some(c) => {
+                    let b = crate::info::Subject {
+                        path: Some(&c.path),
+                        state: &c.player.state,
+                        facts: c
+                            .facts
+                            .as_ref()
+                            .filter(|f| f.path == c.path)
+                            .and_then(|f| f.loaded.as_ref()),
+                    };
+                    let [(a_area, a_side), (b_area, b_side)] =
+                        self.compare_chip_places(rect, area, state);
+                    for (subject, area, side) in [(&subject, a_area, a_side), (&b, b_area, b_side)]
+                    {
+                        let rows = rows(subject);
+                        ui::info::overlay(ui.ctx(), area, &rows, transparency, side, 0.9);
+                    }
+                }
+                None => {
+                    let rows = rows(&subject);
+                    let side = egui::Align::Max;
+                    ui::info::overlay(ui.ctx(), area, &rows, transparency, side, 0.6);
+                }
+            }
         }
     }
 

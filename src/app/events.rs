@@ -222,7 +222,7 @@ impl App {
             .current_path()
             .filter(|p| self.info_wanted() && !state.idle && !playlist::is_url(p));
         follow_facts(&mut self.facts, wanted, ctx);
-        let open = self.info.open;
+        let open = self.info_wanted();
         if let Some(c) = &mut self.compare {
             let wanted = Some(c.path.as_path()).filter(|p| open && !playlist::is_url(p));
             follow_facts(&mut c.facts, wanted, ctx);

@@ -1100,10 +1100,14 @@ impl eframe::App for App {
                 ctx.request_repaint_after(std::time::Duration::from_secs(1));
             }
         }
-        // B's, for the window's comparison.
-        if let Some(c) = self.compare.as_mut().filter(|c| c.loaded && self.info.open) {
-            c.player.ask_scan();
-            c.player.ask_live();
+        // B's, for the window's comparison and its chips over the picture.
+        if let Some(c) = self.compare.as_mut().filter(|c| c.loaded) {
+            if info_wanted {
+                c.player.ask_scan();
+            }
+            if self.info.open {
+                c.player.ask_live();
+            }
         }
         let channel = self
             .playlist

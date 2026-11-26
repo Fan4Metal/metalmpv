@@ -942,20 +942,26 @@ fn chip(ui: &mut Ui, chip: &info::Chip) -> egui::Response {
     }
 }
 
-/// The chips of the header over the picture's top right corner (`Ctrl+I`):
+/// The chips of the header over the picture's top right corner (`Ctrl+I`),
+/// or its top left one for `side` `Min` (the left file of a comparison):
 /// on a dark ground `transparency` percent see-through (the text stays),
-/// each row's chips right-aligned and wrapped within `WIDEST` of `area`'s
-/// width. Only painted: the picture under them keeps the pointer. In the
+/// each row's chips aligned to that side and wrapped within `share` of
+/// `area`'s width. Only painted: the picture under them keeps the pointer. In the
 /// middle order, under the menus, the popovers, the fullscreen panels and the
 /// modals (a painted layer comes after every area of its order); the
 /// information window, the only window of that order, hides them.
-pub fn overlay(ctx: &egui::Context, area: Rect, rows: &[Vec<info::Chip>], transparency: f32) {
+pub fn overlay(
+    ctx: &egui::Context,
+    area: Rect,
+    rows: &[Vec<info::Chip>],
+    transparency: f32,
+    side: Align,
+    share: f32,
+) {
     const MARGIN: f32 = 12.0;
     const GAP: f32 = 4.0;
     const HEIGHT: f32 = 21.0;
     const PAD: f32 = 14.0;
-    /// The share of the area's width the chips may take.
-    const WIDEST: f32 = 0.6;
     let opacity = (1.0 - transparency / 100.0).clamp(0.0, 1.0);
     let painter = ctx
         .layer_painter(egui::LayerId::new(
@@ -963,8 +969,8 @@ pub fn overlay(ctx: &egui::Context, area: Rect, rows: &[Vec<info::Chip>], transp
             egui::Id::new("info_overlay"),
         ))
         .with_clip_rect(area);
-    let widest = (area.width() * WIDEST).max(area.width().min(200.0) - 2.0 * MARGIN);
-    let right = area.right() - MARGIN;
+    let widest = (area.width() * share).max(area.width().min(200.0) - 2.0 * MARGIN);
+    let (left, right) = (area.left() + MARGIN, area.right() - MARGIN);
     let mut y = area.top() + MARGIN;
     for row in rows {
         let chips: Vec<_> = row
@@ -994,7 +1000,10 @@ pub fn overlay(ctx: &egui::Context, area: Rect, rows: &[Vec<info::Chip>], transp
             lines.push((start..chips.len(), width));
         }
         for (range, width) in lines {
-            let mut x = right - width;
+            let mut x = match side {
+                Align::Min => left,
+                _ => right - width,
+            };
             for (chip, ground, color, galley) in &chips[range] {
                 let rect =
                     Rect::from_min_size(egui::pos2(x, y), vec2(galley.size().x + PAD, HEIGHT));
