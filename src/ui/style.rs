@@ -526,15 +526,23 @@ const CUSTOM: u32 = 1 << 31;
 /// own widgets): the theme's own as the colour it gives in the theme in
 /// use, so [`set_theme`] comes first.
 pub fn set_accent(accent: Accent) {
-    let value = match accent.in_theme(theme_choice()) {
+    ACCENT.store(accent_value(accent, theme_choice()), Ordering::Relaxed);
+}
+
+/// What [`ACCENT`] keeps for `accent` in `theme`: the colour it gives
+/// there, never [`Accent::Theme`].
+fn accent_value(accent: Accent, theme: Theme) -> u32 {
+    match accent.in_theme(theme) {
         Accent::Custom(c) => CUSTOM | (c & 0xffffff),
-        _ => Accent::ALL.iter().position(|a| *a == accent).unwrap_or(0) as u32,
-    };
-    ACCENT.store(value, Ordering::Relaxed);
+        ready => Accent::ALL.iter().position(|a| *a == ready).unwrap_or(0) as u32,
+    }
 }
 
 pub fn accent_choice() -> Accent {
-    let value = ACCENT.load(Ordering::Relaxed);
+    accent_of_value(ACCENT.load(Ordering::Relaxed))
+}
+
+fn accent_of_value(value: u32) -> Accent {
     if value & CUSTOM != 0 {
         Accent::Custom(value & 0xffffff)
     } else {
@@ -867,6 +875,15 @@ mod tests {
             assert_eq!(Accent::Theme.in_theme(theme), own);
             assert_eq!(Accent::Theme.palette_in(theme), own.palette_in(theme));
             assert_eq!(Accent::Red.in_theme(theme), Accent::Red);
+        }
+        // Drawn in the theme's colour.
+        for theme in Theme::ALL {
+            let value = accent_value(Accent::Theme, theme);
+            assert_eq!(accent_of_value(value), theme.accent(), "{theme:?}");
+            let own = Accent::Custom(0x12ab9f);
+            assert_eq!(accent_of_value(accent_value(own, theme)), own);
+            let red = accent_value(Accent::Red, theme);
+            assert_eq!(accent_of_value(red), Accent::Red);
         }
         // The default look is the first one: blue in graphite.
         assert_eq!(
