@@ -36,6 +36,7 @@ impl App {
                 }
             }
             Cmd::Stop => {
+                self.end_compare();
                 self.remember_position();
                 if let Some(player) = &mut self.player {
                     player.stop();
@@ -201,6 +202,8 @@ impl App {
                     self.fullscreen_playlist = false;
                 } else if frameless::is_fullscreen(ctx) {
                     self.set_fullscreen(ctx, frame, false);
+                } else if self.compare.is_some() || self.compare_wanted.is_some() {
+                    self.run_compare(ctx, Cmd::EndCompare);
                 } else if self.mini.is_some() {
                     self.leave_mini(ctx);
                 } else if self.interface() == Interface::Bare {
@@ -587,7 +590,20 @@ impl App {
                 self.run(ctx, frame, Cmd::SetInterface(next));
                 self.osd.show(Osd::Interface(next));
             }
-            Cmd::ToggleMini => self.toggle_mini(ctx, frame),
+            Cmd::ToggleMini => {
+                // The mini player shows one picture.
+                if self.mini.is_none() {
+                    self.end_compare();
+                }
+                self.toggle_mini(ctx, frame);
+            }
+            Cmd::CompareWith
+            | Cmd::CompareEntries(..)
+            | Cmd::CycleCompare
+            | Cmd::SetCompare(_)
+            | Cmd::SwapCompare
+            | Cmd::CompareShift(_)
+            | Cmd::EndCompare => self.run_compare(ctx, cmd),
             Cmd::SetInterface(interface) => {
                 if self.settings.interface != Interface::Bare {
                     self.before_bare = self.settings.interface;

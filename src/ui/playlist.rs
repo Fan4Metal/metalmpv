@@ -835,6 +835,24 @@ fn entry_menu(ui: &mut Ui, list: &mut Playlist, index: usize, shown: &[usize], o
     }
     let selection = list.selection();
     let many = selection.len();
+    // Two videos on the same frame: the two selected, or this one with the
+    // current one.
+    let pair = match (selection.as_slice(), list.current()) {
+        ([a, b], _) => Some((*a, *b)),
+        (_, Some(current)) if current != index && many <= 1 => Some((current, index)),
+        _ => None,
+    };
+    if let Some((a, b)) = pair {
+        let text = if many == 2 {
+            tr!("Compare the two selected", "Сравнить два выделенных")
+        } else {
+            tr!("Compare with the current one", "Сравнить с текущим")
+        };
+        if ui.button(text).clicked() {
+            out.push(Cmd::CompareEntries(a, b));
+            ui.close();
+        }
+    }
     let copy = if many > 1 {
         tr!(
             format!("Copy the paths ({many})"),

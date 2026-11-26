@@ -18,10 +18,16 @@ impl App {
         let response = frameless::drag_area(ui, rect, ui.id().with("video"), Sense::CLICK);
         let visible = state.video().is_some() && self.video.is_some();
         self.recent_scroll = None;
-        if !state.idle
+        if !state.idle && self.compare.is_some() && visible {
+            self.compare_picture(ui, frame, rect, &response, state);
+        } else if !state.idle
             && let Some(video) = &mut self.video
         {
             video.show(ui, frame, rect, visible);
+            // No picture of A's yet: B's frames are taken unseen.
+            if let Some(c) = &self.compare {
+                c.video.skip_unseen();
+            }
         }
         if visible {
             if !self.first_frame_logged {
@@ -66,7 +72,12 @@ impl App {
             .is_some_and(|r| ui.rect_contains_pointer(r));
         if response.hovered() && !on_recent {
             let notches = ui::wheel_notches(ui);
-            if notches != 0 {
+            let pointer = ui.input(|i| i.pointer.hover_pos());
+            if notches == 0 {
+            } else if let Some(pos) = pointer.filter(|_| self.compare.is_some() && visible) {
+                // Comparing, the wheel zooms about the point under it.
+                self.zoom_at_pointer(rect, pos, notches, state);
+            } else {
                 cmds.push(Cmd::Volume(notches as f64 * input::VOLUME_STEP));
             }
         }
@@ -82,6 +93,7 @@ impl App {
             on_top: self.settings.on_top,
             playlist_detached: self.settings.playlist_detached,
             info_overlay: self.settings.info_overlay,
+            compare: (self.settings.compare_mode, self.compare.is_some()),
             bookmarks: self
                 .settings
                 .bookmarks
@@ -223,7 +235,9 @@ impl App {
     /// and off the fullscreen playlist.
     pub(super) fn corner_navigator(&mut self, ui: &mut egui::Ui, rect: Rect, state: &State) {
         const MARGIN: f32 = 12.0;
-        let geometry = ui::navigator::Geometry::new(self.picture_size(state), rect.size());
+        // Side by side, A's half.
+        let area = self.picture_place(rect, None, state);
+        let geometry = ui::navigator::Geometry::new(self.picture_size(state), area.size());
         if !geometry.zoomed_in(&self.adjust) {
             return;
         }

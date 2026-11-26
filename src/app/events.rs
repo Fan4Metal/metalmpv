@@ -10,19 +10,26 @@ impl App {
     pub(super) fn take_events(&mut self) {
         let received = crate::instance::take();
         if let Some(&(_, last)) = received.last() {
-            let batch = same_batch(self.last_received, received[0].1);
-            log::debug!(
-                "{} files from other starts, {:?} after the last ones: {}",
-                received.len(),
-                self.last_received
-                    .map(|t| received[0].1.saturating_duration_since(t)),
-                if batch { "added" } else { "opened" }
-            );
-            let paths: Vec<PathBuf> = received.into_iter().map(|(p, _)| p).collect();
-            if batch {
-                self.add(paths);
-            } else {
-                self.open(paths);
+            let first = received[0].1;
+            let (paths, compare) =
+                crate::compare::requested(received.into_iter().map(|(p, _)| p).collect());
+            if !paths.is_empty() {
+                let batch = same_batch(self.last_received, first);
+                log::debug!(
+                    "{} files from other starts, {:?} after the last ones: {}",
+                    paths.len(),
+                    self.last_received
+                        .map(|t| first.saturating_duration_since(t)),
+                    if batch { "added" } else { "opened" }
+                );
+                if batch {
+                    self.add(paths);
+                } else {
+                    self.open(paths);
+                }
+            }
+            if let Some(request) = compare {
+                self.request_compare(request);
             }
             self.last_received = Some(last);
         }
@@ -103,7 +110,7 @@ impl App {
                         self.play(i);
                     }
                 }
-                Happened::Restarted => {}
+                Happened::Restarted => self.compare_jumped(),
                 Happened::FrameSaved(error) => self.frame_saved(error),
                 // The names asked for would wait for good, and the next
                 // answers would be taken for them.

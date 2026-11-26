@@ -61,6 +61,8 @@ pub(super) fn leaves_mini(cmd: &Cmd) -> bool {
             | Cmd::OpenUrl
             | Cmd::GoToTime
             | Cmd::SaveClip
+            | Cmd::CompareWith
+            | Cmd::CompareEntries(..)
     )
 }
 

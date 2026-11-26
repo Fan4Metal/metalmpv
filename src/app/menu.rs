@@ -109,6 +109,7 @@ pub(super) fn context_menu(
     }
     interface_menu(ui, marks.interface, &mut menu_cmds);
     zoom_menu(ui, state, marks.fill, &mut menu_cmds);
+    compare_menu(ui, state, marks.compare, &mut menu_cmds);
     on_top_menu(ui, marks.on_top, &mut menu_cmds);
     aspect_menu(ui, state, marks.aspect, &mut menu_cmds);
     speed_menu(ui, state, &mut menu_cmds);
@@ -219,6 +220,75 @@ pub(super) struct Marks {
     /// The bookmarks' labels, whether each is of the file playing, and
     /// where in its file it is.
     pub(super) bookmarks: Vec<(String, bool, Option<f32>)>,
+    /// How two videos are compared, and whether they are.
+    pub(super) compare: (crate::compare::Mode, bool),
+}
+
+/// Comparing two videos: another chosen for the one playing, or, while
+/// comparing, the ways of showing them, the swap, B's shift and the end.
+pub(super) fn compare_menu(
+    ui: &mut egui::Ui,
+    state: &State,
+    (mode, comparing): (crate::compare::Mode, bool),
+    out: &mut Vec<Cmd>,
+) {
+    ui.menu_button(tr!("Compare", "Сравнение"), |ui| {
+        // The key of the cycle by the ways of showing, not of each.
+        let mut item = |ui: &mut egui::Ui, text: &str, enabled: bool, selected: bool, cmd: Cmd| {
+            let key = match cmd {
+                Cmd::SetCompare(_) => String::new(),
+                cmd => keymap::shortcut(cmd),
+            };
+            let button = egui::Button::new(text)
+                .shortcut_text(key)
+                .selected(selected);
+            if ui.add_enabled(enabled, button).clicked() {
+                out.push(cmd);
+                ui.close();
+            }
+        };
+        let with = tr!("Compare with another video…", "Сравнить с другим видео…");
+        item(
+            ui,
+            with,
+            video_size(state).is_some(),
+            false,
+            Cmd::CompareWith,
+        );
+        if !comparing {
+            return;
+        }
+        ui.separator();
+        for m in crate::compare::Mode::ALL {
+            item(ui, m.label(), true, mode == m, Cmd::SetCompare(m));
+        }
+        let rows = [
+            (tr!("Swap the sides", "Поменять стороны"), Cmd::SwapCompare),
+            (
+                tr!("B a frame forward", "B на кадр вперёд"),
+                Cmd::CompareShift(1),
+            ),
+            (
+                tr!("B a frame back", "B на кадр назад"),
+                Cmd::CompareShift(-1),
+            ),
+            (
+                tr!("B without a shift", "B без сдвига"),
+                Cmd::CompareShift(0),
+            ),
+            (
+                tr!("End the comparison", "Закончить сравнение"),
+                Cmd::EndCompare,
+            ),
+        ];
+        for (i, (text, cmd)) in rows.into_iter().enumerate() {
+            if i == 0 || cmd == Cmd::EndCompare {
+                ui.separator();
+            }
+            item(ui, text, true, false, cmd);
+        }
+        switches(ui, Cmd::CycleCompare);
+    });
 }
 
 /// The interfaces, the current marked.

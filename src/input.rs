@@ -218,6 +218,20 @@ pub enum Cmd {
     Minimize,
     ToggleMaximize,
     Close,
+    /// Compare the file playing with another, chosen in a dialog
+    /// (`compare.rs`).
+    CompareWith,
+    /// Compare playlist entry `.0` (played if it is not) with entry `.1`.
+    CompareEntries(usize, usize),
+    /// The comparison's next way of showing the two (`compare::Mode`).
+    CycleCompare,
+    SetCompare(crate::compare::Mode),
+    /// The two sides swapped.
+    SwapCompare,
+    /// B later by this many of its frames (earlier when negative); 0 puts
+    /// it back in step.
+    CompareShift(i32),
+    EndCompare,
 }
 
 /// The step of the volume keys and of a wheel notch, in percent.

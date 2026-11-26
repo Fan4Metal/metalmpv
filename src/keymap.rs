@@ -208,10 +208,17 @@ pub enum Group {
     Sound,
     Window,
     Files,
+    Compare,
 }
 
 impl Group {
-    pub const ALL: [Group; 4] = [Group::Playback, Group::Sound, Group::Window, Group::Files];
+    pub const ALL: [Group; 5] = [
+        Group::Playback,
+        Group::Sound,
+        Group::Window,
+        Group::Files,
+        Group::Compare,
+    ];
 
     pub fn title(self) -> &'static str {
         match self {
@@ -219,6 +226,7 @@ impl Group {
             Group::Sound => tr!("Sound and subtitles", "Звук и субтитры"),
             Group::Window => tr!("Window and picture", "Окно и картинка"),
             Group::Files => tr!("Files and windows", "Файлы и окна"),
+            Group::Compare => tr!("Comparing two videos", "Сравнение двух видео"),
         }
     }
 }
@@ -407,6 +415,17 @@ actions! {
     Settings "settings" Files Cmd::Settings, [Chord::key(Key::F5), Chord::ctrl(Key::Comma)];
     About "about" Files Cmd::About, [Chord::key(Key::F1)];
     Close "close" Files Cmd::Close, [];
+    CompareWith "compare_with" Compare Cmd::CompareWith, [Chord::of(Press::Key(Key::O), true, false, true)];
+    CompareMode "compare_mode" Compare Cmd::CycleCompare, [Chord::key(Key::K)];
+    CompareSwap "compare_swap" Compare Cmd::SwapCompare, [Chord::key(Key::W)];
+    CompareLater "compare_later" Compare Cmd::CompareShift(1), [Chord::alt(Key::Period)];
+    CompareEarlier "compare_earlier" Compare Cmd::CompareShift(-1), [Chord::alt(Key::Comma)];
+    CompareLater10 "compare_later_10" Compare Cmd::CompareShift(10),
+        [Chord::of(Press::Key(Key::Period), true, true, false)];
+    CompareEarlier10 "compare_earlier_10" Compare Cmd::CompareShift(-10),
+        [Chord::of(Press::Key(Key::Comma), true, true, false)];
+    CompareInStep "compare_in_step" Compare Cmd::CompareShift(0), [Chord::alt(Key::Num0)];
+    CompareEnd "compare_end" Compare Cmd::EndCompare, [];
 }
 
 impl Action {
@@ -636,6 +655,15 @@ impl Action {
             Action::Settings => tr!("Settings", "Настройки"),
             Action::About => tr!("About", "О программе"),
             Action::Close => tr!("Close the program", "Закрыть программу"),
+            Action::CompareWith => tr!("Compare with another video…", "Сравнить с другим видео…"),
+            Action::CompareMode => tr!("Split line or side by side", "Шторка или рядом"),
+            Action::CompareSwap => tr!("Swap the sides", "Поменять стороны"),
+            Action::CompareLater => tr!("B a frame forward", "B на кадр вперёд"),
+            Action::CompareEarlier => tr!("B a frame back", "B на кадр назад"),
+            Action::CompareLater10 => tr!("B ten frames forward", "B на 10 кадров вперёд"),
+            Action::CompareEarlier10 => tr!("B ten frames back", "B на 10 кадров назад"),
+            Action::CompareInStep => tr!("B without a shift", "B без сдвига"),
+            Action::CompareEnd => tr!("End the comparison", "Закончить сравнение"),
         }
     }
 
@@ -654,6 +682,7 @@ impl Action {
                 | Cmd::Color(..)
                 | Cmd::Zoom(_)
                 | Cmd::Pan(..)
+                | Cmd::CompareShift(_)
         )
     }
 

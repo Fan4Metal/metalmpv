@@ -15,6 +15,7 @@ mod audio;
 mod bookmarks;
 mod chapters;
 mod clip;
+mod compare;
 mod cover;
 mod dialog;
 mod dock;
@@ -143,6 +144,28 @@ fn main() -> eframe::Result {
                 }
                 return Ok(());
             }
+            Some("--compare") => {
+                // Two videos on the same frame (compare.rs): `--compare A B
+                // [--offset SECONDS]`, B's time being A's plus the offset.
+                let a = args.next().map(|p| normalize(&p.to_string_lossy()));
+                let b = args.next().map(|p| normalize(&p.to_string_lossy()));
+                let (Some(a), Some(b)) = (a, b) else {
+                    win::attach_parent_console();
+                    let _ = writeln!(std::io::stderr(), "--compare wants two files");
+                    std::process::exit(2);
+                };
+                let mut offset = 0.0;
+                while let Some(arg) = args.next() {
+                    if arg.to_str() == Some("--offset") {
+                        offset = args
+                            .next()
+                            .and_then(|v| v.to_string_lossy().replace(',', ".").parse().ok())
+                            .filter(|v: &f64| v.is_finite())
+                            .unwrap_or(0.0);
+                    }
+                }
+                files = compare::command_paths(&a, &b, offset);
+            }
             Some("--map") => {
                 // The video map of files (video_map.rs), for scripts and
                 // agents: the pictures' paths on stdout.
@@ -158,7 +181,7 @@ fn main() -> eframe::Result {
                 win::attach_parent_console();
                 let _ = writeln!(
                     std::io::stdout(),
-                    "{APP_NAME} {VERSION}\n\nmetalmpv [FILE...]\nmetalmpv --version | --help | --export-icon FILE.ico\nmetalmpv --map VIDEO... [-o FILE|FOLDER] [--grid 4x4] [--width 1536] [--png|--jpg] [--no-info]\n   (a video map: frames in a grid on one picture, beside the video unless -o says)\nmetalmpv --register | --unregister   (the file types, for the installer)"
+                    "{APP_NAME} {VERSION}\n\nmetalmpv [FILE...]\nmetalmpv --compare A B [--offset SECONDS]   (B beside A on the same frame)\nmetalmpv --version | --help | --export-icon FILE.ico\nmetalmpv --map VIDEO... [-o FILE|FOLDER] [--grid 4x4] [--width 1536] [--png|--jpg] [--no-info]\n   (a video map: frames in a grid on one picture, beside the video unless -o says)\nmetalmpv --register | --unregister   (the file types, for the installer)"
                 );
                 return Ok(());
             }

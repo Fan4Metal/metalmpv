@@ -890,6 +890,47 @@ impl Player {
         &self.mpv
     }
 
+    /// A player without a window or sound (`vo=null`, `ao=null`), for tests
+    /// on real files.
+    #[cfg(test)]
+    pub fn headless() -> Self {
+        let api = sys::api().expect("libmpv-2.dll");
+        let mpv = Mpv::new(
+            api,
+            &[
+                ("vo", "null"),
+                ("ao", "null"),
+                ("idle", "yes"),
+                ("terminal", "no"),
+                ("keep-open", "yes"),
+            ],
+        )
+        .expect("an mpv core");
+        observe_all(&mpv);
+        Self {
+            mpv,
+            state: State::default(),
+            scan_asked: None,
+            live_asked: None,
+            loading: false,
+            loads_unanswered: 0,
+            entry: None,
+            stopped: false,
+            hwdec: true,
+            hwdec_copy: false,
+            filters_on: false,
+            hdr_off: false,
+            hdr_target: None,
+            subs_off: false,
+            sub_file: None,
+            last_seek: None,
+            data_end_at: None,
+            ran_out_at: None,
+            af: String::new(),
+            af_before: String::new(),
+        }
+    }
+
     /// Take the waiting events: update [`Player::state`] and return what
     /// the app acts on. Call it every frame (and while minimised).
     pub fn poll(&mut self) -> Vec<Happened> {
@@ -1487,6 +1528,15 @@ impl Player {
             self.hdr_off = new.tone_map == ToneMap::Off;
             self.follow_hdr_target();
         }
+    }
+
+    /// The picture's shape forced to `ratio` (width over height), or the
+    /// file's (`None`): a compared file's is the one it is compared with.
+    pub fn set_aspect_ratio(&mut self, ratio: Option<f64>) {
+        let value = ratio
+            .filter(|r| r.is_finite() && *r > 0.0)
+            .map_or("-1".to_owned(), |r| format!("{r:.6}"));
+        self.mpv.set("video-aspect-override", &Value::Str(value));
     }
 
     /// With HDR on SDR off, the screen is taken for the HDR file's own

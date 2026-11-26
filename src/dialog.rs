@@ -31,6 +31,8 @@ pub enum Ask {
     SaveClip,
     /// Shader files to add to the list (`quality.rs`).
     Shaders,
+    /// The file to compare with the one playing when asked (`compare.rs`).
+    Compare(PathBuf),
 }
 
 impl Ask {
@@ -45,6 +47,7 @@ impl Ask {
             Ask::FramesFolder => "the frames' folder",
             Ask::SaveClip => "the stretch",
             Ask::Shaders => "shaders",
+            Ask::Compare(_) => "the file to compare",
         }
     }
 }

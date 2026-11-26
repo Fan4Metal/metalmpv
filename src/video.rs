@@ -123,12 +123,30 @@ impl Video {
         rect: egui::Rect,
         visible: bool,
     ) {
+        if let Some(id) = self.render(ui, frame, rect)
+            && visible
+        {
+            let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+            ui.painter_at(rect)
+                .image(id, rect, uv, egui::Color32::WHITE);
+        }
+    }
+
+    /// Render mpv's picture for `rect` (in points) into the texture, which
+    /// the caller shows, whole or in part (the comparison's split line);
+    /// `None` when there is no room for it.
+    pub fn render(
+        &mut self,
+        ui: &egui::Ui,
+        frame: &mut eframe::Frame,
+        rect: egui::Rect,
+    ) -> Option<egui::TextureId> {
         let px = pixel_size(rect, ui.ctx().pixels_per_point());
         if px[0] <= 0 || px[1] <= 0 {
             // No room for the picture (the playlist as wide as the
             // window): its frames are taken unseen, else mpv waits for each.
             self.skip_unseen();
-            return;
+            return None;
         }
         let id = *self.id.get_or_insert_with(|| {
             let texture = self
@@ -146,15 +164,11 @@ impl Video {
                 .unwrap_or_else(|e| e.into_inner())
                 .paint(painter.gl());
         });
-        let painter = ui.painter_at(rect);
-        painter.add(egui::PaintCallback {
+        ui.painter_at(rect).add(egui::PaintCallback {
             rect,
             callback: Arc::new(callback),
         });
-        if visible {
-            let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-            painter.image(id, rect, uv, egui::Color32::WHITE);
-        }
+        Some(id)
     }
 
     /// While nothing is painted (a minimised window, or after Stop): take

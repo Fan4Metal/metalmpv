@@ -390,6 +390,7 @@ impl App {
             }
             Ask::FramesFolder => self.settings.frames_folder = Some(path),
             Ask::SaveClip => self.clip_dialog.set_path(&path),
+            Ask::Compare(a) => self.compare_chosen(&a, path),
             Ask::Shaders => {
                 let added = crate::quality::shader_files(answer.paths, &self.settings.shaders);
                 self.settings.shaders.extend(added);

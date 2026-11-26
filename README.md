@@ -32,6 +32,7 @@ MetalMPV is a video player for Windows with a classic layout: the picture fills 
 - **Video, sound and subtitles panel** (`U`): the picture's colour, zoom and pan, sharpness, noise reduction, aspect ratio, deinterlacing, HDR tone mapping and rotation; the output device, channels, volume boost up to 200 %, normalization, clearer speech, stereo to 5.1, the subwoofer, a ten-band equalizer and Dolby and DTS sent to a receiver undecoded; the look of the subtitles (see [Video, sound and subtitles panel](#video-sound-and-subtitles-panel)).
 - **File information** (`I`): the cover, the tags and the details of every track in a window over the player, or its main facts alone over the picture (`Ctrl+I`); the cover of an audio file fills the picture (see [File information](#file-information)).
 - **Video map** (`Ctrl+M`): frames of the whole file in a grid on one picture, put on the clipboard for a chat with a language model; also from the command line (see [Video map](#video-map)).
+- **Comparing two videos** (`Ctrl+Shift+O`): two encodes of a video on the same frame, split by a line that follows the mouse or side by side, zoomed together (see [Comparing two videos](#comparing-two-videos)).
 - **Window for the picture**: 50–200 % of the video's size, the largest window without black bars, fullscreen without black bars, four layouts of the interface, a mini player over the other windows (see [Window size and layouts](#window-size-and-layouts)).
 - **Chapters, A-B repeat, bookmarks, going to a time**: see [Chapters](#chapters), [A-B repeat](#a-b-repeat) (also saved as a file of its own), [Bookmarks](#bookmarks) and [Go to time](#go-to-time).
 - **Resume**: a film opened again goes on from where it was stopped, with the audio track and subtitles chosen in it (see [Settings](#settings)).
@@ -234,6 +235,17 @@ When the file has chapters, the seek bar is cut at the start of each, and the to
 `Ctrl+M` or **Save a video map** in the picture's context menu saves a video map of the file playing: frames taken at equal steps through the whole file (16 at first, 4 × 4), in a grid on one picture, each with its time in its corner, under a line with the file's name, duration, picture size, codec, frame rate and file size. Such a picture shows a language model (or a person) what the video holds at a glance, with the times to ask about. The frames are taken by a second engine without a window while playback goes on (about 2 s for 16 frames), and the on-screen message counts them; the map is written as a JPG into the folder of saved frames as `<file> map.jpg` and, unless turned off, also put on the clipboard, ready to be pasted into a chat. The frames show the picture as the player does: turned, of the aspect ratio chosen, deinterlaced and mirrored as set on the panel. An upright video gets twice the columns and half the rows, so that the picture stays wider than it is tall. The grid, the width (1536 pixels at first, about the most a model takes in whole), the format and the line on top are chosen under **Video map** on the Video page of the settings.
 
 The same from the command line, without the window, for scripts and agents: `metalmpv.exe --map video.mkv [more videos] [-o FILE|FOLDER] [--grid 4x4] [--width 1536] [--png|--jpg] [--no-info]` writes each map next to its video (an address's into the current folder), or as `-o` says: a path ending in `.jpg` or `.png` names the picture (of one video), any other a folder. The grid takes 2 to 8 columns and 1 to 10 rows, the width 640 to 7680 pixels. The pictures' paths are printed one a line; the exit code is 0, 1 when a map failed and 2 for arguments not understood. The program is a windowed one, so cmd and PowerShell do not wait for it when it is typed at their prompt (its output comes after the next prompt, and its exit code is not seen); scripts, `start /wait` and output sent into a pipe or a file wait for it.
+
+### Comparing two videos
+
+Two versions of a video (two encodes, a source and its copy, a picture before and after a filter) are compared on the same frame, as in video-compare. `Ctrl+Shift+O` or **Compare → Compare with another video…** in the picture's context menu chooses the file (B) to compare the one playing (A) with; in the playlist's menu, **Compare with the current one** pairs an entry with the current one and **Compare the two selected** pairs two selected entries. From the command line: `metalmpv.exe --compare A B [--offset SECONDS]`.
+
+- **Split line** (at first): one picture, A left of a line that follows the mouse pointer, B right of it. **Side by side**: each whole, side by side or one over the other, whichever shows them larger. `K` switches between the two.
+- **The same frame**: B is played by a second engine without sound and follows A. Paused, after a seek or a frame step (`,` and `.`), B is put on A's frame exactly; while playing, B's speed is adjusted a little to keep it in step, within a frame of B's. B with another frame rate shows its frame of that moment.
+- **The same place**: B is drawn in A's shape and size, with A's zoom, position, turn, colour and filters, so the two pictures meet at the line pixel for pixel. The mouse wheel over the picture zooms in and out about the point under the pointer (up to 400 %); the volume stays on the arrow keys and the control bar.
+- **A shift**: `Alt+.` and `Alt+,` move B a frame forward or back against A (`Ctrl+Alt` ten frames), `Alt+0` takes the shift away; the shift is shown in B's corner in frames and seconds.
+- `W` swaps the sides. The names of A and B are shown in the bottom corners, with B's state (loading, ended, its shift).
+- The comparison ends with **End the comparison** in the menu, `Esc` (after fullscreen), another file played, Stop or the mini player.
 
 ### File information
 
@@ -454,7 +466,21 @@ The keys below are the defaults; they can be changed in the settings (**Keyboard
 | `Ctrl+I` | The information's chips over the picture |
 | `F5`, `Ctrl+,` | Settings |
 | `F1` | About |
-| `Esc` | Closes the file information window, else the tracks window, else the Video, sound and subtitles panel, else the playlist shown in fullscreen, else leaves fullscreen, else leaves the mini player, else brings the interface back after `7`, else closes the program |
+| `Esc` | Closes the file information window, else the tracks window, else the Video, sound and subtitles panel, else the playlist shown in fullscreen, else leaves fullscreen, else ends the comparison of two videos, else leaves the mini player, else brings the interface back after `7`, else closes the program |
+
+</details>
+
+<details>
+<summary>Comparing two videos</summary>
+
+| Key | Action |
+|---|---|
+| `Ctrl+Shift+O` | [Compare](#comparing-two-videos) the video playing with another |
+| `K` | Split line or side by side |
+| `W` | Swap the sides |
+| `Alt+.` / `Alt+,` | B a frame forward / back against A; with `Ctrl+Alt`, ten frames |
+| `Alt+0` | B without a shift |
+| Mouse wheel over the picture | Zoom about the point under the pointer (while comparing) |
 
 </details>
 
@@ -467,7 +493,7 @@ In the settings, the **Keyboard shortcuts** category lists the actions in groups
 - A combination another action had is taken from that action, and the page says so, with **Undo** beside.
 - A search field above the groups leaves the actions whose name or keys contain the text typed.
 - The round arrow at the right of an action puts its own keys back (taken from the action that had them, with Undo), and **Reset the keys** puts them all back. The menus and tooltips show the keys as they are set.
-- A few actions without a default key can be given one: Stop, A-B repeat: start, end, off (one key for the three in turn), Load subtitles, Equalizer, Reset the equalizer (flat, off), Reset the subtitles' look, Chapter marks on the seek bar, Shaders on or off, Smooth motion on or off, Time: both, elapsed, remaining, Shuffle, Sort and Clear the playlist, Show the file in its folder, Open the folder of saved frames, Save the cover…, Playlist in a window of its own / in the player, IPTV groups in the playlist, How far files were watched in the playlist, Minimize, Maximize and Close the program.
+- A few actions without a default key can be given one: Stop, A-B repeat: start, end, off (one key for the three in turn), Load subtitles, Equalizer, Reset the equalizer (flat, off), Reset the subtitles' look, Chapter marks on the seek bar, Shaders on or off, Smooth motion on or off, Time: both, elapsed, remaining, Shuffle, Sort and Clear the playlist, Show the file in its folder, Open the folder of saved frames, Save the cover…, Playlist in a window of its own / in the player, IPTV groups in the playlist, How far files were watched in the playlist, Minimize, Maximize, Close the program and End the comparison.
 - The mouse wheel, the double and middle clicks and the media keys stay as described; `Ctrl+V` and `Shift+Insert` cannot be chosen, and `Ctrl+Insert` is taken as `Ctrl+C`.
 
 </details>

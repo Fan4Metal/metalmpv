@@ -51,6 +51,7 @@ use crate::video::Video;
 use crate::win;
 
 mod commands;
+mod comparison;
 mod events;
 mod files;
 mod fullscreen;
@@ -286,6 +287,12 @@ pub struct App {
     /// The window's frame around its client area as the mini player came,
     /// in pixels across and down.
     mini_border: [i32; 2],
+    /// The file compared with the one playing (`compare.rs`), the
+    /// comparison asked for and not made yet, and those ended, whose
+    /// pictures `logic` frees.
+    compare: Option<comparison::Comparison>,
+    compare_wanted: Option<crate::compare::Request>,
+    compare_closing: Vec<comparison::Comparison>,
 }
 
 impl App {
@@ -295,6 +302,7 @@ impl App {
         files: Vec<PathBuf>,
     ) -> Self {
         log::debug!("window created at {:.0} ms", crate::since_start());
+        let (files, compare_request) = crate::compare::requested(files);
         let ctx = &cc.egui_ctx;
         let mut settings = cc.storage.map(Settings::load).unwrap_or_default();
         let positions = cc
@@ -489,14 +497,20 @@ impl App {
             mini_pending: false,
             mini_aspect: None,
             mini_border: [0, 0],
+            compare: None,
+            compare_wanted: None,
+            compare_closing: Vec::new(),
         };
         app.sized_for = app.settings.interface;
         // Before the first file: the scalers, shaders and sync it starts with.
         app.follow_quality();
-        if files.is_empty() {
+        if files.is_empty() && compare_request.is_none() {
             app.restore_playlist();
-        } else {
+        } else if !files.is_empty() {
             app.open(files);
+        }
+        if let Some(request) = compare_request {
+            app.request_compare(request);
         }
         app
     }
@@ -600,6 +614,8 @@ impl App {
 
     /// Play playlist entry `index`.
     fn play(&mut self, index: usize) {
+        // B was chosen for the file playing.
+        self.end_compare();
         // The file playing chosen again starts over, not where it is. By
         // mpv's path: a list just replaced makes its first entry current,
         // and a file opened while another played came back at 0.
@@ -736,6 +752,9 @@ impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.updates.poll();
         self.take_events();
+        let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
+        self.close_compare(frame);
+        self.follow_compare(minimized);
         self.take_hooked();
         if let Some(answer) = self.dialogs.take() {
             self.answer(answer);
@@ -750,7 +769,6 @@ impl eframe::App for App {
         self.follow_audio_device();
         self.follow_quality();
         self.follow_video_map();
-        let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         // eframe calls no `ui` for a minimised window: the thumbnail
         // buttons' commands run here, else they waited for the window.
         if minimized {
@@ -796,6 +814,7 @@ impl eframe::App for App {
         // The interface changed while maximized or in fullscreen: the
         // restored window is made for it now.
         self.fit_interface(&ctx);
+        self.start_compare(&ctx, frame);
         let state = self.state();
         self.follow_mini(&ctx, &state);
         self.follow_thumbs(&state);
@@ -1232,6 +1251,10 @@ impl eframe::App for App {
             job.cancel_and_wait(std::time::Duration::from_secs(3));
         }
         self.thumbs = None;
+        self.end_compare();
+        for mut c in self.compare_closing.drain(..) {
+            c.video.free(gl);
+        }
         if let Some(video) = &mut self.video {
             video.free(gl);
         }

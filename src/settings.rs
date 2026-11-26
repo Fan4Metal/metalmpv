@@ -321,6 +321,7 @@ const INFRASONIC_HZ: &str = "infrasonic_hz";
 const EQ_PRESETS: &str = "eq_presets";
 const KEEP_ADJUST: &str = "keep_adjust";
 const NAVIGATOR: &str = "navigator";
+const COMPARE_MODE: &str = "compare_mode";
 const INFO_OVERLAY: &str = "info_overlay";
 const INFO_OVERLAY_TRANSPARENCY: &str = "info_overlay_transparency";
 const INFO_OVERLAY_BRIEF: &str = "info_overlay_brief";
@@ -606,6 +607,8 @@ pub struct Settings {
     pub adjust: crate::adjust::Adjust,
     /// The navigator over the picture's corner while it is zoomed in.
     pub navigator: bool,
+    /// How two videos compared are shown (`compare.rs`).
+    pub compare_mode: crate::compare::Mode,
     /// The information's chips over the picture's corner (`Ctrl+I`).
     pub info_overlay: bool,
     /// How transparent their ground is, in percent (0 to 100: the text
@@ -728,6 +731,7 @@ impl Default for Settings {
             track_prefs: crate::tracks::TrackPrefs::default(),
             keep_adjust: false,
             navigator: true,
+            compare_mode: crate::compare::Mode::Split,
             info_overlay: false,
             info_overlay_transparency: 40.0,
             info_overlay_brief: false,
@@ -1025,6 +1029,10 @@ impl Settings {
             },
             keep_adjust: flag(KEEP_ADJUST, d.keep_adjust),
             navigator: flag(NAVIGATOR, d.navigator),
+            compare_mode: get(COMPARE_MODE)
+                .as_deref()
+                .and_then(crate::compare::Mode::from_name)
+                .unwrap_or(d.compare_mode),
             info_overlay: flag(INFO_OVERLAY, d.info_overlay),
             info_overlay_transparency: number(
                 INFO_OVERLAY_TRANSPARENCY,
@@ -1188,6 +1196,7 @@ impl Settings {
         storage.set_string(SUB_MARGINS, self.sub_margins.to_string());
         storage.set_string(KEEP_ADJUST, self.keep_adjust.to_string());
         storage.set_string(NAVIGATOR, self.navigator.to_string());
+        storage.set_string(COMPARE_MODE, self.compare_mode.name().into());
         storage.set_string(INFO_OVERLAY, self.info_overlay.to_string());
         storage.set_string(
             INFO_OVERLAY_TRANSPARENCY,
@@ -1397,6 +1406,7 @@ mod tests {
                 ..crate::adjust::Adjust::default()
             },
             navigator: false,
+            compare_mode: crate::compare::Mode::Side,
             info_overlay: true,
             info_overlay_transparency: 65.0,
             info_overlay_brief: true,
