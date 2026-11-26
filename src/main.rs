@@ -40,6 +40,7 @@ mod quality;
 mod resume;
 mod session;
 mod settings;
+mod shared;
 mod sizing;
 mod smtc;
 mod sub_lines;
@@ -195,8 +196,9 @@ fn main() -> eframe::Result {
     }
 
     // A copy already running from this exe takes the files and comes
-    // forward; this one ends.
-    if instance::forward(&files) {
+    // forward; this one ends. With several copies allowed, only a start of
+    // the same selection's files does so.
+    if instance::forward(&files, shared::several_copies()) {
         return Ok(());
     }
 

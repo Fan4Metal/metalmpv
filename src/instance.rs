@@ -8,6 +8,13 @@
 //! so an installed copy and a development build do not take each other's
 //! files. Explorer starts one process per file of a multiple selection:
 //! paths that arrive close together make one playlist (`App`).
+//!
+//! With several copies allowed (`settings.several_copies`, read before the
+//! window is made: `shared::several_copies`), each start opens a window of
+//! its own, but a selection still opens in one: the first start with files
+//! owns a second mutex, `….batch`, and its message window is named
+//! [`BATCH_TITLE`] for [`BATCH_FOR`] after it is made; the starts that find
+//! that mutex hand their files to it, which adds them to its playlist.
 
 use std::ffi::OsString;
 use std::hash::{Hash, Hasher};
@@ -18,34 +25,56 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, WPARAM,
+    CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE, HWND, LPARAM, LRESULT, WPARAM,
 };
 use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::CreateMutexW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, FindWindowExW, HWND_MESSAGE, IsIconic, RegisterClassW,
-    SMTO_ABORTIFHUNG, SMTO_BLOCK, SW_RESTORE, SendMessageTimeoutW, SetForegroundWindow, ShowWindow,
-    WM_COPYDATA, WNDCLASSW,
+    SMTO_ABORTIFHUNG, SMTO_BLOCK, SW_RESTORE, SendMessageTimeoutW, SetForegroundWindow,
+    SetWindowTextW, ShowWindow, WM_COPYDATA, WNDCLASSW,
 };
 
 use crate::win::wide;
 
 /// Marks a `WM_COPYDATA` as the player's (`COPYDATASTRUCT::dwData`).
 const MAGIC: usize = 0x6d70_6c79;
+/// The same from a start that joins a selection's first window: added to
+/// its playlist, however late.
+const MAGIC_JOIN: usize = 0x6d70_6c7a;
+/// How long the first window of several copies takes the files of other
+/// starts as one selection, once its message window is there. Explorer
+/// starts the processes of a selection within a few milliseconds of each
+/// other; they wait for that window.
+const BATCH_FOR: Duration = Duration::from_secs(1);
+/// The name of the message window while it takes a selection's files.
+const BATCH_TITLE: &str = "batch";
 /// How long a second start waits for the window of the first one, which
 /// appears soon after its start, or for a closing one to exit.
 const WAIT: Duration = Duration::from_secs(5);
 /// How long the first start may take to answer.
 const ANSWER_MS: u32 = 3000;
 
-/// Paths handed over since `App` last took them, with the time each came.
-static RECEIVED: Mutex<Vec<(PathBuf, Instant)>> = Mutex::new(Vec::new());
+/// Paths handed over since `App` last took them.
+static RECEIVED: Mutex<Vec<Received>> = Mutex::new(Vec::new());
+/// The batch mutex of a start that takes a selection's files (several
+/// copies), until `listen` lets it go after [`BATCH_FOR`].
+static BATCH: Mutex<Option<usize>> = Mutex::new(None);
 /// The UI to wake when a path arrives, and the main window.
 static TARGET: OnceLock<(egui::Context, isize)> = OnceLock::new();
 /// The player is closing: paths handed over now would never be taken, so
 /// the later start is told no and plays them itself.
 static CLOSING: AtomicBool = AtomicBool::new(false);
+
+/// A path handed over by another start.
+pub struct Received {
+    pub path: PathBuf,
+    /// When it came.
+    pub at: Instant,
+    /// Part of the selection this copy was started with (several copies).
+    pub joins: bool,
+}
 
 /// Take no more paths: the player is closing.
 pub fn closing() {
@@ -64,9 +93,13 @@ fn name() -> String {
 /// Called at start-up. If the player is already running from this exe,
 /// hand it `paths` (none: only bring its window forward) and return true:
 /// this process has nothing more to do. Otherwise this process is the first
-/// one and stays so until it exits.
-pub fn forward(paths: &[PathBuf]) -> bool {
+/// one and stays so until it exits. With `several` copies allowed, only
+/// the starts of a selection's other files are handed on (`join`).
+pub fn forward(paths: &[PathBuf], several: bool) -> bool {
     let name = name();
+    if several {
+        return join(&name, paths);
+    }
     let mutex_name = wide(format!("Local\\{name}"));
     let class = wide(&name);
     let deadline = Instant::now() + WAIT;
@@ -92,7 +125,7 @@ pub fn forward(paths: &[PathBuf]) -> bool {
         if !window.is_null() {
             // A first start that does not answer (hung) is left alone and
             // this one runs on its own.
-            return send(window, paths);
+            return send(window, paths, MAGIC);
         }
         // The first start has not made its window yet, or is closing.
         if Instant::now() >= deadline {
@@ -103,14 +136,64 @@ pub fn forward(paths: &[PathBuf]) -> bool {
     }
 }
 
+/// Several copies: this process opens a window of its own unless another
+/// start of the same selection opened one a moment ago, which then takes
+/// `paths` (true).
+fn join(name: &str, paths: &[PathBuf]) -> bool {
+    // The first mutex says the player runs, for a start with the setting
+    // off (switched off meanwhile): open while this process lives.
+    let running = wide(format!("Local\\{name}"));
+    if unsafe { CreateMutexW(std::ptr::null(), 0, running.as_ptr()) }.is_null() {
+        log::warn!("CreateMutexW failed: {}", std::io::Error::last_os_error());
+    }
+    if paths.is_empty() {
+        return false;
+    }
+    let batch = wide(format!("Local\\{name}.batch"));
+    let class = wide(name);
+    let title = wide(BATCH_TITLE);
+    let deadline = Instant::now() + WAIT;
+    loop {
+        let mutex = unsafe { CreateMutexW(std::ptr::null(), 0, batch.as_ptr()) };
+        if mutex.is_null() {
+            log::warn!("CreateMutexW failed: {}", std::io::Error::last_os_error());
+            return false;
+        }
+        if unsafe { GetLastError() } != ERROR_ALREADY_EXISTS {
+            // The selection's first start: the files of the others come here.
+            *BATCH.lock().unwrap_or_else(|e| e.into_inner()) = Some(mutex as usize);
+            return false;
+        }
+        unsafe { CloseHandle(mutex) };
+        let window = unsafe {
+            FindWindowExW(
+                HWND_MESSAGE,
+                std::ptr::null_mut(),
+                class.as_ptr(),
+                title.as_ptr(),
+            )
+        };
+        if !window.is_null() {
+            return send(window, paths, MAGIC_JOIN);
+        }
+        // Its window is not there yet, or it no longer takes files and
+        // the mutex is about to go.
+        if Instant::now() >= deadline {
+            log::warn!("the selection's first window was not found");
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
 /// Send `paths` to the message window `to` in one message (all taken or
-/// none), then bring the main window it answers with to the foreground:
-/// this process was started by the user, so it may.
-fn send(to: HWND, paths: &[PathBuf]) -> bool {
+/// none) marked `magic`, then bring the main window it answers with to the
+/// foreground: this process was started by the user, so it may.
+fn send(to: HWND, paths: &[PathBuf], magic: usize) -> bool {
     let text = joined(paths);
     let bytes = text.len() * 2;
     let data = COPYDATASTRUCT {
-        dwData: MAGIC,
+        dwData: magic,
         cbData: bytes as u32,
         lpData: text.as_ptr() as *mut _,
     };
@@ -173,6 +256,8 @@ pub fn listen(ctx: &egui::Context, main: isize) {
     }
     const MSGFLT_ALLOW: u32 = 1;
     let class = wide(name());
+    let batch = BATCH.lock().unwrap_or_else(|e| e.into_inner()).take();
+    let title = wide(if batch.is_some() { BATCH_TITLE } else { "" });
     unsafe {
         let instance = GetModuleHandleW(std::ptr::null());
         let wc = WNDCLASSW {
@@ -188,7 +273,7 @@ pub fn listen(ctx: &egui::Context, main: isize) {
         let window = CreateWindowExW(
             0,
             class.as_ptr(),
-            std::ptr::null(),
+            title.as_ptr(),
             0,
             0,
             0,
@@ -208,11 +293,26 @@ pub fn listen(ctx: &egui::Context, main: isize) {
         }
         // A copy running elevated still takes files from Explorer (UIPI).
         ChangeWindowMessageFilterEx(window, WM_COPYDATA, MSGFLT_ALLOW, std::ptr::null_mut());
+        if let Some(mutex) = batch {
+            // Later starts open windows of their own.
+            let window = window as usize;
+            let ended = std::thread::Builder::new()
+                .name("selection".into())
+                .spawn(move || {
+                    std::thread::sleep(BATCH_FOR);
+                    let empty = [0u16];
+                    SetWindowTextW(window as HWND, empty.as_ptr());
+                    CloseHandle(mutex as HANDLE);
+                });
+            if let Err(e) = ended {
+                log::warn!("cannot end the selection: {e}");
+            }
+        }
     }
 }
 
-/// The paths handed over since the previous call, with their arrival times.
-pub fn take() -> Vec<(PathBuf, Instant)> {
+/// The paths handed over since the previous call.
+pub fn take() -> Vec<Received> {
     std::mem::take(&mut *RECEIVED.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
@@ -228,9 +328,10 @@ unsafe extern "system" fn window_proc(
         return unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) };
     }
     let data = unsafe { &*(lparam as *const COPYDATASTRUCT) };
+    let joins = data.dwData == MAGIC_JOIN;
     let Some((ctx, main)) = TARGET
         .get()
-        .filter(|_| data.dwData == MAGIC && !CLOSING.load(Ordering::Relaxed))
+        .filter(|_| (data.dwData == MAGIC || joins) && !CLOSING.load(Ordering::Relaxed))
     else {
         return 0;
     };
@@ -248,7 +349,11 @@ unsafe extern "system" fn window_proc(
         RECEIVED
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .extend(split(&units).into_iter().map(|p| (p, now)));
+            .extend(split(&units).into_iter().map(|path| Received {
+                path,
+                at: now,
+                joins,
+            }));
     }
     if unsafe { IsIconic(*main as HWND) } != 0 {
         unsafe { ShowWindow(*main as HWND, SW_RESTORE) };

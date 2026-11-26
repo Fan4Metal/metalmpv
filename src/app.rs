@@ -192,6 +192,8 @@ pub struct App {
     fullscreen: bool,
     /// Where the files were left (`resume_playback`).
     positions: Positions,
+    /// What this copy wrote last, against what other copies write.
+    shared: crate::shared::Shared,
     /// What the kept playlist's file holds (`restore_playlist`).
     session: crate::session::Stored,
     /// The frames over the seek bar (`seek_preview`).
@@ -421,6 +423,7 @@ impl App {
         } else {
             Adjust::default()
         };
+        let shared = crate::shared::Shared::new(|s| settings.save(s), &positions);
         let mut app = Self {
             settings,
             player,
@@ -470,6 +473,7 @@ impl App {
             first_frame_logged: false,
             fullscreen: false,
             last_sub: None,
+            shared,
             positions,
             session: crate::session::Stored::Unknown,
             thumbs: None,
@@ -986,6 +990,7 @@ impl eframe::App for App {
         }
 
         let prefs_before = self.settings.track_prefs.clone();
+        let several_before = self.settings.several_copies;
         // As before the panel changes them.
         let layout_before = (self.settings.sub_ass_override, self.settings.sub_margins);
         let changed = self.settings_dialog.show(
@@ -1019,6 +1024,10 @@ impl eframe::App for App {
             && let Some(player) = &mut self.player
         {
             player.set_track_prefs(&self.settings.track_prefs);
+        }
+        if self.settings.several_copies != several_before {
+            // The next start reads it from the file.
+            self.save_now = Some("several copies switched");
         }
         if self.settings_dialog.open {
             win::set_snap(self.settings.snap_to_centre);
@@ -1251,10 +1260,19 @@ impl eframe::App for App {
             };
             self.settings.window_normal = Some(r);
         }
-        self.save_mini(storage);
-        self.settings.save(storage);
+        // What another copy of the player wrote since is kept where this
+        // one changed nothing (shared.rs).
+        let others = crate::shared::Shared::others_file();
+        let mut recorder = crate::shared::Recorder::new(storage);
+        self.save_mini(&mut recorder);
+        self.settings.save(&mut recorder);
+        let written = recorder.into_written();
         self.remember_position();
+        self.shared
+            .merge_positions(&mut self.positions, others.as_ref(), POSITIONS_KEY);
         storage.set_string(POSITIONS_KEY, self.positions.to_text());
+        self.shared
+            .finish(storage, written, &self.positions, others.as_ref());
         self.session =
             crate::session::follow(&self.playlist, self.settings.restore_playlist, self.session);
     }

@@ -9,12 +9,13 @@ impl App {
     /// while the window is minimised, so a playlist goes on.
     pub(super) fn take_events(&mut self) {
         let received = crate::instance::take();
-        if let Some(&(_, last)) = received.last() {
-            let first = received[0].1;
+        if let Some(last) = received.last().map(|r| r.at) {
+            let first = received[0].at;
+            let joins = received.iter().any(|r| r.joins);
             let (paths, compare) =
-                crate::compare::requested(received.into_iter().map(|(p, _)| p).collect());
+                crate::compare::requested(received.into_iter().map(|r| r.path).collect());
             if !paths.is_empty() {
-                let batch = same_batch(self.last_received, first);
+                let batch = joins || same_batch(self.last_received, first);
                 log::debug!(
                     "{} files from other starts, {:?} after the last ones: {}",
                     paths.len(),

@@ -986,6 +986,17 @@ fn general(ui: &mut Ui, settings: &mut Settings, changed: &mut Changed) {
                     });
             },
         );
+        divider(ui);
+        row(
+            ui,
+            tr!("Several copies", "Несколько копий"),
+            Some(tr!(
+                "Each start of the player and each file opened from Explorer open a window of their own; the files of one selection still open together. Off: they go to the window already open.",
+                "Каждый запуск плеера и каждый файл, открытый из Проводника, открываются в отдельном окне; файлы одного выделения по-прежнему открываются вместе. Выключено — они передаются уже открытому окну."
+            )),
+            50.0,
+            |ui| switch(ui, &mut settings.several_copies),
+        );
     });
     section(ui, tr!("Playlist", "Плейлист"), |ui| {
         row(
@@ -2611,6 +2622,7 @@ fn reset(settings: &mut Settings, updates: &mut Updates, changed: &mut Changed) 
     settings.info_overlay_transparency = d.info_overlay_transparency;
     settings.info_overlay_brief = d.info_overlay_brief;
     settings.snap_to_centre = d.snap_to_centre;
+    settings.several_copies = d.several_copies;
     settings.on_top = d.on_top;
     settings.window_on_open = d.window_on_open;
     settings.frames_folder = d.frames_folder;

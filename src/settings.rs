@@ -51,6 +51,7 @@ const FULLSCREEN_TITLE: &str = "fullscreen_title";
 /// OSD's fading could be set (a fixed 0.4 s within `osd_duration` now).
 const DROPPED: [&str; 4] = ["panels_pinned", "info_pinned", "info_colours", "osd_fade"];
 const SNAP_TO_CENTRE: &str = "snap_to_centre";
+const SEVERAL_COPIES: &str = "several_copies";
 const REPEAT: &str = "repeat";
 const ON_TOP: &str = "on_top";
 const WINDOW_ON_OPEN: &str = "window_on_open";
@@ -538,6 +539,9 @@ pub struct Settings {
     pub fullscreen_title: bool,
     /// The window, being moved, is drawn to the screen's centre lines.
     pub snap_to_centre: bool,
+    /// Each start opens a window of its own instead of handing its files
+    /// to the one open (`instance.rs`; read by `several_copies` at start).
+    pub several_copies: bool,
     /// What plays after the end of a file (`R`, the playlist's button).
     pub repeat: Repeat,
     /// When the window stays over the other windows (`Ctrl+T`).
@@ -698,6 +702,7 @@ impl Default for Settings {
             fullscreen_transparency: 12.0,
             fullscreen_title: true,
             snap_to_centre: true,
+            several_copies: false,
             repeat: Repeat::Off,
             on_top: OnTop::Never,
             window_on_open: WindowOnOpen::Keep,
@@ -861,6 +866,7 @@ impl Settings {
             ),
             fullscreen_title: flag(FULLSCREEN_TITLE, d.fullscreen_title),
             snap_to_centre: flag(SNAP_TO_CENTRE, d.snap_to_centre),
+            several_copies: flag(SEVERAL_COPIES, d.several_copies),
             repeat: get(REPEAT)
                 .as_deref()
                 .and_then(Repeat::from_name)
@@ -1154,6 +1160,7 @@ impl Settings {
             storage.remove_string(key);
         }
         storage.set_string(SNAP_TO_CENTRE, self.snap_to_centre.to_string());
+        storage.set_string(SEVERAL_COPIES, self.several_copies.to_string());
         storage.set_string(REPEAT, self.repeat.name().into());
         storage.set_string(ON_TOP, self.on_top.name().into());
         storage.set_string(WINDOW_ON_OPEN, self.window_on_open.name().into());
@@ -1331,6 +1338,7 @@ mod tests {
             fullscreen_transparency: 40.0,
             fullscreen_title: false,
             snap_to_centre: false,
+            several_copies: true,
             repeat: Repeat::All,
             on_top: OnTop::Playing,
             window_on_open: WindowOnOpen::Fit,

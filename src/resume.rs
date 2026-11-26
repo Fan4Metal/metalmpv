@@ -18,7 +18,7 @@
 //! (lines of `seconds<TAB>audio<TAB>subtitles<TAB>path` and
 //! `seconds<TAB>path` are read too).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// Shorter files start from the beginning.
@@ -207,28 +207,74 @@ impl Positions {
     }
 
     pub fn to_text(&self) -> String {
-        let id = |n: Option<i64>| n.map_or("no".into(), |n| n.to_string());
         self.list
             .iter()
-            .map(|(p, left)| {
-                let time = match left.time {
-                    Some(t) => format!("{t:.1}"),
-                    None if left.watched => "end".into(),
-                    None => "-".into(),
-                };
-                let duration = left.duration.map_or("-".into(), |d| format!("{d:.1}"));
-                let (audio, sub) = match &left.tracks {
-                    Some(t) => match &t.sub_file {
-                        Some(file) => (id(t.audio), format!("@{}", file.display())),
-                        None => (id(t.audio), id(t.sub)),
-                    },
-                    None => ("-".into(), "-".into()),
-                };
-                format!("{time}\t{audio}\t{sub}\t{duration}\t{}", p.display())
-            })
+            .map(|(p, left)| line(p, left))
             .collect::<Vec<_>>()
             .join("\n")
     }
+
+    /// Each file's stored line by its [`key`] (the latest of a key wins).
+    fn lines(&self) -> HashMap<String, String> {
+        self.list
+            .iter()
+            .rev()
+            .map(|(p, left)| (key(p), line(p, left)))
+            .collect()
+    }
+
+    /// Takes what another copy of the player changed since `base` (what
+    /// this one wrote last) into `theirs` (what it wrote), for the files
+    /// this copy did not change meanwhile: their lines put first, in
+    /// their order, or dropped. Compared as stored, to the tenth of a
+    /// second. Whether anything changed.
+    pub fn merge(&mut self, base: &Positions, theirs: &Positions) -> bool {
+        let (base, their_lines, ours) = (base.lines(), theirs.lines(), self.lines());
+        let mut keys: Vec<&String> = base.keys().chain(their_lines.keys()).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        let taken: HashSet<&String> = keys
+            .into_iter()
+            .filter(|k| base.get(*k) != their_lines.get(*k) && ours.get(*k) == base.get(*k))
+            .collect();
+        if taken.is_empty() {
+            return false;
+        }
+        self.list.retain(|(p, _)| !taken.contains(&key(p)));
+        let mut seen = HashSet::new();
+        let front: Vec<(PathBuf, Left)> = theirs
+            .list
+            .iter()
+            .filter(|(p, _)| {
+                let k = key(p);
+                taken.contains(&k) && seen.insert(k)
+            })
+            .cloned()
+            .collect();
+        self.list.splice(0..0, front);
+        self.list.truncate(CAPACITY);
+        self.revision = self.revision.wrapping_add(1);
+        true
+    }
+}
+
+/// A file's stored line: `seconds<TAB>audio<TAB>subtitles<TAB>duration<TAB>path`.
+fn line(path: &Path, left: &Left) -> String {
+    let id = |n: Option<i64>| n.map_or("no".into(), |n| n.to_string());
+    let time = match left.time {
+        Some(t) => format!("{t:.1}"),
+        None if left.watched => "end".into(),
+        None => "-".into(),
+    };
+    let duration = left.duration.map_or("-".into(), |d| format!("{d:.1}"));
+    let (audio, sub) = match &left.tracks {
+        Some(t) => match &t.sub_file {
+            Some(file) => (id(t.audio), format!("@{}", file.display())),
+            None => (id(t.audio), id(t.sub)),
+        },
+        None => ("-".into(), "-".into()),
+    };
+    format!("{time}\t{audio}\t{sub}\t{duration}\t{}", path.display())
 }
 
 #[cfg(test)]
@@ -356,5 +402,35 @@ mod tests {
                 )
             ]
         );
+    }
+
+    #[test]
+    fn another_copys_positions_are_merged() {
+        let text = |lines: &[&str]| lines.join("\n");
+        let base = Positions::parse(&text(&[
+            "100.0\t-\t-\t1000.0\tD:\\a.mkv",
+            "200.0\t-\t-\t1000.0\tD:\\b.mkv",
+            "300.0\t-\t-\t1000.0\tD:\\c.mkv",
+        ]));
+        // The other copy: b went on, c forgotten, d new; a changed in both.
+        let theirs = Positions::parse(&text(&[
+            "400.0\t-\t-\t1000.0\tD:\\d.mkv",
+            "250.0\t-\t-\t1000.0\tD:\\B.mkv",
+            "150.0\t-\t-\t1000.0\tD:\\a.mkv",
+        ]));
+        let mut ours = base.clone();
+        ours.remember(Path::new(r"D:\a.mkv"), Some((120.04, 1000.0)), None);
+        assert!(ours.merge(&base, &theirs));
+        assert_eq!(
+            ours.to_text(),
+            text(&[
+                "400.0\t-\t-\t1000.0\tD:\\d.mkv",
+                "250.0\t-\t-\t1000.0\tD:\\B.mkv",
+                "120.0\t-\t-\t1000.0\tD:\\a.mkv",
+            ])
+        );
+        // Nothing new: nothing taken.
+        let base = Positions::parse(&ours.to_text());
+        assert!(!ours.merge(&base, &base.clone()));
     }
 }

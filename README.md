@@ -37,7 +37,7 @@ MetalMPV is a video player for Windows with a classic layout: the picture fills 
 - **Chapters, A-B repeat, bookmarks, going to a time**: see [Chapters](#chapters), [A-B repeat](#a-b-repeat) (also saved as a file of its own), [Bookmarks](#bookmarks) and [Go to time](#go-to-time).
 - **Resume**: a film opened again goes on from where it was stopped, with the audio track and subtitles chosen in it (see [Settings](#settings)).
 - **Playlist**: files opened together or dropped onto the window, optionally the folder's files or an album's tracks; a search, M3U and IPTV lists with groups and channel logos, lines of how far each file was watched (see [Playlist](#playlist)).
-- **One window**: a file opened from Explorer while the player runs is played in the window already open.
+- **One window**: a file opened from Explorer while the player runs is played in the window already open; with **Several copies** on in the settings, each start and each file open a window of their own.
 - **File types**: the player can be registered with Windows for its formats, each with an icon of its own (see [File types](#file-types)).
 - **English or Russian interface**: it follows the language of Windows and can be changed in the settings (`F5`).
 - **Portable**: the [portable archive](#installation) keeps its settings next to the program.
@@ -305,6 +305,7 @@ The sound and the look of the subtitles are set on the [Video, sound and subtitl
 | Over the other windows | never | Never, always, or while a file plays (not paused); `Ctrl+T` switches it |
 | Window when a file opens | keeps its size | Keeps its size, fitted to the picture (the black bars taken off, the width kept, as `` ` `` does) or 100 % of the video (a pixel of the video on a pixel of the screen, made smaller if the screen is, as `2` does); not while maximised or in fullscreen, nor for sound alone |
 | Snap to the screen's centre | on | While the window is moved, its centre is drawn to the screen's centre, across or up and down, when it comes within 8 pixels of it; moved on, it comes away |
+| Several copies | off | Each start of the player and each file opened from Explorer open a window of their own; the files of one selection still open together in one window. Off: they go to the window already open. The copies keep the same settings: each saves what was changed in it, and the positions of the files are merged |
 | Add the folder's files | off | One opened file brings the media files of its folder into the playlist |
 | Only for audio | off | Shown while the previous setting is on: only an audio file brings its folder's files, and only the audio ones (an album's tracks); a video opens alone |
 | Channel logos | on | The pictures an IPTV list gives its channels are fetched from their sites for the visible rows of the playlist, only over HTTPS and never from the local network, at most 512 KB each, PNG or JPEG only, and kept for 30 days in the `logos` folder next to the settings |
