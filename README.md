@@ -238,13 +238,14 @@ The same from the command line, without the window, for scripts and agents: `met
 
 ### Comparing two videos
 
-Two versions of a video (two encodes, a source and its copy, a picture before and after a filter) are compared on the same frame, as in video-compare. `Ctrl+Shift+O` or **Compare → Compare with another video…** in the picture's context menu chooses the file (B) to compare the one playing (A) with; in the playlist's menu, **Compare with the current one** pairs an entry with the current one and **Compare the two selected** pairs two selected entries. From the command line: `metalmpv.exe --compare A B [--offset SECONDS]`.
+Two versions of a video (two encodes, a source and its copy, a picture before and after a filter) are compared on the same frame, as in video-compare. `Ctrl+Shift+O` or **Compare → Compare with another video…** in the picture's context menu chooses the file (B) to compare the one playing (A) with; in the playlist's menu, **Compare with the current one** pairs an entry with the current one and **Compare the two selected** pairs two selected entries. A video file dragged over the picture while another plays offers two places to drop it: the left one adds it to the playlist, the right one (**Drop to compare with**) compares it with the one playing. From the command line: `metalmpv.exe --compare A B [--offset SECONDS]`.
 
 - **Split line** (at first): one picture, A left of a line that follows the mouse pointer, B right of it. **Side by side**: each whole, side by side or one over the other, whichever shows them larger. `K` switches between the two.
 - **The same frame**: B is played by a second engine without sound and follows A. Paused, after a seek or a frame step (`,` and `.`), B is put on A's frame exactly; while playing, B's speed is adjusted a little to keep it in step, within a frame of B's. B with another frame rate shows its frame of that moment.
-- **The same place**: B is drawn in A's shape and size, with A's zoom, position, turn, colour and filters, so the two pictures meet at the line pixel for pixel. The mouse wheel over the picture zooms in and out about the point under the pointer (up to 400 %); the volume stays on the arrow keys and the control bar.
+- **The same place**: B is drawn in A's shape and size, with A's zoom, position, turn, colour and filters, so the two pictures meet at the line pixel for pixel. The mouse wheel over the picture zooms in and out about the point under the pointer (up to 400 %), and the middle mouse button held down drags the zoomed picture; the volume stays on the arrow keys and the control bar, the playlist on `L`.
 - **A shift**: `Alt+.` and `Alt+,` move B a frame forward or back against A (`Ctrl+Alt` ten frames), `Alt+0` takes the shift away; the shift is shown in B's corner in frames and seconds.
 - `W` swaps the sides. The names of A and B are shown in the bottom corners, with B's state (loading, ended, its shift).
+- **The bar over the picture** comes while the mouse moves over it: the two ways of showing, the sides swapped, B's shift (the arrows a frame each, a click on the figure takes the shift away), the zoom (a click on its figure goes back to 100 % in the middle) and the end of the comparison.
 - The comparison ends with **End the comparison** in the menu, `Esc` (after fullscreen), another file played, Stop or the mini player.
 
 ### File information
@@ -457,7 +458,7 @@ The keys below are the defaults; they can be changed in the settings (**Keyboard
 | `Ctrl+O` | Open files |
 | `Ctrl+U` | Open an address: a direct link to a video or a stream |
 | `Ctrl+V`, `Shift+Insert` | Open the files copied in Explorer or the address on the clipboard |
-| `L`, middle click on the picture | Show or hide the playlist; in fullscreen, over the right side of the picture |
+| `L`, middle click on the picture | Show or hide the playlist; in fullscreen, over the right side of the picture (while comparing two videos the middle button drags the picture instead) |
 | `Delete` | Remove the selected playlist entries |
 | `Ctrl+F` | Search the playlist |
 | `Insert` | Add files to the playlist |
@@ -481,6 +482,7 @@ The keys below are the defaults; they can be changed in the settings (**Keyboard
 | `Alt+.` / `Alt+,` | B a frame forward / back against A; with `Ctrl+Alt`, ten frames |
 | `Alt+0` | B without a shift |
 | Mouse wheel over the picture | Zoom about the point under the pointer (while comparing) |
+| Middle mouse button held down | Drag the zoomed picture (while comparing) |
 
 </details>
 

@@ -301,6 +301,19 @@ pub fn hwnd(window: &impl raw_window_handle::HasWindowHandle) -> Option<isize> {
     }
 }
 
+/// Where the pointer is in the window's client area, in pixels. A file
+/// dragged over the window moves no pointer events (OLE's drag loop runs in
+/// the program it is dragged from), so this is asked for meanwhile.
+pub fn cursor_in(hwnd: isize) -> Option<[i32; 2]> {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::Graphics::Gdi::ScreenToClient;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    let mut p = POINT::default();
+    let ok =
+        unsafe { GetCursorPos(&mut p) } != 0 && unsafe { ScreenToClient(hwnd as _, &mut p) } != 0;
+    ok.then_some([p.x, p.y])
+}
+
 /// Set a DWM window attribute of 32-bit `value`; whether it was taken.
 fn dwm_set(hwnd: isize, attribute: u32, value: i32) -> bool {
     // dwmapi is declared by hand, to spare another `windows-sys` feature.

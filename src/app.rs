@@ -245,6 +245,12 @@ pub struct App {
     /// The middle button went down on the picture: the playlist shows or
     /// hides when it is let go.
     middle_press: bool,
+    /// While comparing, the middle button drags the picture: where it went
+    /// down and the pan then.
+    pan_drag: Option<(egui::Pos2, [f64; 2])>,
+    /// While a file is dragged over the window: where dropping it compares
+    /// it with the file playing (points).
+    compare_drop: Option<Rect>,
     /// The playlist over the picture's right side in fullscreen (`L`, the
     /// middle button); closed when fullscreen ends.
     fullscreen_playlist: bool,
@@ -481,6 +487,8 @@ impl App {
             save_now: None,
             menu_press: false,
             middle_press: false,
+            pan_drag: None,
+            compare_drop: None,
             fullscreen_playlist: false,
             fullscreen_list_width: 0.0,
             picture_area: Rect::NOTHING,
@@ -821,7 +829,10 @@ impl eframe::App for App {
         let mini = self.mini.is_some();
         let mut cmds = std::mem::take(&mut self.pending);
 
-        self.drop_files(dropped_files(&ctx), &state);
+        let dropped = dropped_files(&ctx);
+        if !dropped.is_empty() && !self.compare_dropped(&ctx, &dropped) {
+            self.drop_files(dropped, &state);
+        }
 
         // The keys are the player's: no widget keeps the focus to take
         // Space or Enter as a click. A modal takes the keys while open.

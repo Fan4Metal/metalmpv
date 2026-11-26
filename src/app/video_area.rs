@@ -54,14 +54,31 @@ impl App {
         // The middle button shows or hides the playlist when let go, however
         // the pointer moves meanwhile, as the right one opens the menu
         // (egui's click allows 6 points: a click on the move was lost).
-        let (middle_pressed, middle_down) = ui.input(|i| {
+        // While comparing it drags the picture instead.
+        let comparing = self.compare.is_some() && visible && !state.idle;
+        let (middle_pressed, middle_down, latest) = ui.input(|i| {
             (
                 i.pointer.button_pressed(egui::PointerButton::Middle),
                 i.pointer.button_down(egui::PointerButton::Middle),
+                i.pointer.latest_pos(),
             )
         });
         if middle_pressed {
             self.middle_press = response.contains_pointer();
+            self.pan_drag = latest
+                .filter(|_| self.middle_press && comparing)
+                .map(|p| (p, [self.adjust.pan_x, self.adjust.pan_y]));
+        }
+        if let Some((from, start)) = self.pan_drag {
+            if middle_down && comparing {
+                ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+                if let Some(to) = latest {
+                    self.pan_at_pointer(rect, from, start, to, state);
+                }
+            } else {
+                self.pan_drag = None;
+                self.middle_press = false;
+            }
         }
         if self.middle_press && !middle_down {
             self.middle_press = false;
@@ -153,43 +170,63 @@ impl App {
             .at_pointer_fixed()
             .show(|ui| context_menu(ui, state, playlist_visible, chapter_marks, marks, cmds));
         // Subtitles alone over a playing file are added to it (`drop_files`).
-        let hovered = ui.input(|i| {
-            let files = &i.raw.hovered_files;
-            (!files.is_empty()).then(|| {
-                !state.idle
-                    && files
-                        .iter()
-                        .all(|f| f.path.as_deref().is_some_and(tracks::is_subtitles))
-            })
-        });
-        if let Some(only_subtitles) = hovered {
-            ui.painter()
-                .rect_filled(rect.shrink(12.0), 8.0, Color32::from_black_alpha(160));
-            ui.painter().rect_stroke(
-                rect.shrink(12.0),
-                8.0,
-                egui::Stroke::new(2.0, style::accent()),
-                egui::StrokeKind::Inside,
-            );
-            ui.painter().text(
-                rect.center(),
-                Align2::CENTER_CENTER,
-                if only_subtitles {
-                    tr!(
-                        "Drop to load the subtitles",
-                        "Отпустите, чтобы загрузить субтитры"
+        // One video over a playing one: a second zone compares them.
+        let hovered = ui.input(|i| i.raw.hovered_files.clone());
+        self.compare_drop = None;
+        if !hovered.is_empty() {
+            let only_subtitles = !state.idle
+                && hovered
+                    .iter()
+                    .all(|f| f.path.as_deref().is_some_and(tracks::is_subtitles));
+            let text = if only_subtitles {
+                tr!(
+                    "Drop to load the subtitles",
+                    "Отпустите, чтобы загрузить субтитры"
+                )
+            } else if self.playlist.is_empty() {
+                tr!("Drop to play", "Отпустите, чтобы воспроизвести")
+            } else {
+                tr!(
+                    "Drop to add to the playlist",
+                    "Отпустите, чтобы добавить в плейлист"
+                )
+            };
+            let area = rect.shrink(12.0);
+            let painter = ui.painter();
+            if self.can_compare_drop(&hovered, state) {
+                // egui's pointer stands still while a file is dragged: the
+                // zone under it is looked for meanwhile.
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_millis(30));
+                const GAP: f32 = 12.0;
+                let (add, compare) = if area.width() >= area.height() {
+                    let mid = area.center().x;
+                    (
+                        area.with_max_x(mid - GAP / 2.0),
+                        area.with_min_x(mid + GAP / 2.0),
                     )
-                } else if self.playlist.is_empty() {
-                    tr!("Drop to play", "Отпустите, чтобы воспроизвести")
                 } else {
-                    tr!(
-                        "Drop to add to the playlist",
-                        "Отпустите, чтобы добавить в плейлист"
+                    let mid = area.center().y;
+                    (
+                        area.with_max_y(mid - GAP / 2.0),
+                        area.with_min_y(mid + GAP / 2.0),
                     )
-                },
-                FontId::proportional(20.0),
-                style::TEXT_BRIGHT,
-            );
+                };
+                let on_compare = self
+                    .drop_pointer(ui.ctx())
+                    .is_some_and(|p| compare.contains(p));
+                let a = self
+                    .playlist
+                    .current_path()
+                    .map(|p| self.playlist.title(p))
+                    .unwrap_or_default();
+                drop_zone(painter, add, text, None, !on_compare);
+                let compare_text = tr!("Drop to compare with", "Отпустите, чтобы сравнить с");
+                drop_zone(painter, compare, compare_text, Some(&a), on_compare);
+                self.compare_drop = Some(compare);
+            } else {
+                drop_zone(painter, area, text, None, true);
+            }
         }
         // In fullscreen the line goes under the strip with the name while
         // that is shown.
@@ -200,6 +237,24 @@ impl App {
         } else {
             rect
         };
+        // The comparison's bar, off the fullscreen playlist and under the
+        // zone that brings a strip over the picture's top, whether it is
+        // shown or not: put under a strip shown, the bar left the zone, the
+        // strip went and the bar jumped up into it again.
+        if comparing && hovered.is_empty() && self.mini.is_none() {
+            let mut area = rect;
+            if self.fullscreen {
+                area.max.x -= self.fullscreen_list_width;
+            }
+            let top = if self.fullscreen && self.settings.fullscreen_title {
+                rect.top() + FULLSCREEN_TITLE_HEIGHT + 16.0
+            } else if !self.fullscreen && self.interface().title_over() {
+                rect.top() + style::TITLE_HEIGHT + 8.0
+            } else {
+                rect.top()
+            };
+            self.compare_bar(ui, area, top, cmds);
+        }
         let scale = (self.settings.osd_scale / 100.0) as f32;
         self.osd.set_duration(self.settings.osd_duration);
         let look = &self.settings.osd_style;
@@ -556,6 +611,47 @@ impl App {
             y += h + 4.0;
         }
         true
+    }
+}
+
+/// A place to drop files on: a dark ground, its frame in the accent colour
+/// while the pointer is there (`lit`), the text in the middle and a name
+/// under it.
+fn drop_zone(painter: &egui::Painter, area: Rect, text: &str, name: Option<&str>, lit: bool) {
+    let (stroke, color) = if lit {
+        (egui::Stroke::new(2.0, style::accent()), style::TEXT_BRIGHT)
+    } else {
+        (egui::Stroke::new(1.0, style::line()), style::text_weak())
+    };
+    painter.rect_filled(
+        area,
+        8.0,
+        Color32::from_black_alpha(if lit { 170 } else { 140 }),
+    );
+    painter.rect_stroke(area, 8.0, stroke, egui::StrokeKind::Inside);
+    let room = (area.width() - 32.0).max(40.0);
+    let line = |text: &str, points: f32| {
+        let mut job = egui::text::LayoutJob::simple_singleline(
+            text.to_owned(),
+            FontId::proportional(points),
+            color,
+        );
+        job.wrap = egui::text::TextWrapping::truncate_at_width(room);
+        painter.layout_job(job)
+    };
+    let mut galleys = vec![line(text, 20.0)];
+    if let Some(name) = name.filter(|n| !n.is_empty()) {
+        galleys.push(line(name, 14.0));
+    }
+    const GAP: f32 = 6.0;
+    let height: f32 =
+        galleys.iter().map(|g| g.size().y).sum::<f32>() + GAP * (galleys.len() - 1) as f32;
+    let mut y = area.center().y - height / 2.0;
+    for galley in galleys {
+        let h = galley.size().y;
+        let x = area.center().x - galley.size().x / 2.0;
+        painter.galley(egui::pos2(x, y), galley, color);
+        y += h + GAP;
     }
 }
 

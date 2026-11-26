@@ -376,6 +376,30 @@ pub fn pan_for_zoom(
     })
 }
 
+/// The pan (in percent, as `Adjust`'s) after the picture is dragged `by`
+/// points from where `pan` had it at `zoom` (percent): the picture follows
+/// the pointer. `geometry` gives its fitted size.
+pub fn pan_by(
+    geometry: crate::ui::navigator::Geometry,
+    pan: [f64; 2],
+    zoom: i64,
+    by: egui::Vec2,
+) -> [f64; 2] {
+    let aspect = f64::from(geometry.aspect);
+    let area = [f64::from(geometry.area.x), f64::from(geometry.area.y)];
+    if aspect <= 0.0 || area[0] <= 0.0 || area[1] <= 0.0 || zoom <= 0 {
+        return pan;
+    }
+    let height = (area[0] / aspect).min(area[1]);
+    let zoomed = [
+        height * aspect * zoom as f64 / 100.0,
+        height * zoom as f64 / 100.0,
+    ];
+    let by = [f64::from(by.x), f64::from(by.y)];
+    let max = crate::adjust::PAN_MAX;
+    std::array::from_fn(|i| (pan[i] + by[i] / zoomed[i] * 100.0).clamp(-max, max))
+}
+
 /// The zoom after `notches` of the wheel: a quarter more each, within the
 /// panel's range.
 pub fn wheel_zoom(zoom: i64, notches: i32) -> i64 {
@@ -539,6 +563,25 @@ mod tests {
         assert_eq!(wheel_zoom(100, -1), 80);
         assert_eq!(wheel_zoom(390, 2), 400);
         assert_eq!(wheel_zoom(50, -1), 50);
+    }
+
+    #[test]
+    fn a_dragged_picture_follows_the_pointer() {
+        use crate::ui::navigator::Geometry;
+        let geometry = Geometry {
+            aspect: 2.0,
+            area: egui::vec2(800.0, 400.0),
+        };
+        // At 200 % the picture is 1600 × 800: 160 points right is 10 %,
+        // 40 up is -5 %.
+        let pan = pan_by(geometry, [1.0, 0.0], 200, egui::vec2(160.0, -40.0));
+        assert!(
+            (pan[0] - 11.0).abs() < 1e-9 && (pan[1] + 5.0).abs() < 1e-9,
+            "{pan:?}"
+        );
+        // No further than the panel goes.
+        let pan = pan_by(geometry, [0.0, 0.0], 100, egui::vec2(-2000.0, 0.0));
+        assert_eq!(pan[0], -crate::adjust::PAN_MAX);
     }
 
     /// Two cores kept on the same frame without a window, as the app keeps

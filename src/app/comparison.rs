@@ -19,6 +19,8 @@ pub(super) struct Comparison {
     pub(super) swapped: bool,
     /// B's file is loaded.
     pub(super) loaded: bool,
+    /// Where the bar over the picture was last drawn.
+    bar: Option<Rect>,
     sync: compare::Sync,
     /// What B was given: the picture's adjustments (A's but its shape),
     /// A's shape, the quality, the fill, the hardware decoding.
@@ -220,6 +222,7 @@ impl App {
             split: 0.5,
             swapped: false,
             loaded: false,
+            bar: None,
             sync: compare::Sync::default(),
             adjust: Adjust::default(),
             aspect: None,
@@ -468,7 +471,8 @@ impl App {
                     [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
                     egui::Stroke::new(1.0, Color32::from_white_alpha(170)),
                 );
-                (left_label, right_label) = (rect.with_max_x(x), rect.with_min_x(x));
+                // In the corners of the whole picture, wherever the line is.
+                (left_label, right_label) = (rect, rect);
             }
             (_, b_id) => {
                 if let Some(a_id) = a_id {
@@ -519,12 +523,19 @@ impl App {
         } else {
             (a_lines, b_lines)
         };
+        // Each at most half the picture's width (its own half side by side).
+        let width = if left_label == right_label {
+            rect.width() / 2.0
+        } else {
+            left_label.width()
+        };
         label(
             &painter,
             left_label,
             bottom,
             &left_lines,
             Align2::LEFT_BOTTOM,
+            width,
         );
         label(
             &painter,
@@ -532,6 +543,7 @@ impl App {
             bottom,
             &right_lines,
             Align2::RIGHT_BOTTOM,
+            width,
         );
     }
 
@@ -578,7 +590,128 @@ impl App {
         });
         self.osd.show(Osd::Zoom(self.adjust.zoom));
     }
+
+    /// The middle button dragging the picture while comparing: pressed at
+    /// `from` with the pan `start`, the pointer now at `to`.
+    pub(super) fn pan_at_pointer(
+        &mut self,
+        rect: Rect,
+        from: egui::Pos2,
+        start: [f64; 2],
+        to: egui::Pos2,
+        state: &State,
+    ) {
+        let area = self.picture_place(rect, Some(from), state);
+        let geometry = ui::navigator::Geometry::new(self.picture_size(state), area.size());
+        let pan = compare::pan_by(geometry, start, self.adjust.zoom, to - from)
+            // To a hundredth of a percent, as kept.
+            .map(|p| (p * 100.0).round() / 100.0);
+        self.change_picture(|a| [a.pan_x, a.pan_y] = pan);
+    }
+
+    /// The comparison's bar over the picture's top (`top` under what comes
+    /// over it there) while the pointer moves over the picture or rests on
+    /// the bar, a button is down or B is loading.
+    pub(super) fn compare_bar(
+        &mut self,
+        ui: &mut egui::Ui,
+        rect: Rect,
+        top: f32,
+        cmds: &mut Vec<Cmd>,
+    ) {
+        const MARGIN: f32 = 8.0;
+        let Some(c) = &self.compare else {
+            return;
+        };
+        let ctx = ui.ctx().clone();
+        let (hover, still, down) = ctx.input(|i| {
+            (
+                i.pointer.hover_pos(),
+                i.pointer.time_since_last_movement(),
+                i.pointer.any_down(),
+            )
+        });
+        let on_bar = hover.is_some_and(|p| c.bar.is_some_and(|b| b.expand(MARGIN).contains(p)));
+        let over = hover.is_some_and(|p| rect.contains(p));
+        let shown = over && (on_bar || down || still < BAR_FOR || !c.loaded);
+        if !shown {
+            if let Some(c) = &mut self.compare {
+                c.bar = None;
+            }
+            return;
+        }
+        if !on_bar && !down {
+            ctx.request_repaint_after(std::time::Duration::from_secs_f32(
+                (BAR_FOR - still).max(0.05),
+            ));
+        }
+        let fps = c.fps();
+        let default = Adjust::default();
+        let shown = ui::compare_bar::Shown {
+            mode: self.settings.compare_mode,
+            swapped: c.swapped,
+            shift: (c.offset * fps).round() as i64,
+            shift_text: compare::shift_in(crate::i18n::lang(), c.offset, fps)
+                .unwrap_or_else(|| tr!("B without a shift", "B без сдвига").to_owned()),
+            zoom: self.adjust.zoom,
+            moved: self.adjust.zoom != default.zoom
+                || self.adjust.pan_x != default.pan_x
+                || self.adjust.pan_y != default.pan_y,
+        };
+        let at = egui::pos2(rect.center().x, top + MARGIN);
+        let (bar, out) = ui::compare_bar::show(ui, rect.shrink(MARGIN), at, &shown);
+        if let Some(c) = &mut self.compare {
+            c.bar = Some(bar);
+        }
+        cmds.extend(out);
+    }
+
+    /// While files are dragged over the window: whether the one file
+    /// dragged could be compared with the file playing.
+    pub(super) fn can_compare_drop(&self, files: &[egui::HoveredFile], state: &State) -> bool {
+        let [file] = files else {
+            return false;
+        };
+        !state.idle
+            && state.video().is_some()
+            && self.player.is_some()
+            && file
+                .path
+                .as_deref()
+                .is_some_and(|p| playlist::is_media(p) && !tracks::is_subtitles(p))
+    }
+
+    /// The pointer in the window's client area in points, while a file is
+    /// dragged over it (egui's pointer stands still then).
+    pub(super) fn drop_pointer(&self, ctx: &egui::Context) -> Option<egui::Pos2> {
+        let [x, y] = win::cursor_in(self.hwnd?)?;
+        let ppp = ctx.pixels_per_point();
+        Some(egui::pos2(x as f32 / ppp, y as f32 / ppp))
+    }
+
+    /// Files dropped where the comparison was offered: the one file
+    /// compared with the file playing. Whether it was.
+    pub(super) fn compare_dropped(&mut self, ctx: &egui::Context, dropped: &[PathBuf]) -> bool {
+        let Some(zone) = self.compare_drop.take() else {
+            return false;
+        };
+        let [file] = dropped else {
+            return false;
+        };
+        if !self.drop_pointer(ctx).is_some_and(|p| zone.contains(p)) {
+            return false;
+        }
+        self.request_compare(Request {
+            a: None,
+            b: file.clone(),
+            offset: 0.0,
+        });
+        true
+    }
 }
+
+/// How long the comparison's bar stays after the pointer stops, seconds.
+const BAR_FOR: f32 = 2.0;
 
 /// A file's name, or the address.
 fn file_name(path: &Path) -> String {
@@ -588,18 +721,37 @@ fn file_name(path: &Path) -> String {
 }
 
 /// Lines of text on a dark ground in a bottom corner of `area`, no lower
-/// than `bottom`.
-fn label(painter: &egui::Painter, area: Rect, bottom: f32, lines: &[String], corner: Align2) {
+/// than `bottom`, each on one line cut short with an ellipsis to fit
+/// `width` (a long name was wrapped word by word into a narrow column).
+fn label(
+    painter: &egui::Painter,
+    area: Rect,
+    bottom: f32,
+    lines: &[String],
+    corner: Align2,
+    width: f32,
+) {
     const MARGIN: f32 = 10.0;
-    const PAD: egui::Vec2 = egui::vec2(6.0, 3.0);
-    let text = lines.join("\n");
-    let galley = painter.layout(
-        text,
-        FontId::proportional(13.0),
-        style::TEXT_BRIGHT,
-        (area.width() - 2.0 * (MARGIN + PAD.x)).max(40.0),
+    const PAD: egui::Vec2 = egui::vec2(7.0, 4.0);
+    const GAP: f32 = 16.0;
+    let room = (width - MARGIN - GAP / 2.0 - 2.0 * PAD.x).max(60.0);
+    let galleys: Vec<_> = lines
+        .iter()
+        .map(|line| {
+            let mut job = egui::text::LayoutJob::simple_singleline(
+                line.clone(),
+                FontId::proportional(13.0),
+                style::TEXT_BRIGHT,
+            );
+            job.wrap = egui::text::TextWrapping::truncate_at_width(room);
+            painter.layout_job(job)
+        })
+        .collect();
+    let text = egui::vec2(
+        galleys.iter().map(|g| g.size().x).fold(0.0, f32::max),
+        galleys.iter().map(|g| g.size().y).sum(),
     );
-    let size = galley.size() + 2.0 * PAD;
+    let size = text + 2.0 * PAD;
     let y = area.bottom().min(bottom) - MARGIN - size.y;
     let x = if corner == Align2::LEFT_BOTTOM {
         area.left() + MARGIN
@@ -608,5 +760,16 @@ fn label(painter: &egui::Painter, area: Rect, bottom: f32, lines: &[String], cor
     };
     let ground = Rect::from_min_size(egui::pos2(x, y), size);
     painter.rect_filled(ground, 4.0, Color32::from_black_alpha(150));
-    painter.galley(ground.min + PAD, galley, style::TEXT_BRIGHT);
+    let mut at = ground.min + PAD;
+    for galley in galleys {
+        let h = galley.size().y;
+        // Right-aligned in the right corner.
+        let dx = if corner == Align2::LEFT_BOTTOM {
+            0.0
+        } else {
+            text.x - galley.size().x
+        };
+        painter.galley(at + egui::vec2(dx, 0.0), galley, style::TEXT_BRIGHT);
+        at.y += h;
+    }
 }

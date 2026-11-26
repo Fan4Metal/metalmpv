@@ -273,7 +273,7 @@ macro_rules! actions {
 /// A colour key's step, of -100..100.
 const COLOR_STEP: i64 = 2;
 /// A zoom key's step, in percent.
-const ZOOM_STEP: i64 = 10;
+pub const ZOOM_STEP: i64 = 10;
 /// A pan key's step, in percent of the picture.
 const PAN_STEP: i64 = 2;
 
