@@ -1164,18 +1164,23 @@ fn bands(ui: &mut Ui, eq: &mut Equalizer) {
                     Layout::top_down(Align::Center),
                     |ui| {
                         let gain = eq.gains[i];
-                        let text = if gain > 0 {
-                            format!("+{gain}")
-                        } else {
-                            gain.to_string()
-                        };
                         let color = if gain != 0 && on {
                             style::accent_hover()
                         } else {
                             style::text_weak()
                         };
-                        ui.label(RichText::new(text).size(11.0).color(color));
+                        ui.label(RichText::new(gain_text(gain)).size(11.0).color(color));
+                        // A vertical slider lays itself out in `ui.vertical`,
+                        // at the left of the column, and its label went over
+                        // its foot: it gets a rect of its own width in the
+                        // column's middle, under the gain and over the label.
+                        let thickness = ui
+                            .text_style_height(&egui::TextStyle::Body)
+                            .max(ui.spacing().interact_size.y);
+                        let size = vec2(thickness, ui.spacing().slider_width);
+                        let (place, _) = ui.allocate_exact_size(size, Sense::hover());
                         let response = ui
+                            .new_child(egui::UiBuilder::new().max_rect(place))
                             .add(
                                 egui::Slider::new(&mut eq.gains[i], -EQ_RANGE..=EQ_RANGE)
                                     .vertical()
@@ -1232,6 +1237,16 @@ fn bands(ui: &mut Ui, eq: &mut Equalizer) {
         shapes.push(Shape::line(smooth(&knobs), Stroke::new(2.0, curve)));
         ui.painter().set(under, Shape::Vec(shapes));
     });
+}
+
+/// A band's gain for its label: `+4`, `−3` (a minus sign, not a hyphen),
+/// `0`.
+fn gain_text(gain: i64) -> String {
+    match gain {
+        0 => "0".to_owned(),
+        g if g > 0 => format!("+{g}"),
+        g => format!("\u{2212}{}", g.unsigned_abs()),
+    }
 }
 
 /// A double click on a slider (as metalamp's). egui's slider senses only
@@ -2164,4 +2179,16 @@ fn row_label(ui: &mut Ui, label: &str, tip: Option<&str>) {
             response.on_hover_text(tip);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::gain_text;
+
+    #[test]
+    fn gains_have_a_sign_and_a_true_minus() {
+        assert_eq!(gain_text(0), "0");
+        assert_eq!(gain_text(4), "+4");
+        assert_eq!(gain_text(-12), "\u{2212}12");
+    }
 }
