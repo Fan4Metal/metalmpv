@@ -364,6 +364,9 @@ impl App {
         match cmd {
             Cmd::CompareWith => self.pick_compare(ctx),
             Cmd::CompareEntries(a, b) => self.compare_entries(a, b),
+            // Their keys while nothing is compared would change the way the
+            // next comparison is shown unseen.
+            Cmd::CycleCompare | Cmd::CompareFlip if self.compare.is_none() => {}
             Cmd::CycleCompare => {
                 let next = self.settings.compare_mode.next();
                 self.set_compare_mode(next);
