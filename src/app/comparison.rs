@@ -19,6 +19,9 @@ pub(super) struct Comparison {
     pub(super) swapped: bool,
     /// B is the one shown in the flip (`Mode::Flip`).
     pub(super) flipped: bool,
+    /// The name in the bottom right corner as last drawn: the navigator
+    /// goes over it.
+    pub(super) right_label: Option<Rect>,
     /// B's file is loaded.
     pub(super) loaded: bool,
     /// What B's container says, read while the information window is
@@ -240,6 +243,7 @@ impl App {
             split: 0.5,
             swapped: false,
             flipped: false,
+            right_label: None,
             loaded: false,
             facts: None,
             bar: None,
@@ -609,7 +613,7 @@ impl App {
         } else {
             left_label.width()
         };
-        label(
+        let _ = label(
             &painter,
             left_label,
             bottom,
@@ -618,7 +622,7 @@ impl App {
             width,
             left_lit,
         );
-        label(
+        c.right_label = Some(label(
             &painter,
             right_label,
             bottom,
@@ -626,7 +630,7 @@ impl App {
             Align2::RIGHT_BOTTOM,
             width,
             right_lit,
-        );
+        ));
     }
 
     /// How far above the video area's bottom the names go: over the
@@ -814,7 +818,7 @@ fn label(
     corner: Align2,
     width: f32,
     lit: bool,
-) {
+) -> Rect {
     const MARGIN: f32 = 10.0;
     const PAD: egui::Vec2 = egui::vec2(7.0, 4.0);
     const GAP: f32 = 16.0;
@@ -861,4 +865,5 @@ fn label(
         painter.galley(at + egui::vec2(dx, 0.0), galley, colour);
         at.y += h;
     }
+    ground
 }

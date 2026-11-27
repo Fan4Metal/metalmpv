@@ -338,10 +338,17 @@ impl App {
             (0.0, 0.0)
         };
         let size = geometry.size(&self.adjust, egui::vec2(160.0, 110.0));
-        let corner = egui::pos2(
+        let mut corner = egui::pos2(
             rect.right() - right - MARGIN,
             rect.bottom() - bottom - MARGIN,
         );
+        // Over the name in the same corner while comparing.
+        if let Some(name) = self.compare.as_ref().and_then(|c| c.right_label)
+            && name.right() > corner.x - size.x
+            && name.top() < corner.y
+        {
+            corner.y = name.top() - 6.0;
+        }
         let navigator = Rect::from_min_max(corner - size, corner);
         // Not in a window too small for it.
         if !rect.shrink(MARGIN).contains_rect(navigator) {
