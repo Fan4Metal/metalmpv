@@ -15,6 +15,9 @@ use crate::resume::Positions;
 pub const WRITER: &str = "writer";
 /// The setting read before the window is made (`Settings::several_copies`).
 const SEVERAL_COPIES: &str = "several_copies";
+/// The keys of this copy's own window, never taken from another: eframe
+/// writes its `window` itself, and `window_normal` goes with it.
+const OWN: [&str; 2] = ["window", "window_normal"];
 
 /// The settings file's keys and values, `None` when it does not read (cut
 /// short, or being written now).
@@ -90,6 +93,10 @@ impl eframe::Storage for Nowhere {
 pub struct Shared {
     /// The app's own values (before any taken from the file).
     produced: Written,
+    /// The values taken from other copies for keys this one did not change
+    /// since (`None`: removed there), written in place of its own at every
+    /// save, not only at the one after another copy wrote the file.
+    taken: Written,
     /// The positions written.
     positions: Positions,
 }
@@ -102,13 +109,25 @@ impl Shared {
         write(&mut recorder);
         Self {
             produced: recorder.into_written(),
+            taken: Written::new(),
             positions: Positions::parse(&positions.to_text()),
         }
     }
 
-    /// The settings file when another copy wrote it last.
+    /// The settings file when another copy wrote it last. eframe writes it
+    /// in place, so one that does not read may be being written now: read
+    /// again a moment later.
     pub fn others_file() -> Option<HashMap<String, String>> {
-        let kv = read(crate::settings::location().file.as_ref()?)?;
+        let file = crate::settings::location().file.as_ref()?;
+        if !file.exists() {
+            return None;
+        }
+        let kv = (0..3).find_map(|attempt| {
+            if attempt > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            read(file)
+        })?;
         let ours = std::process::id().to_string();
         kv.get(WRITER).is_some_and(|w| *w != ours).then_some(kv)
     }
@@ -140,15 +159,28 @@ impl Shared {
         positions: &Positions,
         file: Option<&HashMap<String, String>>,
     ) {
-        if let Some(file) = file {
-            for (key, value) in &written {
-                let unchanged = self.produced.get(key) == Some(value);
-                if let Some(theirs) = file.get(key).filter(|t| Some(*t) != value.as_ref())
-                    && unchanged
-                {
+        for (key, value) in &written {
+            if OWN.contains(&key.as_str()) {
+                continue;
+            }
+            if self.produced.get(key) != Some(value) {
+                // Changed here: this copy's value from now on.
+                self.taken.remove(key);
+                continue;
+            }
+            if let Some(file) = file {
+                let theirs = file.get(key).cloned();
+                if theirs != *value {
                     log::debug!("{key} taken from another copy");
-                    storage.set_string(key, theirs.clone());
+                    self.taken.insert(key.clone(), theirs);
+                } else {
+                    self.taken.remove(key);
                 }
+            }
+            match self.taken.get(key) {
+                Some(Some(theirs)) => storage.set_string(key, theirs.clone()),
+                Some(None) => storage.remove_string(key),
+                None => {}
             }
         }
         self.produced = written;
@@ -217,5 +249,44 @@ mod tests {
         assert_eq!(storage.get_string("theme").as_deref(), Some("plum"));
         save(&mut storage, &mut shared, "forest");
         assert_eq!(storage.get_string("theme").as_deref(), Some("forest"));
+    }
+
+    #[test]
+    fn what_was_taken_stays_when_this_copy_wrote_the_file_last() {
+        let positions = Positions::default();
+        let loaded = |s: &mut dyn eframe::Storage| {
+            s.set_string("theme", "black".into());
+            s.set_string("window_normal", "0,0,10,10".into());
+            s.set_string("osd_font", "x".into());
+        };
+        let mut shared = Shared::new(loaded, &positions);
+        let file: HashMap<String, String> = [
+            ("theme", "plum"),
+            ("window_normal", "5,5,20,20"),
+            (WRITER, "1"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        let mut storage = Mem::default();
+        let save = |storage: &mut Mem, shared: &mut Shared, file: Option<&HashMap<_, _>>| {
+            let mut recorder = Recorder::new(storage);
+            recorder.set_string("theme", "black".into());
+            recorder.set_string("window_normal", "0,0,10,10".into());
+            recorder.set_string("osd_font", "x".into());
+            let written = recorder.into_written();
+            shared.finish(storage, written, &positions, file);
+        };
+        save(&mut storage, &mut shared, Some(&file));
+        // The next save finds the file this copy's: still the other's theme.
+        save(&mut storage, &mut shared, None);
+        assert_eq!(storage.get_string("theme").as_deref(), Some("plum"));
+        // Removed there, removed here.
+        assert_eq!(storage.get_string("osd_font"), None);
+        // The window is this copy's own.
+        assert_eq!(
+            storage.get_string("window_normal").as_deref(),
+            Some("0,0,10,10")
+        );
     }
 }
