@@ -837,7 +837,9 @@ fn entry_menu(ui: &mut Ui, list: &mut Playlist, index: usize, shown: &[usize], o
     let many = selection.len();
     // Two videos on the same frame: the two selected, or this one with the
     // current one.
+    // The current one is A: comparing does not move away from it.
     let pair = match (selection.as_slice(), list.current()) {
+        ([a, b], Some(current)) if *b == current => Some((*b, *a)),
         ([a, b], _) => Some((*a, *b)),
         (_, Some(current)) if current != index && many <= 1 => Some((current, index)),
         _ => None,

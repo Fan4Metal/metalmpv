@@ -57,7 +57,12 @@ impl App {
                     .current_path()
                     .is_some_and(|p| crate::bookmarks::same_path(p, a));
             if !playing {
-                match self.playlist.items().iter().position(|p| p == a) {
+                let listed = self
+                    .playlist
+                    .items()
+                    .iter()
+                    .position(|p| crate::bookmarks::same_path(p, a));
+                match listed {
                     Some(i) => self.play(i),
                     None => self.open(vec![a.clone()]),
                 }
