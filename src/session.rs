@@ -6,6 +6,8 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::SystemTime;
 
 use crate::playlist::{self, Channel, Playlist};
 
@@ -117,6 +119,34 @@ pub fn follow(list: &Playlist, on: bool, stored: Stored) -> Stored {
     wanted
 }
 
+/// When this run last wrote the file (its modification time then), so that
+/// a write by another copy of the player is told apart.
+static WRITTEN_AT: Mutex<Option<SystemTime>> = Mutex::new(None);
+
+fn modified(file: &Path) -> Option<SystemTime> {
+    std::fs::metadata(file).and_then(|m| m.modified()).ok()
+}
+
+/// At exit: the list of the window closed last is the one the next run
+/// restores. Another copy of the player (`settings.several_copies`) may
+/// have written its own since this one wrote `list`, which `follow` writes
+/// only when it changes: written again then. An empty list leaves the
+/// other's.
+pub fn reclaim(list: &Playlist, on: bool) {
+    if !on || list.is_empty() {
+        return;
+    }
+    let Some(file) = file() else {
+        return;
+    };
+    let ours = *WRITTEN_AT.lock().unwrap_or_else(|e| e.into_inner());
+    let now = modified(&file);
+    if now.is_none() || now != ours {
+        log::debug!("the kept playlist was written by another copy: written again");
+        store(list);
+    }
+}
+
 /// Keep `list` for the next run (an empty one deletes the file): written
 /// beside it and renamed over it once whole.
 fn store(list: &Playlist) {
@@ -129,14 +159,18 @@ fn store(list: &Playlist) {
     }
     let part = file.with_extension("m3u8.part");
     let written = std::fs::write(&part, text(list)).and_then(|()| std::fs::rename(&part, &file));
-    if let Err(e) = written {
-        log::warn!("cannot keep the playlist in {}: {e}", file.display());
-        let _ = std::fs::remove_file(&part);
+    match written {
+        Ok(()) => *WRITTEN_AT.lock().unwrap_or_else(|e| e.into_inner()) = modified(&file),
+        Err(e) => {
+            log::warn!("cannot keep the playlist in {}: {e}", file.display());
+            let _ = std::fs::remove_file(&part);
+        }
     }
 }
 
 /// Delete the kept list (the setting turned off, the list emptied).
 fn forget() {
+    *WRITTEN_AT.lock().unwrap_or_else(|e| e.into_inner()) = None;
     if let Some(file) = file() {
         match std::fs::remove_file(&file) {
             Ok(()) => log::debug!("kept playlist deleted"),

@@ -1305,6 +1305,9 @@ impl eframe::App for App {
     /// the core.
     fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
         crate::instance::closing();
+        // After the last save: the next start restores the list of the
+        // window closed last, also of several copies.
+        crate::session::reclaim(&self.playlist, self.settings.restore_playlist);
         // A stretch or a map being saved is cancelled, and its thread is
         // given a moment to delete the file half written.
         self.clip_dialog.cancel();
