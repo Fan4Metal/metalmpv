@@ -187,8 +187,14 @@ fn git(args: &[&str]) -> Option<String> {
 /// starts and says what is missing.
 fn copy_libmpv(out_dir: &std::path::Path) {
     let source = std::path::Path::new("vendor/libmpv/libmpv-2.dll");
-    // OUT_DIR is target\<profile>\build\<package>-<hash>\out.
-    let Some(target) = out_dir.ancestors().nth(3) else {
+    // OUT_DIR is target\<profile>\build\<package>-<hash>\out, and since
+    // Cargo 1.100 target\<profile>\build\<package>\<hash>\out: the exe's
+    // folder is the one holding `build`, however deep the rest goes.
+    let Some(target) = exe_dir(out_dir) else {
+        println!(
+            "cargo:warning=no `build` folder over OUT_DIR {}: libmpv-2.dll not copied",
+            out_dir.display()
+        );
         return;
     };
     let Ok(meta) = source.metadata() else {
@@ -213,4 +219,13 @@ fn copy_libmpv(out_dir: &std::path::Path) {
             dest.display()
         );
     }
+}
+
+/// The folder of the exe (`target\<profile>`) for the build script's
+/// `OUT_DIR`: the parent of its nearest `build` folder.
+fn exe_dir(out_dir: &std::path::Path) -> Option<&std::path::Path> {
+    out_dir
+        .ancestors()
+        .find(|a| a.file_name().is_some_and(|n| n == "build"))?
+        .parent()
 }
