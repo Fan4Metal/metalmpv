@@ -1,5 +1,6 @@
-//! The comparison's bar over the picture's top: the two ways of showing
-//! A and B, the sides swapped, B's shift in its frames, the zoom, and the
+//! The comparison's bar over the picture's top: the ways of showing A and
+//! B, the sides swapped (in the flip, the one shown), B's shift in its
+//! frames, the zoom, and the
 //! end of the comparison. A see-through pill, shown while the pointer
 //! moves over the picture (`App::compare_bar`).
 
@@ -26,6 +27,8 @@ const ICON: f32 = 6.0;
 pub struct Shown {
     pub mode: Mode,
     pub swapped: bool,
+    /// B is the one shown in the flip.
+    pub flipped: bool,
     /// B's shift in its frames, and the same in words for the tooltip.
     pub shift: i64,
     pub shift_text: String,
@@ -108,16 +111,36 @@ pub fn show(ui: &mut Ui, area: Rect, top: Pos2, shown: &Shown) -> (Rect, Vec<Cmd
         x += w;
     }
     x += 2.0;
-    let tip = with_key(tr!("Swap the sides", "Поменять стороны"), Cmd::SwapCompare);
-    let response = button(ui, square(x, BUTTON), &tip, false);
-    swap(
-        ui.painter(),
-        response.rect.center(),
-        colour(&response),
-        shown.swapped,
-    );
-    if response.clicked() {
-        out.push(Cmd::SwapCompare);
+    if shown.mode == Mode::Flip {
+        // The letter of the one shown; a click shows the other.
+        let tip = with_key(tr!("Flip: A or B", "Мигание: A или B"), Cmd::CompareFlip);
+        let response = button(ui, square(x, BUTTON), &tip, false);
+        ui.painter().text(
+            response.rect.center(),
+            Align2::CENTER_CENTER,
+            if shown.flipped { "B" } else { "A" },
+            FontId::proportional(14.0),
+            if response.hovered() {
+                Color32::WHITE
+            } else {
+                style::accent_hover()
+            },
+        );
+        if response.clicked() {
+            out.push(Cmd::CompareFlip);
+        }
+    } else {
+        let tip = with_key(tr!("Swap the sides", "Поменять стороны"), Cmd::SwapCompare);
+        let response = button(ui, square(x, BUTTON), &tip, false);
+        swap(
+            ui.painter(),
+            response.rect.center(),
+            colour(&response),
+            shown.swapped,
+        );
+        if response.clicked() {
+            out.push(Cmd::SwapCompare);
+        }
     }
     x += BUTTON;
     x = separator(ui, x, bar);

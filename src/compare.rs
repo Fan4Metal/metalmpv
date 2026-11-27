@@ -24,15 +24,19 @@ pub enum Mode {
     /// Each whole, side by side or one over the other, whichever shows
     /// them larger.
     Side,
+    /// One of them whole in the same place, the other at a key's press:
+    /// the eye catches what changes.
+    Flip,
 }
 
 impl Mode {
-    pub const ALL: [Mode; 2] = [Mode::Split, Mode::Side];
+    pub const ALL: [Mode; 3] = [Mode::Split, Mode::Side, Mode::Flip];
 
     pub fn name(self) -> &'static str {
         match self {
             Mode::Split => "split",
             Mode::Side => "side",
+            Mode::Flip => "flip",
         }
     }
 
@@ -44,13 +48,15 @@ impl Mode {
         match self {
             Mode::Split => tr!("Split line", "Шторка"),
             Mode::Side => tr!("Side by side", "Рядом"),
+            Mode::Flip => tr!("Flip", "Мигание"),
         }
     }
 
     pub fn next(self) -> Mode {
         match self {
             Mode::Split => Mode::Side,
-            Mode::Side => Mode::Split,
+            Mode::Side => Mode::Flip,
+            Mode::Flip => Mode::Split,
         }
     }
 }
@@ -434,7 +440,8 @@ mod tests {
             assert_eq!(Mode::from_name(m.name()), Some(m));
         }
         assert_eq!(Mode::from_name("diff"), None);
-        assert_eq!(Mode::Split.next().next(), Mode::Split);
+        assert_eq!(Mode::Split.next().next(), Mode::Flip);
+        assert_eq!(Mode::Flip.next(), Mode::Split);
     }
 
     #[test]

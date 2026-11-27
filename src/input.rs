@@ -230,6 +230,9 @@ pub enum Cmd {
     SetCompare(crate::compare::Mode),
     /// The two sides swapped.
     SwapCompare,
+    /// Flip: the other of A and B shown whole (`G`); in another way of
+    /// showing, the flip with B.
+    CompareFlip,
     /// B later by this many of its frames (earlier when negative); 0 puts
     /// it back in step.
     CompareShift(i32),

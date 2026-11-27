@@ -32,7 +32,7 @@ MetalMPV is a video player for Windows with a classic layout: the picture fills 
 - **Video, sound and subtitles panel** (`U`): the picture's colour, zoom and pan, sharpness, noise reduction, aspect ratio, deinterlacing, HDR tone mapping and rotation; the output device, channels, volume boost up to 200 %, normalization, clearer speech, stereo to 5.1, the subwoofer, a ten-band equalizer and Dolby and DTS sent to a receiver undecoded; the look of the subtitles (see [Video, sound and subtitles panel](#video-sound-and-subtitles-panel)).
 - **File information** (`I`): the cover, the tags and the details of every track in a window over the player, or its main facts alone over the picture (`Ctrl+I`); the cover of an audio file fills the picture (see [File information](#file-information)).
 - **Video map** (`Ctrl+M`): frames of the whole file in a grid on one picture, put on the clipboard for a chat with a language model; also from the command line (see [Video map](#video-map)).
-- **Comparing two videos** (`Ctrl+Shift+O`): two encodes of a video on the same frame, split by a line that follows the mouse or side by side, zoomed together (see [Comparing two videos](#comparing-two-videos)).
+- **Comparing two videos** (`Ctrl+Shift+O`): two encodes of a video on the same frame, split by a line that follows the mouse, side by side or flipped one for the other, zoomed together (see [Comparing two videos](#comparing-two-videos)).
 - **Window for the picture**: 50–200 % of the video's size, the largest window without black bars, fullscreen without black bars, four layouts of the interface, a mini player over the other windows (see [Window size and layouts](#window-size-and-layouts)).
 - **Chapters, A-B repeat, bookmarks, going to a time**: see [Chapters](#chapters), [A-B repeat](#a-b-repeat) (also saved as a file of its own), [Bookmarks](#bookmarks) and [Go to time](#go-to-time).
 - **Resume**: a film opened again goes on from where it was stopped, with the audio track and subtitles chosen in it (see [Settings](#settings)).
@@ -240,12 +240,12 @@ The same from the command line, without the window, for scripts and agents: `met
 
 Two versions of a video (two encodes, a source and its copy, a picture before and after a filter) are compared on the same frame, as in video-compare. `Ctrl+Shift+O` or **Compare → Compare with another video…** in the picture's context menu chooses the file (B) to compare the one playing (A) with; in the playlist's menu, **Compare with the current one** pairs an entry with the current one and **Compare the two selected** pairs two selected entries. A video file dragged over the picture while another plays offers two places to drop it: the left one adds it to the playlist, the right one (**Drop to compare with**) compares it with the one playing. From the command line: `metalmpv.exe --compare A B [--offset SECONDS]`.
 
-- **Split line** (at first): one picture, A left of a line that follows the mouse pointer, B right of it. **Side by side**: each whole, side by side or one over the other, whichever shows them larger. `K` switches between the two.
+- **Split line** (at first): one picture, A left of a line that follows the mouse pointer, B right of it. **Side by side**: each whole, side by side or one over the other, whichever shows them larger. **Flip**: one of them whole, `G` shows the other in its place at once, so that the eye catches what changes (the name of the one shown is bright in its corner, the other's dimmed). `K` goes round the three; `G` in another way of showing goes into the flip with B.
 - **The same frame**: B is played by a second engine without sound and follows A. Paused, after a seek or a frame step (`,` and `.`), B is put on A's frame exactly; while playing, B's speed is adjusted a little to keep it in step, within a frame of B's. B with another frame rate shows its frame of that moment.
 - **The same place**: B is drawn in A's shape and size, with A's zoom, position, turn, colour and filters, so the two pictures meet at the line pixel for pixel. The mouse wheel over the picture zooms in and out about the point under the pointer (up to 1600 %), and the middle mouse button held down drags the zoomed picture; the volume stays on the arrow keys and the control bar, the playlist on `L`.
 - **A shift**: `Alt+.` and `Alt+,` move B a frame forward or back against A (`Ctrl+Alt` ten frames), `Alt+0` takes the shift away; the shift is shown in B's corner in frames and seconds.
 - `W` swaps the sides. The names of A and B are shown in the bottom corners, with B's state (loading, ended, its shift).
-- **The bar over the picture** comes while the mouse moves over it: the two ways of showing, the sides swapped, B's shift (the arrows a frame each, a click on the figure takes the shift away), the zoom (a click on its figure goes back to 100 % in the middle) and the end of the comparison.
+- **The bar over the picture** comes while the mouse moves over it: the ways of showing, the sides swapped (in the flip, the letter of the one shown, which a click flips), B's shift (the arrows a frame each, a click on the figure takes the shift away), the zoom (a click on its figure goes back to 100 % in the middle) and the end of the comparison.
 - **The file information** (`I`) while comparing has three tabs: **A and B**, the two files side by side row by row (the file, the playback with each one's bitrate over the last minute, the picture's track, the sound's, the tags), the values that differ bright and those alike dimmed; **A** and **B**, each file's whole information. **Copy all** on the first tab copies both in columns. The chips over the picture (`Ctrl+I`) are shown for each video on its own side.
 - The comparison ends with **End the comparison** in the menu, `Esc` (after fullscreen), another file played, Stop or the mini player; the zoom and the position are then put back as they were before it.
 
@@ -479,8 +479,9 @@ The keys below are the defaults; they can be changed in the settings (**Keyboard
 | Key | Action |
 |---|---|
 | `Ctrl+Shift+O` | [Compare](#comparing-two-videos) the video playing with another |
-| `K` | Split line or side by side |
-| `W` | Swap the sides |
+| `K` | Split line, side by side or flip |
+| `G` | Flip: A or B |
+| `W` | Swap the sides (in the flip, as `G`) |
 | `Alt+.` / `Alt+,` | B a frame forward / back against A; with `Ctrl+Alt`, ten frames |
 | `Alt+0` | B without a shift |
 | Mouse wheel over the picture | Zoom about the point under the pointer (while comparing) |

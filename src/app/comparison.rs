@@ -17,6 +17,8 @@ pub(super) struct Comparison {
     pub(super) split: f32,
     /// B on the left (or on top), A on the right.
     pub(super) swapped: bool,
+    /// B is the one shown in the flip (`Mode::Flip`).
+    pub(super) flipped: bool,
     /// B's file is loaded.
     pub(super) loaded: bool,
     /// What B's container says, read while the information window is
@@ -237,6 +239,7 @@ impl App {
             offset: request.offset,
             split: 0.5,
             swapped: false,
+            flipped: false,
             loaded: false,
             facts: None,
             bar: None,
@@ -357,6 +360,19 @@ impl App {
                 self.set_compare_mode(next);
             }
             Cmd::SetCompare(mode) => self.set_compare_mode(mode),
+            // The flip, also by the swap's key there (its sides are one).
+            Cmd::CompareFlip | Cmd::SwapCompare if self.settings.compare_mode == Mode::Flip => {
+                if let Some(c) = &mut self.compare {
+                    c.flipped = !c.flipped;
+                }
+            }
+            Cmd::CompareFlip => {
+                // Into the flip with B: the press shows a change.
+                if let Some(c) = &mut self.compare {
+                    c.flipped = true;
+                }
+                self.set_compare_mode(Mode::Flip);
+            }
             Cmd::SwapCompare => {
                 if let Some(c) = &mut self.compare {
                     c.swapped = !c.swapped;
@@ -406,7 +422,7 @@ impl App {
     fn compare_places(&self, rect: Rect, state: &State) -> (Rect, Rect) {
         let swapped = self.compare.as_ref().is_some_and(|c| c.swapped);
         match self.settings.compare_mode {
-            Mode::Split => (rect, rect),
+            Mode::Split | Mode::Flip => (rect, rect),
             Mode::Side => {
                 let aspect = self
                     .picture_size(state)
@@ -527,6 +543,13 @@ impl App {
                 // In the corners of the whole picture, wherever the line is.
                 (left_label, right_label) = (rect, rect);
             }
+            (Mode::Flip, Some(b_id)) => {
+                let shown = if c.flipped { Some(b_id) } else { a_id };
+                if let Some(id) = shown {
+                    painter.image(id, rect, whole, white);
+                }
+                (left_label, right_label) = (rect, rect);
+            }
             (_, b_id) => {
                 if let Some(a_id) = a_id {
                     painter.image(a_id, a_rect, whole, white);
@@ -571,10 +594,14 @@ impl App {
             ));
         }
         let a_lines = vec![format!("A · {a_name}")];
-        let (left_lines, right_lines) = if c.swapped {
-            (b_lines, a_lines)
+        // The flip: the name of the one shown bright, the other's dimmed.
+        let flip = mode == Mode::Flip && b_shown;
+        let a_lit = !(flip && c.flipped);
+        let b_lit = !(flip && !c.flipped);
+        let ((left_lines, left_lit), (right_lines, right_lit)) = if c.swapped {
+            ((b_lines, b_lit), (a_lines, a_lit))
         } else {
-            (a_lines, b_lines)
+            ((a_lines, a_lit), (b_lines, b_lit))
         };
         // Each at most half the picture's width (its own half side by side).
         let width = if left_label == right_label {
@@ -589,6 +616,7 @@ impl App {
             &left_lines,
             Align2::LEFT_BOTTOM,
             width,
+            left_lit,
         );
         label(
             &painter,
@@ -597,6 +625,7 @@ impl App {
             &right_lines,
             Align2::RIGHT_BOTTOM,
             width,
+            right_lit,
         );
     }
 
@@ -703,6 +732,7 @@ impl App {
         let shown = ui::compare_bar::Shown {
             mode: self.settings.compare_mode,
             swapped: c.swapped,
+            flipped: c.flipped,
             shift: (c.offset * fps).round() as i64,
             shift_text: compare::shift_in(crate::i18n::lang(), c.offset, fps)
                 .unwrap_or_else(|| tr!("B without a shift", "B без сдвига").to_owned()),
@@ -783,6 +813,7 @@ fn label(
     lines: &[String],
     corner: Align2,
     width: f32,
+    lit: bool,
 ) {
     const MARGIN: f32 = 10.0;
     const PAD: egui::Vec2 = egui::vec2(7.0, 4.0);
@@ -794,7 +825,7 @@ fn label(
             let mut job = egui::text::LayoutJob::simple_singleline(
                 line.clone(),
                 FontId::proportional(13.0),
-                style::TEXT_BRIGHT,
+                Color32::PLACEHOLDER,
             );
             job.wrap = egui::text::TextWrapping::truncate_at_width(room);
             painter.layout_job(job)
@@ -812,7 +843,12 @@ fn label(
         area.right() - MARGIN - size.x
     };
     let ground = Rect::from_min_size(egui::pos2(x, y), size);
-    painter.rect_filled(ground, 4.0, Color32::from_black_alpha(150));
+    let (ground_alpha, colour) = if lit {
+        (150, style::TEXT_BRIGHT)
+    } else {
+        (90, style::text_weak())
+    };
+    painter.rect_filled(ground, 4.0, Color32::from_black_alpha(ground_alpha));
     let mut at = ground.min + PAD;
     for galley in galleys {
         let h = galley.size().y;
@@ -822,7 +858,7 @@ fn label(
         } else {
             text.x - galley.size().x
         };
-        painter.galley(at + egui::vec2(dx, 0.0), galley, style::TEXT_BRIGHT);
+        painter.galley(at + egui::vec2(dx, 0.0), galley, colour);
         at.y += h;
     }
 }

@@ -418,6 +418,7 @@ actions! {
     CompareWith "compare_with" Compare Cmd::CompareWith, [Chord::of(Press::Key(Key::O), true, false, true)];
     CompareMode "compare_mode" Compare Cmd::CycleCompare, [Chord::key(Key::K)];
     CompareSwap "compare_swap" Compare Cmd::SwapCompare, [Chord::key(Key::W)];
+    CompareFlip "compare_flip" Compare Cmd::CompareFlip, [Chord::key(Key::G)];
     CompareLater "compare_later" Compare Cmd::CompareShift(1), [Chord::alt(Key::Period)];
     CompareEarlier "compare_earlier" Compare Cmd::CompareShift(-1), [Chord::alt(Key::Comma)];
     CompareLater10 "compare_later_10" Compare Cmd::CompareShift(10),
@@ -656,8 +657,12 @@ impl Action {
             Action::About => tr!("About", "О программе"),
             Action::Close => tr!("Close the program", "Закрыть программу"),
             Action::CompareWith => tr!("Compare with another video…", "Сравнить с другим видео…"),
-            Action::CompareMode => tr!("Split line or side by side", "Шторка или рядом"),
+            Action::CompareMode => tr!(
+                "Split line, side by side or flip",
+                "Шторка, рядом или мигание"
+            ),
             Action::CompareSwap => tr!("Swap the sides", "Поменять стороны"),
+            Action::CompareFlip => tr!("Flip: A or B", "Мигание: A или B"),
             Action::CompareLater => tr!("B a frame forward", "B на кадр вперёд"),
             Action::CompareEarlier => tr!("B a frame back", "B на кадр назад"),
             Action::CompareLater10 => tr!("B ten frames forward", "B на 10 кадров вперёд"),
@@ -936,7 +941,7 @@ mod tests {
         assert_eq!(map.action(space), Some(Action::Stop));
         assert!(map.chords(Action::Pause).is_empty());
         // In place of the second key.
-        let g = Chord::key(Key::G);
+        let g = Chord::key(Key::P);
         assert_eq!(map.assign(Action::NextSubs, Some(1), g), None);
         assert_eq!(map.chords(Action::NextSubs), [Chord::key(Key::S), g]);
         map.remove(Action::NextSubs, 0);

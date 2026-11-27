@@ -607,6 +607,7 @@ impl App {
             | Cmd::CycleCompare
             | Cmd::SetCompare(_)
             | Cmd::SwapCompare
+            | Cmd::CompareFlip
             | Cmd::CompareShift(_)
             | Cmd::EndCompare => self.run_compare(ctx, cmd),
             Cmd::SetInterface(interface) => {

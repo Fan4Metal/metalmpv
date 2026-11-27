@@ -236,6 +236,8 @@ pub(super) fn compare_menu(
         // The key of the cycle by the ways of showing, not of each.
         let mut item = |ui: &mut egui::Ui, text: &str, enabled: bool, selected: bool, cmd: Cmd| {
             let key = match cmd {
+                // `G` goes into the flip.
+                Cmd::SetCompare(crate::compare::Mode::Flip) => keymap::shortcut(Cmd::CompareFlip),
                 Cmd::SetCompare(_) => String::new(),
                 cmd => keymap::shortcut(cmd),
             };
@@ -263,7 +265,11 @@ pub(super) fn compare_menu(
             item(ui, m.label(), true, mode == m, Cmd::SetCompare(m));
         }
         let rows = [
-            (tr!("Swap the sides", "Поменять стороны"), Cmd::SwapCompare),
+            if mode == crate::compare::Mode::Flip {
+                (tr!("Flip: A or B", "Мигание: A или B"), Cmd::CompareFlip)
+            } else {
+                (tr!("Swap the sides", "Поменять стороны"), Cmd::SwapCompare)
+            },
             (
                 tr!("B a frame forward", "B на кадр вперёд"),
                 Cmd::CompareShift(1),
